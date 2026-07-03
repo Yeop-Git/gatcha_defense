@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { OwnedUnit } from '../core/GameState';
+import { unitTint, type OwnedUnit } from '../core/GameState';
 import { makeCreature, disposeCreatureView } from './fallback';
 
 /**
@@ -57,7 +57,8 @@ export class MonsterViewer {
       disposeCreatureView(this.model);
     }
     const scale = 1.4 + unit.stage * 0.35;
-    this.model = makeCreature(unit.element, scale, unit.stage);
+    // 분기 진화 팔레트 스왑 반영 (§5.6)
+    this.model = makeCreature(unit.element, scale, unit.stage, unitTint(unit));
     this.model.position.y = 0.4;
     this.scene.add(this.model);
   }

@@ -34,15 +34,11 @@ export interface GameEvents {
   'stage:start': { stage: number };
   'base:damage': { amount: number; hp: number };
   'base:destroyed': {};
-  'hero:levelup': { level: number };
-  'hero:death': {};
   'enemy:killed': { element: ElementOrNeutral; x: number; z: number; isBoss: boolean };
-  'capture:attempt': { success: boolean; chance: number; element: Element };
-  'capture:done': { element: Element };
   'unit:levelup': { uid: string; level: number };
   'unit:evolve': { uid: string; stage: number };
   'card:played': { id: string };
-  'synergy:fire': { name: string; x: number; z: number; a: Element; b: Element };
+  'synergy:fire': { id: string; name: string; x: number; z: number; a: Element; b: Element; discovered: boolean };
   'mana:change': { mana: number; max: number };
   'toast': { text: string; kind?: 'good' | 'bad' | 'info' };
   'run:win': {};

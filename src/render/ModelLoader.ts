@@ -156,13 +156,33 @@ function normalize(model: THREE.Group, targetHeight: number): void {
 }
 
 /**
+ * 팔레트 스왑 (§5.6·§9): 클론된 모델의 머티리얼을 복제한 뒤 base color에 틴트를 곱한다.
+ * 캐시 원본과 다른 클론은 머티리얼을 공유하므로 반드시 복제 후 수정 — 다른 개체에 번지지 않게.
+ */
+export function tintModel(root: THREE.Object3D, tint: number): void {
+  const c = new THREE.Color(tint);
+  root.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || o.userData.outline) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    const cloned = mats.map((m) => {
+      const nm = m.clone() as THREE.MeshBasicMaterial;
+      if (nm.color) nm.color.multiply(c);
+      return nm;
+    });
+    o.material = Array.isArray(o.material) ? cloned : cloned[0];
+  });
+}
+
+/**
  * group에 GLB 모델을 비동기로 붙인다. 성공 시 폴백(placeholder) 메시를 제거.
  * 파일이 없거나 로드 실패하면 조용히 폴백 유지(파일당 최초 1회만 요청 — 캐시).
+ * tint가 있으면 팔레트 스왑(분기 진화/타락체) — 머티리얼 복제 후 색 오버라이드.
  */
-export function attachModel(group: THREE.Group, file: string, targetHeight: number): void {
+export function attachModel(group: THREE.Group, file: string, targetHeight: number, tint?: number): void {
   loadRaw(file)
     .then((model) => {
       normalize(model, targetHeight);
+      if (tint !== undefined) tintModel(model, tint);
       // 폴백 placeholder 제거
       for (const child of [...group.children]) {
         if (child.userData.placeholder) group.remove(child);

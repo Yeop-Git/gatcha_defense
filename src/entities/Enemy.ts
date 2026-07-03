@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import type { ElementOrNeutral } from '../core/types';
+import type { Element, ElementOrNeutral } from '../core/types';
 import type { EnemyDef } from '../data/enemies';
-import type { Element } from '../core/types';
-import { FIELD, CURSE_DMG_PER_STACK, WET_SLOW, WILD_CREATURE_SCALE, FLOAT, isFloating } from '../data/constants';
+import { FIELD, CURSE_DMG_PER_STACK, WET_SLOW, FLOAT, isFloating } from '../data/constants';
+import { CORRUPT_TINT, CORRUPT_SKILL } from '../data/corrupted';
 import { makeEnemy, makeCreature, makeLabelSprite, disposeCreatureView } from '../render/fallback';
 import { Marks } from './Marks';
 
@@ -44,11 +44,14 @@ export class Enemy {
   isBoss: boolean;
   isMini: boolean;
 
-  // 야생 포획 대상
-  capturable = false;
-  captureElement: import('../core/types').Element | null = null;
-  /** 야생 레벨 (스테이지에 따라 상승, 진화는 안 됨). 포획 시 이 레벨로 합류. */
-  captureLevel = 1;
+  /**
+   * 타락체 보스 (§9): 버려진 수호 몬스터의 속성. 설정 시 원본 3단 모델 + 어둠 팔레트 스왑으로
+   * 렌더되고 Battle이 시그니처 스킬 AI를 돌린다.
+   */
+  corruptEl: Element | null = null;
+  /** 타락체 시그니처 스킬 시전 주기/쿨다운 (P2에서 절반) */
+  abilityInterval = 7;
+  abilityCd = 3; // 첫 시전은 등장 후 잠깐 뒤
 
   // 상태
   private seg = 0;
@@ -62,50 +65,41 @@ export class Enemy {
   private bar: THREE.Sprite;
   bossPhase = 1;
 
-  constructor(def: EnemyDef, hpScale: number, capturable = false, captureElement: import('../core/types').Element | null = null, captureLevel = 1) {
+  constructor(def: EnemyDef, hpScale: number, corruptEl: Element | null = null) {
     this.def = def;
-    this.element = capturable && captureElement ? captureElement : def.element;
+    this.element = def.element;
     this.maxHp = Math.round(def.hp * hpScale);
     this.hp = this.maxHp;
     this.speed = def.speed;
     this.isBoss = def.leak === 'boss';
     this.isMini = def.leak === 'miniboss';
-    this.capturable = capturable;
-    this.captureElement = captureElement;
-    this.captureLevel = captureLevel;
+    this.corruptEl = corruptEl;
 
-    // 야생 포획 대상은 해당 캐릭터의 1단(첫번째 단계) 형태로 등장. 그 외는 적 폴백.
-    const isWild = capturable && !!captureElement;
-    this.view = isWild
-      ? makeCreature(captureElement as Element, WILD_CREATURE_SCALE, 1)
-      : makeEnemy(this.element, def.radius, def.flying, def.model);
+    if (corruptEl) {
+      // 타락체 = 플레이어블 3단 모델의 팔레트 스왑 (새 3D 에셋 0개, §9)
+      this.view = makeCreature(corruptEl, def.radius * 1.3, 3, CORRUPT_TINT);
+      this.abilityInterval = CORRUPT_SKILL[corruptEl].interval;
+    } else {
+      this.view = makeEnemy(this.element, def.radius, def.flying, def.model);
+    }
     const start = PATH[0];
     this.pos.set(start.x, 0, start.z);
     this.view.position.copy(this.pos);
 
-    // 시각 높이(바/표식/Lv 배치 기준): 야생은 정규화된 크리처 높이, 그 외는 폴백 반경 기준.
-    const visH = isWild ? 1.6 * WILD_CREATURE_SCALE : (def.flying ? def.radius + 1.2 : def.radius) * 2;
+    // 시각 높이(바/표식 배치 기준): 타락체는 정규화된 크리처 높이, 그 외는 폴백 반경 기준.
+    const visH = corruptEl ? 1.6 * def.radius * 1.3 : (def.flying ? def.radius + 1.2 : def.radius) * 2;
     const topY = visH + 0.4;
     this.marks = new Marks(this.view, topY);
     this.bar = makeBar();
     this.bar.position.y = topY + 0.5;
+    if (this.isBoss || this.isMini) this.bar.scale.set(2.6, 0.36, 1);
     this.view.add(this.bar);
     drawBar(this.bar, 1);
 
-    if (capturable) {
-      // 포획 가능 반짝이는 링
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(def.radius + 0.4, def.radius + 0.7, 24),
-        new THREE.MeshBasicMaterial({ color: 0xf2ce6b, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
-      );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.1;
-      ring.userData.placeholder = true; // dispose 대상 (누수 방지)
-      this.view.add(ring);
-      this.view.userData.captureRing = ring;
-      // 야생 레벨 표시 (진화 안 된 1단이지만 레벨은 스테이지에 따라 상승)
-      const lv = makeLabelSprite(`Lv${captureLevel}`, { color: '#ffe08a', worldHeight: 0.55 });
-      lv.position.y = topY + 1.15; // HP바(topY+0.5) 위
+    if (corruptEl) {
+      // 타락체 이름표 — "내가 버린 그 아이"가 보이도록
+      const lv = makeLabelSprite(def.name, { color: '#b48ae0', worldHeight: 0.6 });
+      lv.position.y = topY + 1.15;
       this.view.add(lv);
     }
   }
@@ -128,28 +122,9 @@ export class Enemy {
     if (!ignoreDef && this.defDownTimer > 0) dmg *= 1 + this.defDownPct;
     dmg = Math.round(dmg);
     this.hp -= dmg;
-    // 포획 대상 야생은 피해로 죽지 않음(HP 1에서 멈춤) → 유닛/주인공이 안전하게 약화, 포획 성립.
-    if (this.hp <= 0) {
-      if (this.capturable) this.hp = 1;
-      else this.alive = false;
-    }
+    if (this.hp <= 0) this.alive = false;
     drawBar(this.bar, this.hp / this.maxHp);
-    if (this.capturable) this.updateCaptureGlow();
     return dmg;
-  }
-
-  private updateCaptureGlow(): void {
-    const ring = this.view.userData.captureRing as THREE.Mesh | undefined;
-    if (ring) {
-      const mat = ring.material as THREE.MeshBasicMaterial;
-      // HP 낮을수록(포획 쉬움) 초록빛
-      mat.color.setHex(this.hp / this.maxHp < 0.4 ? 0x6fae4c : 0xf2ce6b);
-    }
-  }
-
-  captureChance(base: number, hpFactor: number, cap: number, bonus: number): number {
-    const c = base + (1 - this.hp / this.maxHp) * hpFactor + bonus;
-    return Math.min(cap, c);
   }
 
   update(dt: number, t: number): void {

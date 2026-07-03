@@ -13,7 +13,7 @@ export interface SynergyCtx {
   shieldAllies(pct: number): void;
   vfxRing(x: number, z: number, color: number, r: number, dur: number): void;
   vfxBurst(x: number, z: number, color: number, n: number): void;
-  banner(name: string, a: Element, b: Element, x: number, z: number): void;
+  banner(id: string, name: string, a: Element, b: Element, x: number, z: number): void;
 }
 
 type EffectHandler = (e: Enemy, def: SynergyDef, x: number, z: number, power: number, mag: number, ctx: SynergyCtx) => void;
@@ -25,6 +25,8 @@ type EffectHandler = (e: Enemy, def: SynergyDef, x: number, z: number, power: nu
  */
 export class SynergySystem {
   private cooldowns = new Map<string, number>();
+  /** 협동기 내부 재발동 쿨다운(초). 갈림길 버프로 단축 가능(§10). */
+  constructor(private cooldown: number = SYNERGY_COOLDOWN) {}
 
   update(dt: number): void {
     for (const [k, v] of this.cooldowns) {
@@ -52,11 +54,11 @@ export class SynergySystem {
       if (unitStage === 1 && !def.weakAtStage1) continue;
 
       const mag = unitStage === 1 && def.weakAtStage1 ? 0.5 : 1; // 1단끼리 약화판
-      this.cooldowns.set(def.id, SYNERGY_COOLDOWN);
+      this.cooldowns.set(def.id, this.cooldown);
       const handler = HANDLERS[def.effect];
       if (handler) {
         handler(e, def, e.pos.x, e.pos.z, power, mag, ctx);
-        ctx.banner(def.name, def.a, def.b, e.pos.x, e.pos.z);
+        ctx.banner(def.id, def.name, def.a, def.b, e.pos.x, e.pos.z);
       }
       if (def.consumesTrigger) e.marks.remove(def.trigger.mark);
     }

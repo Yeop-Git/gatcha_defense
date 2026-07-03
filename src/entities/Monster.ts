@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Element } from '../core/types';
-import { type OwnedUnit, type DerivedStats, deriveStats, unitName } from '../core/GameState';
+import { type OwnedUnit, type DerivedStats, deriveStats, unitName, unitTint, unitBranch } from '../core/GameState';
 import { makeCreature, makeLabelSprite, makeTextSprite, disposeCreatureView } from '../render/fallback';
 import { BLESS_BUFF_PER_STACK, FLOAT, isFloating } from '../data/constants';
 
@@ -35,12 +35,14 @@ export class Monster {
     this._atkMult = atkMult;
 
     const scale = 0.85 + unit.stage * 0.18;
-    this.view = makeCreature(unit.element, scale, unit.stage);
+    // 분기 진화 = 팔레트 스왑 (§5.6): 선택한 분기의 틴트색으로 렌더 — 색이 곧 빌드
+    this.view = makeCreature(unit.element, scale, unit.stage, unitTint(unit));
     this.pos.set(x, 0, z);
     this.view.position.copy(this.pos);
 
-    // 이름표 (다글자 한글도 안 깨지는 라벨)
-    const label = makeLabelSprite(unitName(unit), { worldHeight: 0.5 });
+    // 이름표 (다글자 한글도 안 깨지는 라벨). 분기 선택 시 형태명 병기.
+    const br = unitBranch(unit);
+    const label = makeLabelSprite(br ? `${unitName(unit)}·${br.name}` : unitName(unit), { worldHeight: 0.5 });
     label.position.set(0, 2.3 + unit.stage * 0.2, 0);
     this.view.add(label);
 

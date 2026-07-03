@@ -22,7 +22,7 @@ function toonMat(color: number, opts: { transparent?: boolean; opacity?: number 
 }
 
 /**
- * 크리처 뷰(makeCreature/makeEnemy/makeHero/makeBase 기반) 자원 해제.
+ * 크리처 뷰(makeCreature/makeEnemy/makeBase 기반) 자원 해제.
  * - 아웃라인 메시(userData.outline): 공유 싱글턴 머티리얼 + 부모 지오메트리 공유 → 절대 dispose 금지.
  * - 폴백 메시(userData.placeholder): 개체 고유 지오메트리/머티리얼 → dispose.
  * - 그 외(클론된 GLB 메시): 캐시와 지오메트리/머티리얼 공유 → dispose 금지(다음 클론이 깨짐).
@@ -125,10 +125,13 @@ export function makeBarSprite(worldWidth = 3, color = '#e05a4a'): { sprite: THRE
   return { sprite: sp, set };
 }
 
-/** 유닛/야생 몬스터 폴백 캡슐 (속성색 + 아이콘). height로 진화 크기 표현. */
-export function makeCreature(el: Element, scale = 1, stage = 1): THREE.Group {
+/**
+ * 유닛/야생 몬스터 폴백 캡슐 (속성색 + 아이콘). height로 진화 크기 표현.
+ * tint = 팔레트 스왑 색(분기 진화·타락체). 폴백 캡슐은 틴트색 자체를, GLB는 색 곱을 적용.
+ */
+export function makeCreature(el: Element, scale = 1, stage = 1, tint?: number): THREE.Group {
   const g = new THREE.Group();
-  const color = elementColor(el);
+  const color = tint ?? elementColor(el);
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.55 * scale, 0.5 * scale, 6, 12),
     toonMat(color),
@@ -153,38 +156,7 @@ export function makeCreature(el: Element, scale = 1, stage = 1): THREE.Group {
   icon.userData.placeholder = true;
   g.add(icon);
   g.userData.baseY = 0;
-  attachModel(g, modelFile.creature(el, stage), 1.6 * scale);
-  return g;
-}
-
-/** 주인공 폴백 (무속성 회색 + 모자 느낌 원뿔) */
-export function makeHero(): THREE.Group {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.5, 0.7, 6, 12),
-    toonMat(0xdcc9a0),
-  );
-  body.position.y = 0.85;
-  body.userData.placeholder = true;
-  addOutline(body);
-  g.add(body);
-  const hat = new THREE.Mesh(
-    new THREE.ConeGeometry(0.45, 0.6, 12),
-    toonMat(0x5c4028),
-  );
-  hat.position.y = 1.55;
-  hat.userData.placeholder = true;
-  addOutline(hat);
-  g.add(hat);
-  // 정면 표시용 코 (방향감)
-  const nose = new THREE.Mesh(
-    new THREE.SphereGeometry(0.12, 8, 8),
-    toonMat(0xd8a93b),
-  );
-  nose.position.set(0, 0.95, 0.5);
-  nose.userData.placeholder = true;
-  g.add(nose);
-  attachModel(g, modelFile.hero(), 1.7);
+  attachModel(g, modelFile.creature(el, stage), 1.6 * scale, tint);
   return g;
 }
 

@@ -2,8 +2,9 @@ import { bus } from '../core/events';
 import { ELEMENT_ICON, ELEMENT_NAME_KO, MAX_MONSTERS } from '../data/constants';
 import type { Element } from '../core/types';
 import type { OwnedUnit } from '../core/GameState';
-import { unitName, deriveStats } from '../core/GameState';
+import { unitName, unitBranch, deriveStats } from '../core/GameState';
 import { MONSTERS } from '../data/monsters';
+import { SYNERGIES } from '../data/synergies';
 import { CARD_BY_ID, cardIcon } from '../data/cards';
 import { getPortrait } from '../render/Portraits';
 
@@ -21,13 +22,6 @@ export interface HudInfo {
 export interface HandCard {
   id: string;
   playable: boolean;
-  /** 포획 카드 등 손패에 항상 고정되는 특수 카드 */
-  pinned?: boolean;
-  /** 표시 이름/설명 오버라이드 (포획 카드는 모드에 따라 바뀜) */
-  label?: string;
-  desc?: string;
-  /** 쿨다운 진행률 0~1 (오버레이) */
-  cdFrac?: number;
   /** 사용 불가 사유 (비활성 카드 탭 시 안내) */
   reason?: string;
 }
@@ -49,6 +43,7 @@ function cardElemIcon(e: string): string {
 export class UI {
   // 콜백 (Game이 할당)
   onStart = () => {};
+  onContinue = () => {};
   onBeginWave = () => {};
   /** 카드 포인터다운 → Game이 더블탭(스마트)/드래그(정밀) 판정 */
   onCardGrab = (_id: string, _ev: PointerEvent) => {};
@@ -57,7 +52,8 @@ export class UI {
   onOpenViewer = () => {};
   onCloseViewer = () => {};
   onViewerSelect = (_uid: string) => {};
-  onHeroSkill = (_id: string) => {};
+  onBranchPick = (_uid: string, _key: string) => {};
+  onOpenCodex = () => {};
   onNode = (_kind: string) => {};
   onBuffPick = (_id: string) => {};
   onDraftPick = (_element: string) => {};
@@ -105,7 +101,7 @@ export class UI {
 
     // 반응형 이벤트
     bus.on('base:damage', () => this.pulseHp());
-    bus.on('synergy:fire', ({ name, a, b }) => this.banner(name, a, b));
+    bus.on('synergy:fire', ({ name, a, b, discovered }) => this.banner(name, a, b, discovered));
     bus.on('toast', ({ text, kind }) => this.toast(text, kind));
     this.setGameplayVisible(false);
   }
@@ -115,14 +111,22 @@ export class UI {
     this.title = el('div'); this.title.id = 'title-screen';
     this.title.innerHTML = `
       <div class="logo">Monster Keepers</div>
-      <div class="sub">귀여운 몬스터를 포획해 나만의 덱을 키우는 탑뷰 디펜스 로그라이크</div>
-      <button class="btn primary" id="start-btn">모험 시작</button>
+      <div class="sub">수호 몬스터 셋을 드래프트해 키우는 탑뷰 디펜스 로그라이크 — 버린 둘은 타락체 보스로 돌아온다</div>
+      <div class="title-btns">
+        <button class="btn primary" id="start-btn">새 모험</button>
+        <button class="btn" id="continue-btn" style="display:none">이어하기</button>
+      </div>
       <div class="tip">스테이지 1·2·3 시작마다 <b>수호 몬스터 3택1 드래프트</b> — 3마리를 뽑아 키운다 (안 뽑은 2종은 후반 타락체 보스로 회귀!)<br/>
       웨이브 사이 <b>몬스터를 슬롯에 배치</b>(자동 공격) · 카드는 <b>전장으로 드래그</b>하거나 <b>더블탭</b>해 스킬·버프 사용 · 성(거점)이 근처 적을 자동 방어</div>`;
     this.root.appendChild(this.title);
     (this.title.querySelector('#start-btn') as HTMLButtonElement).onclick = () => this.onStart();
+    (this.title.querySelector('#continue-btn') as HTMLButtonElement).onclick = () => this.onContinue();
   }
-  showTitle(): void { this.title.classList.remove('hidden'); this.setGameplayVisible(false); }
+  showTitle(canContinue = false): void {
+    this.title.classList.remove('hidden');
+    (this.title.querySelector('#continue-btn') as HTMLButtonElement).style.display = canContinue ? '' : 'none';
+    this.setGameplayVisible(false);
+  }
   hideTitle(): void { this.title.classList.add('hidden'); }
 
   private setGameplayVisible(on: boolean): void {
@@ -280,22 +284,17 @@ export class UI {
   /** 카드 요소 상태를 제자리 갱신 (요소 identity 유지 → 더블클릭 안정). */
   private updateCardEl(card: HTMLElement, c: HandCard): void {
     const def = CARD_BY_ID[c.id];
-    const elemIcon = c.pinned ? '🎯' : cardElemIcon(def.element); // 좌상단 = 속성
-    const artIcon = c.pinned ? '🎯' : cardIcon(def);              // 중앙 = 스킬 아이콘
-    const name = c.label ?? def.name;
-    const desc = c.desc ?? def.text;
     // 제자리 갱신이 잦으므로 진행 중인 딜-인/드래그/선택 연출 클래스는 보존
     const keep = `${card.classList.contains('dealing') ? ' dealing' : ''}${card.classList.contains('dragging') ? ' dragging' : ''}${card.classList.contains('selected') ? ' selected' : ''}`;
-    card.className = `card el-${def.element}${c.playable ? '' : ' disabled'}${c.pinned ? ' pinned' : ''}${keep}`;
+    card.className = `card el-${def.element}${c.playable ? '' : ' disabled'}${keep}`;
     card.dataset.playable = c.playable ? '1' : '0';
     card.dataset.reason = c.reason ?? '';
     card.innerHTML = `
       <div class="cost">${def.cost}</div>
-      <div class="card-elem">${elemIcon}</div>
-      <div class="art">${artIcon}</div>
-      <div class="name">${name}</div>
-      <div class="desc">${desc}</div>
-      ${c.cdFrac && c.cdFrac > 0 ? `<div class="cd-overlay" style="height:${Math.round(c.cdFrac * 100)}%"></div>` : ''}`;
+      <div class="card-elem">${cardElemIcon(def.element)}</div>
+      <div class="art">${cardIcon(def)}</div>
+      <div class="name">${def.name}</div>
+      <div class="desc">${def.text}</div>`;
   }
 
   setTargeting(on: boolean): void {
@@ -352,14 +351,46 @@ export class UI {
     }
   }
 
-  showHeroLevelUp(skills: { id: string; name: string; desc: string }[]): void {
-    const scroll = this.modal(`<h1>레벨 업!</h1><p>공용 스킬을 하나 선택하세요.</p><div class="choice-row"></div>`);
+  /**
+   * 분기 진화 2택1 (§5.6): 3단 도달 시 두 형태 중 하나 선택.
+   * 색이 곧 빌드 — 카드에 분기 틴트색을 크게 노출.
+   */
+  showBranchChoice(data: {
+    uid: string; name: string; element: Element;
+    branches: { key: string; name: string; role: string; tint: number; signature: string }[];
+  }): void {
+    const scroll = this.modal(`<h1>분기 진화</h1>
+      <p><b>${data.name}</b>이(가) 진화의 기로에 섰습니다. 형태를 선택하세요 — <b>색이 곧 빌드</b>입니다.</p>
+      <div class="choice-row branch-row"></div>`);
     const row = scroll.querySelector('.choice-row')!;
-    for (const s of skills) {
-      const c = el('div', 'choice', `<div class="ct">${s.name}</div><div class="cd">${s.desc}</div>`);
-      c.onclick = () => { this.clearModal(); this.onHeroSkill(s.id); };
+    for (const b of data.branches) {
+      const hex = `#${b.tint.toString(16).padStart(6, '0')}`;
+      const c = el('div', `choice branch-card el-${data.element}`,
+        `<div class="bc-swatch" style="background:${hex}"></div>
+         <div class="ct">${ELEMENT_ICON[data.element]} ${b.name}</div>
+         <div class="cd">${b.role}</div>
+         <div class="bc-sig">🃏 시그니처: ${b.signature}</div>`);
+      c.onclick = () => { this.clearModal(); this.onBranchPick(data.uid, b.key); };
       row.appendChild(c);
     }
+  }
+
+  /** 반응 도감 (§7.3): 발견한 협동기는 이름/설명, 미발견은 ??? + 속성 힌트. */
+  showCodex(discovered: string[]): void {
+    const scroll = this.modal(`<h1>반응 도감</h1>
+      <p>표식 위에 다른 속성이 닿으면 협동기가 터진다. 조합을 실험해 도감을 채우자! (${discovered.length}/${SYNERGIES.length})</p>
+      <div class="codex-list"></div>
+      <div class="choice-row"><button class="btn primary" id="codex-close">닫기</button></div>`);
+    const list = scroll.querySelector('.codex-list')!;
+    for (const s of SYNERGIES) {
+      const found = discovered.includes(s.id);
+      const item = el('div', `codex-item${found ? ' found' : ''}`,
+        found
+          ? `<span class="cx-els">${ELEMENT_ICON[s.a]}✦${ELEMENT_ICON[s.b]}</span><span class="cx-name">${s.name}</span><span class="cx-desc">${s.desc}</span>`
+          : `<span class="cx-els">${ELEMENT_ICON[s.a]}✦${ELEMENT_ICON[s.b]}</span><span class="cx-name">???</span><span class="cx-desc">${ELEMENT_NAME_KO[s.a]}과(와) ${ELEMENT_NAME_KO[s.b]}의 조합…</span>`);
+      list.appendChild(item);
+    }
+    (scroll.querySelector('#codex-close') as HTMLButtonElement).onclick = () => this.clearModal();
   }
 
   showStageClear(stageLabel: string, rewards: string[]): void {
@@ -397,23 +428,25 @@ export class UI {
     (scroll.querySelector('#ev-ok') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onEventPick(node.id); };
   }
 
-  showWin(): void {
-    const scroll = this.modal(`<h1>런 승리! 🎉</h1><p>일월식의 키메라를 물리쳤습니다.<br/>당신은 진정한 몬스터 키퍼입니다.</p>
+  showWin(finalBossName: string): void {
+    const scroll = this.modal(`<h1>런 승리! 🎉</h1><p>타락한 ${finalBossName}을(를) 월식에서 해방했습니다.<br/>당신은 진정한 몬스터 키퍼입니다.</p>
       <div class="choice-row"><button class="btn primary" id="again">새 모험</button></div>`);
     (scroll.querySelector('#again') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onRestart(); };
   }
 
   showLose(reason: string): void {
-    const scroll = this.modal(`<h1>런 종료…</h1><p>${reason}</p><p>포획한 몬스터와 카드는 초기화됩니다.</p>
+    const scroll = this.modal(`<h1>런 종료…</h1><p>${reason}</p><p>함께한 몬스터와 카드는 초기화됩니다.</p>
       <div class="choice-row"><button class="btn primary" id="again">다시 도전</button></div>`);
     (scroll.querySelector('#again') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onRestart(); };
   }
 
   // ── 협동기 배너 / 토스트 ──
-  banner(name: string, a: Element, b: Element): void {
-    const b1 = el('div', 'synergy-banner', `<span class="els">${ELEMENT_ICON[a]}✦${ELEMENT_ICON[b]}</span><span>${name}</span>`);
+  /** 협동기 발동 배너. 최초 발견이면 도감 등록 연출(NEW). */
+  banner(name: string, a: Element, b: Element, discovered = false): void {
+    const b1 = el('div', `synergy-banner${discovered ? ' discovered' : ''}`,
+      `<span class="els">${ELEMENT_ICON[a]}✦${ELEMENT_ICON[b]}</span><span>${name}</span>${discovered ? '<span class="new-tag">NEW! 도감 등록</span>' : ''}`);
     this.bannerLayer.appendChild(b1);
-    setTimeout(() => b1.remove(), 1400);
+    setTimeout(() => b1.remove(), discovered ? 2200 : 1400);
   }
 
   toast(text: string, kind: 'good' | 'bad' | 'info' = 'info'): void {
@@ -470,26 +503,29 @@ export class UI {
           <button class="btn primary" id="lobby-battle">⚔ 전투 시작</button>
           <button class="btn" id="lobby-manage">🃏 캐릭터 관리</button>
           <button class="btn" id="lobby-viewer">📖 내 몬스터</button>
+          <button class="btn" id="lobby-codex">📜 반응 도감</button>
         </div>
       </div>`;
     this.root.appendChild(this.lobbyUI);
     (this.lobbyUI.querySelector('#lobby-battle') as HTMLButtonElement).onclick = () => this.onEnterBattle();
     (this.lobbyUI.querySelector('#lobby-manage') as HTMLButtonElement).onclick = () => this.onManage();
     (this.lobbyUI.querySelector('#lobby-viewer') as HTMLButtonElement).onclick = () => this.onOpenViewer();
+    (this.lobbyUI.querySelector('#lobby-codex') as HTMLButtonElement).onclick = () => this.onOpenCodex();
   }
 
-  showLobby(info: { stageNo: number; stageLabel: string; heroLevel: number; gold: number; roster: OwnedUnit[] }): void {
+  showLobby(info: { stageNo: number; stageLabel: string; gold: number; roster: OwnedUnit[]; discoveredCount: number }): void {
     this.setGameplayVisible(false);
     this.hideManage();
     this.lobbyUI.style.display = 'flex';
     (this.lobbyUI.querySelector('#lobby-stage') as HTMLElement).innerHTML =
-      `다음 전투: <b>스테이지 ${info.stageNo}</b> — ${info.stageLabel}<br/>성 Lv${info.heroLevel} · 🪙 ${info.gold} · 보유 몬스터 ${info.roster.length}/${MAX_MONSTERS}`;
+      `다음 전투: <b>스테이지 ${info.stageNo}</b> — ${info.stageLabel}<br/>🪙 ${info.gold} · 보유 몬스터 ${info.roster.length}/${MAX_MONSTERS} · 📜 도감 ${info.discoveredCount}/${SYNERGIES.length}`;
     const r = this.lobbyUI.querySelector('#lobby-roster') as HTMLElement;
     r.innerHTML = '';
-    const heroChip = el('div', 'lobby-mon', `<div class="lm-ico">🏰</div><div class="lm-name">성 (거점)</div><div class="lm-sub">Lv${info.heroLevel}</div>`);
+    const heroChip = el('div', 'lobby-mon', `<div class="lm-ico">🏰</div><div class="lm-name">성 (거점)</div><div class="lm-sub">무색 카드 5장</div>`);
     r.appendChild(heroChip);
     for (const u of info.roster) {
-      const chip = el('div', 'lobby-mon', `<div class="lm-ico">${cardElemIcon(u.element)}</div><div class="lm-name">${unitName(u)}</div><div class="lm-sub">Lv${u.level} · ${u.stage}단</div>`);
+      const br = unitBranch(u);
+      const chip = el('div', 'lobby-mon', `<div class="lm-ico">${cardElemIcon(u.element)}</div><div class="lm-name">${unitName(u)}${br ? `·${br.name}` : ''}</div><div class="lm-sub">Lv${u.level} · ${u.stage}단</div>`);
       applyPortrait(chip.querySelector('.lm-ico') as HTMLElement, u.element, u.stage);
       r.appendChild(chip);
     }
@@ -516,7 +552,7 @@ export class UI {
   showManage(data: {
     holders: { id: string; name: string; element: string; level: number }[];
     selected: string; level: number; equippedCount: number; cap: number;
-    cards: { id: string; name: string; element: string; cost: number; text: string; learnLevel: number; learned: boolean; equipped: boolean }[];
+    cards: { id: string; name: string; element: string; cost: number; text: string; learnLevel: number; learned: boolean; equipped: boolean; branchLocked?: boolean }[];
   }): void {
     this.setGameplayVisible(false);
     this.hideLobby();
@@ -535,12 +571,15 @@ export class UI {
     for (const c of data.cards) {
       const cls = `mcard el-${c.element}${c.equipped ? ' equipped' : ''}${c.learned ? '' : ' locked'}`;
       const skillIcon = CARD_BY_ID[c.id] ? cardIcon(CARD_BY_ID[c.id]) : cardElemIcon(c.element);
+      const foot = c.learned
+        ? (c.equipped ? '★ 장착됨' : '＋ 장착')
+        : c.branchLocked ? '🔒 분기 진화 선택 시' : `🔒 Lv${c.learnLevel}`;
       const card = el('div', cls, `
         <div class="cost">${c.cost}</div>
         <div class="card-elem">${cardElemIcon(c.element)}</div>
         <div class="mc-name">${skillIcon} ${c.name}</div>
         <div class="mc-desc">${c.text}</div>
-        <div class="mc-foot">${c.learned ? (c.equipped ? '★ 장착됨' : '＋ 장착') : `🔒 Lv${c.learnLevel}`}</div>`);
+        <div class="mc-foot">${foot}</div>`);
       if (c.learned) card.onclick = () => this.onManageToggle(data.selected, c.id);
       grid.appendChild(card);
     }
@@ -551,20 +590,22 @@ export class UI {
   private showUnitInfo(u: OwnedUnit): void {
     const s = deriveStats(u);
     const def = MONSTERS[u.element];
+    const br = unitBranch(u);
     const body = this.viewerUI.querySelector('#info-body')!;
     body.innerHTML = `
       <div class="info-pic">${ELEMENT_ICON[u.element]}</div>
-      <h2>${unitName(u)}</h2>
+      <h2>${unitName(u)}${br ? ` · ${br.name}` : ''}</h2>
       <div class="row"><span>속성</span><span>${ELEMENT_ICON[u.element]} ${ELEMENT_NAME_KO[u.element]}</span></div>
       <div class="row"><span>레벨</span><span>Lv ${u.level}</span></div>
       <div class="row"><span>진화 단계</span><span>${u.stage}단 / 3</span></div>
       <div class="row"><span>진화 레벨</span><span>${def.evolveLevels.join(' / ')}</span></div>
+      ${br ? `<div class="row"><span>분기 형태</span><span style="color:#${br.tint.toString(16).padStart(6, '0')}">■</span> ${br.name}</div>` : ''}
       <div class="row"><span>HP</span><span>${s.hp}</span></div>
       <div class="row"><span>공격력</span><span>${s.attack}</span></div>
       <div class="row"><span>사거리</span><span>${s.range.toFixed(1)}</span></div>
       <div class="row"><span>공속</span><span>${s.attackSpeed.toFixed(2)}</span></div>
       <div class="row"><span>유대 보너스</span><span>+${Math.round(s.bond * 100)}% <span style="opacity:0.6">(HP·공격)</span></span></div>
-      <p style="margin-top:10px;font-size:12.5px;opacity:0.9">${def.stages[u.stage - 1].role}</p>`;
+      <p style="margin-top:10px;font-size:12.5px;opacity:0.9">${br ? br.role : def.stages[u.stage - 1].role}</p>`;
     applyPortrait(body.querySelector('.info-pic') as HTMLElement, u.element, u.stage);
   }
 }

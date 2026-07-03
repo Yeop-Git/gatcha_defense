@@ -2,11 +2,11 @@ import { Scene } from '../render/Scene';
 import { MonsterViewer } from '../render/MonsterViewer';
 import { UI, type HandCard } from '../ui/UI';
 import { state, unitName, EQUIP_CAP } from './GameState';
-import { saveRun, clearRun } from './save';
+import { saveRun, loadRun, clearRun, hasRun } from './save';
 import { Battle } from '../systems/Battle';
 import { STAGES, BUFF_NODES, EVENT_NODES } from '../data/stages';
-import { HERO_SKILLS } from '../data/skills';
 import { cardsOfCharacter, CARD_BY_ID, cardIcon } from '../data/cards';
+import { MONSTERS } from '../data/monsters';
 import type { Element } from './types';
 import { DIFFICULTY_JUMP_MULT, FIXED_DT } from '../data/constants';
 import { bus } from './events';
@@ -31,12 +31,13 @@ export class Game {
     this.wireUI();
     this.wireInput();
     this.wireBus();
-    this.ui.showTitle();
+    this.ui.showTitle(hasRun());
     requestAnimationFrame((t) => this.loop(t));
   }
 
   private wireUI(): void {
     this.ui.onStart = () => this.startRun();
+    this.ui.onContinue = () => this.continueRun();
     this.ui.onBeginWave = () => this.battle?.beginWave();
     this.ui.onCardGrab = (id, ev) => this.beginCardDrag(id, ev);
     this.ui.onCardBlocked = (reason) => this.ui.toast(reason, 'bad');
@@ -46,12 +47,12 @@ export class Game {
       const u = state.roster.find((x) => x.uid === uid);
       if (u) this.viewer.setUnit(u);
     };
-    this.ui.onHeroSkill = (id) => this.pickHeroSkill(id);
     this.ui.onNode = (kind) => this.chooseNode(kind);
     this.ui.onBuffPick = (id) => { state.applyBuff(id); this.backToLobby(); };
     this.ui.onDraftPick = (el) => this.pickDraft(el);
-    this.ui.onEventPick = (id) => { this.applyEvent(id); this.backToLobby(); };
+    this.ui.onEventPick = (id) => { this.applyEvent(id); this.afterEvent(); };
     this.ui.onNext = () => this.afterStageClear();
+    this.ui.onBranchPick = (uid, key) => this.pickBranch(uid, key);
     this.ui.onRestart = () => { clearRun(); this.startRun(); };
     this.ui.onPlacementToggle = (id) => { this.battle?.togglePlace(id); this.refreshPlacement(); };
     this.ui.onEnterBattle = () => this.enterBattle();
@@ -59,6 +60,7 @@ export class Game {
     this.ui.onManageClose = () => this.showLobby();
     this.ui.onManageSelectHolder = (id) => { this.manageHolder = id; this.renderManage(); };
     this.ui.onManageToggle = (holderId, cardId) => this.toggleEquip(holderId, cardId);
+    this.ui.onOpenCodex = () => this.ui.showCodex(state.discovered);
   }
 
   private lastPhase = '';
@@ -99,7 +101,7 @@ export class Game {
     return clientY < window.innerHeight - Game.SHELF_H;
   }
 
-  /** 더블탭/키: 지점은 전투가 스마트 타깃(최전방/가장 가까운 야생). */
+  /** 더블탭/키: 지점은 전투가 스마트 타깃(최전방). */
   private smartCast(id: string): void {
     if (!this.battle || this.paused) return;
     this.battle.playCard(id);
@@ -109,7 +111,6 @@ export class Game {
   /**
    * 카드 포인터다운 → 전장으로 드래그하면 드롭 지점에 정밀 시전.
    * 이동 없이 떼면 탭으로 간주하고, 같은 카드가 350ms 내 두 번 탭되면 스마트 시전(더블탭).
-   * 네이티브 dblclick에 의존하지 않아 환경/입력 방식에 관계없이 동작.
    */
   private beginCardDrag(id: string, ev: PointerEvent): void {
     if (!this.battle || this.mode !== 'battle' || this.paused) return;
@@ -180,14 +181,24 @@ export class Game {
   private wireBus(): void {
     bus.on('mana:change', () => { if (this.mode === 'battle') this.refreshHand(); });
     bus.on('card:played', () => this.refreshHand());
-    bus.on('capture:done', () => this.refreshHand());
     bus.on('unit:levelup', () => this.refreshHand());
+    bus.on('synergy:fire', ({ discovered, name }) => {
+      if (discovered) { saveRun(); this.ui.toast(`📜 반응 도감 등록: ${name}`, 'good'); }
+    });
   }
 
   // ── 런/로비/스테이지 ──
   private startRun(): void {
     state.reset();
     this.ui.hideTitle();
+    this.showLobby();
+  }
+
+  /** 저장된 런 이어하기 (localStorage 스냅샷 1개) */
+  private continueRun(): void {
+    if (!loadRun()) { this.startRun(); return; }
+    this.ui.hideTitle();
+    this.ui.toast('저장된 모험을 이어서 시작합니다', 'good');
     this.showLobby();
   }
 
@@ -200,9 +211,9 @@ export class Game {
     this.ui.showLobby({
       stageNo: Math.min(state.stageIndex + 1, STAGES.length),
       stageLabel: STAGES[Math.min(state.stageIndex, STAGES.length - 1)].label,
-      heroLevel: state.heroLevel,
       gold: state.gold,
       roster: state.roster,
+      discoveredCount: state.discovered.length,
     });
   }
 
@@ -237,15 +248,22 @@ export class Game {
   private renderManage(): void {
     const id = this.manageHolder;
     const holders = [
-      { id: 'hero', name: '성 (공용)', element: 'neutral' as const, level: state.heroLevel },
+      { id: 'hero', name: '성 (공용)', element: 'neutral' as const, level: 1 },
       ...state.roster.map((u) => ({ id: u.uid, name: unitName(u), element: u.element, level: u.level })),
     ];
     const lvl = state.holderLevel(id);
+    const branch = state.holderBranch(id);
     const equipped = state.equippedOf(id);
-    const cards = cardsOfCharacter(state.holderCharacter(id)).map((c) => ({
-      id: c.id, name: c.name, element: c.element, cost: c.cost, text: c.text,
-      learnLevel: c.learnLevel, learned: c.learnLevel <= lvl, equipped: equipped.includes(c.id),
-    }));
+    const cards = cardsOfCharacter(state.holderCharacter(id))
+      // 분기 시그니처는 다른 분기 것은 숨김 (선택한/미선택 분기만 노출)
+      .filter((c) => !c.branch || !branch || c.branch === branch)
+      .map((c) => ({
+        id: c.id, name: c.name, element: c.element, cost: c.cost, text: c.text,
+        learnLevel: c.learnLevel,
+        learned: c.learnLevel <= lvl && (!c.branch || c.branch === branch),
+        equipped: equipped.includes(c.id),
+        branchLocked: !!c.branch && c.branch !== branch,
+      }));
     this.ui.showManage({ holders, selected: id, level: lvl, cards, equippedCount: equipped.length, cap: EQUIP_CAP });
   }
 
@@ -255,7 +273,7 @@ export class Game {
     if (i >= 0) {
       eq.splice(i, 1);
     } else {
-      const learned = state.learnedIdsFor(state.holderCharacter(holderId), state.holderLevel(holderId));
+      const learned = state.learnedIdsFor(state.holderCharacter(holderId), state.holderLevel(holderId), state.holderBranch(holderId));
       if (!learned.includes(cardId)) { this.ui.toast('아직 배우지 않은 스킬입니다', 'bad'); return; }
       if (eq.length >= EQUIP_CAP) { this.ui.toast(`덱은 최대 ${EQUIP_CAP}장까지`, 'bad'); return; }
       eq.push(cardId);
@@ -309,7 +327,16 @@ export class Game {
     else this.mode = 'battle';
   }
 
-  // ── 스테이지 클리어 → 보상/레벨업/갈림길 ──
+  // ── 스테이지 클리어 → 보상/분기 진화/갈림길 ──
+  /** 3단 도달 후 분기 미선택 유닛 대기열 (스테이지 클리어/이벤트 성장 후 처리) */
+  private branchQueue: string[] = [];
+
+  private queueBranchChoices(): void {
+    for (const u of state.roster) {
+      if (u.stage >= 3 && !u.branch && !this.branchQueue.includes(u.uid)) this.branchQueue.push(u.uid);
+    }
+  }
+
   private onStageClearedDetected(): void {
     this.paused = true;
     const def = this.battle!.stage;
@@ -319,35 +346,58 @@ export class Game {
     const newCards: string[] = [];
     for (const u of state.roster) {
       const r = state.addUnitXp(u, xpGain);
-      if (r.evolved) rewards.push(`✨ ${u.element} 진화! → ${u.stage}단`);
+      if (r.evolved) rewards.push(`✨ ${unitName(u)} 진화! → ${u.stage}단`);
       r.newCards.forEach((c) => newCards.push(c));
     }
     if (newCards.length) rewards.push(`🃏 새 스킬 학습: ${newCards.join(', ')}`);
     // 유대 성장: 함께 클리어한 유닛일수록 누적(뚝심 육성 보상, §14)
     state.growBond();
     if (state.roster.length) rewards.push('🤝 동료 유대 상승 (HP·공격 보너스, 상한까지)');
-    this.heroLeveledPending = state.addHeroXp(xpGain);
+    this.queueBranchChoices();
+    if (this.branchQueue.length) rewards.push('🌟 분기 진화의 기로 — 형태를 선택하세요!');
     this.ui.showStageClear(def.label, rewards);
     saveRun();
   }
 
-  private heroLeveledPending = false;
-
-  /** '다음으로' 버튼 → 히어로 레벨업 or 갈림길 */
+  /** '다음으로' 버튼 → 분기 진화 선택 or 갈림길 */
   private afterStageClear(): void {
-    if (this.heroLeveledPending) {
-      this.heroLeveledPending = false;
-      const taken = new Set(state.heroSkills);
-      const pool = HERO_SKILLS.filter((s) => !taken.has(s.id));
-      const picks = pool.sort(() => Math.random() - 0.5).slice(0, 3);
-      if (picks.length) { this.ui.showHeroLevelUp(picks); return; }
-    }
+    if (this.processBranchQueue()) return;
     this.showNodeChoice();
   }
 
-  private pickHeroSkill(id: string): void {
-    const skill = HERO_SKILLS.find((s) => s.id === id);
-    if (skill) { state.heroSkills.push(id); state.applyHeroSkill(skill.apply); this.ui.toast(`스킬 획득: ${skill.name}`, 'good'); }
+  /** 분기 선택 대기열 처리. 띄웠으면 true. */
+  private processBranchQueue(): boolean {
+    while (this.branchQueue.length) {
+      const uid = this.branchQueue[0];
+      const u = state.roster.find((x) => x.uid === uid);
+      if (!u || u.branch) { this.branchQueue.shift(); continue; }
+      this.ui.showBranchChoice({
+        uid: u.uid,
+        name: unitName(u),
+        element: u.element,
+        branches: MONSTERS[u.element].branches.map((b) => ({
+          key: b.key, name: b.name, role: b.role, tint: b.tint,
+          signature: CARD_BY_ID[b.signatureCardId]?.name ?? '',
+        })),
+      });
+      return true;
+    }
+    return false;
+  }
+
+  /** 분기 진화 선택 (§5.6) → 시그니처 카드 해금 */
+  private pickBranch(uid: string, key: string): void {
+    const sig = state.chooseBranch(uid, key as 'A' | 'B');
+    const u = state.roster.find((x) => x.uid === uid);
+    if (u && sig) {
+      const br = MONSTERS[u.element].branches.find((b) => b.key === key)!;
+      this.ui.toast(`🌟 ${unitName(u)} → ${br.name}! 시그니처 카드 「${sig}」 해금`, 'good');
+    }
+    this.branchQueue = this.branchQueue.filter((x) => x !== uid);
+    saveRun();
+    if (this.processBranchQueue()) return;
+    // 이벤트(온천) 경로에서 진입했으면 갈림길이 아니라 로비로
+    if (this.pendingLobbyAfterBranch) { this.pendingLobbyAfterBranch = false; this.backToLobby(); return; }
     this.showNodeChoice();
   }
 
@@ -362,7 +412,9 @@ export class Game {
 
   private chooseNode(kind: string): void {
     if (kind === 'buff') {
-      this.ui.showBuffChoice(BUFF_NODES.map((b) => ({ id: b.apply, label: b.label })));
+      // 3택1 (§10) — 풀에서 무작위 3개
+      const picks = BUFF_NODES.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+      this.ui.showBuffChoice(picks.map((b) => ({ id: b.apply, label: b.label })));
     } else if (kind === 'event') {
       const node = EVENT_NODES[Math.floor(Math.random() * EVENT_NODES.length)];
       this.ui.showEvent(node);
@@ -377,10 +429,13 @@ export class Game {
         state.gold += 40;
         this.ui.toast('상인에게서 골드 +40', 'good');
         break;
-      case 'hotspring':
-        state.roster.forEach((u) => state.addUnitXp(u, 40));
-        this.ui.toast('온천 효과! 모든 유닛 성장', 'good');
+      case 'hotspring': {
+        const evolved: string[] = [];
+        state.roster.forEach((u) => { const r = state.addUnitXp(u, 40); if (r.evolved) evolved.push(unitName(u)); });
+        this.ui.toast(evolved.length ? `온천 효과! ${evolved.join(', ')} 진화!` : '온천 효과! 모든 유닛 성장', 'good');
+        this.queueBranchChoices();
         break;
+      }
       case 'egg':
         if (Math.random() < 0.5) { state.gold += 60; this.ui.toast('알에서 금화가! 골드 +60', 'good'); }
         else this.ui.toast('알은 부화하지 않았다…', 'bad');
@@ -391,6 +446,13 @@ export class Game {
         break;
     }
   }
+
+  /** 이벤트 종료 → (온천 진화 시) 분기 선택 → 로비 */
+  private afterEvent(): void {
+    if (this.processBranchQueue()) { this.pendingLobbyAfterBranch = true; return; }
+    this.backToLobby();
+  }
+  private pendingLobbyAfterBranch = false;
 
   /** 갈림길까지 마치면 로비로 복귀. 로비 전투 버튼으로 다음 스테이지 진입. */
   private backToLobby(): void {
@@ -404,7 +466,8 @@ export class Game {
 
   private win(): void {
     this.mode = 'title';
-    this.ui.showWin();
+    const { final } = state.corruptedBosses();
+    this.ui.showWin(MONSTERS[final].stages[2].name);
     clearRun();
   }
 

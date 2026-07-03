@@ -93,14 +93,5 @@ export const ENEMIES: Record<string, EnemyDef> = {
   chimera: { id: 'chimera', name: '일월식의 키메라', element: 'light', hp: 1600, speed: 0.7, attack: 20, leak: 'boss', radius: 2.2, model: 'Dragon_Evolved.gltf', tier: 'boss', desc: '해와 달을 삼킨 최종 시련. 빛과 어둠 두 형상을 오간다.' },
 };
 
-/** 야생(포획 가능) 몬스터는 플레이어블 5종의 야생 버전 — 스테이지가 지정 */
-export const WILD_HP: Record<Element, number> = {
-  water: 55,
-  grass: 50,
-  fire: 45,
-  dark: 60,
-  light: 55,
-};
-
 /** 도감 표시 순서 (선언 순서 그대로). */
 export const BESTIARY_ORDER: string[] = Object.keys(ENEMIES);

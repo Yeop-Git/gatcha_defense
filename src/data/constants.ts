@@ -167,41 +167,12 @@ export const MANA_MAX = 10;
 export const MANA_REGEN = 1.5; // 초당 (후반 고코스트 카드 대응)
 export const HAND_SIZE = 5;
 
-/** 포획 (§9) — 코스트 없는 무속성 카드. HP 비례 성공률. */
-export const CAPTURE = {
-  base: 0.1,
-  hpFactor: 0.6,
-  cap: 0.9,
-} as const;
-
-/**
- * 야생 포획 몬스터 레벨 = 1 + 스테이지 인덱스 (스테이지1=Lv1 … 스테이지10=Lv10).
- * 후반 스테이지일수록 더 높은 레벨(=더 단단)로 등장하지만 **진화하지 않은 1단 형태** 유지(§9).
- * 포획 시 이 레벨로 합류(단, 단계는 1단 고정).
- */
-export const WILD_HP_PER_LEVEL = 0.22; // 야생 HP: 레벨당 +22%
-
-/** 야생 크리처(적) 시각 스케일 — 필드에서 너무 작지 않게. makeCreature 목표높이 배율. */
-export const WILD_CREATURE_SCALE = 1.35;
-
 /** 부유(floating) 연출 파라미터 — 빛/어둠 정령류에만 적용. 나머지는 접지(애니메이션 추후). */
 export const FLOAT = { height: 0.5, amp: 0.16, speed: 1.7 } as const;
 /** 부유 속성인가 (빛/어둠 = 유령·정령류). */
 export function isFloating(el: ElementOrNeutral): boolean {
   return el === 'light' || el === 'dark';
 }
-
-/**
- * 포획 카드(핀 고정, 마나 0). 로스터가 가득 차기 전 = 모집, 가득 차면 = 적 속박으로 전환(§9).
- * 마나 대신 재사용 쿨다운으로 스팸 방지(HP 낮출수록 성공률↑ 설계 유지).
- */
-export const CAPTURE_CARD = {
-  id: 'capture',
-  recruitCd: 2.5, // 모집 모드 재시도 쿨다운(초)
-  bindCd: 6, // 속박 모드 쿨다운(초)
-  bindRadius: 2.8, // 속박 범위
-  bindDuration: 2.5, // 속박 지속(초)
-} as const;
 
 /** 표식 기본 파라미터 (§4.3) */
 export const MARK: Record<MarkType, { duration: number; maxStacks: number }> = {

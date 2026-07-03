@@ -3,9 +3,10 @@ import type { Scene } from '../render/Scene';
 import { type GameState, type OwnedUnit, unitName } from '../core/GameState';
 import type { StageDef } from '../data/stages';
 import type { Element, ElementOrNeutral, Vec2 } from '../core/types';
-import { ENEMIES, WILD_HP } from '../data/enemies';
-import { CARD_BY_ID, CAPTURE_CARD_ID, type CardEffect, type CardElement } from '../data/cards';
-import { UNIT_SLOTS, BASE_LEAK_NORMAL, BASE_LEAK_MINIBOSS, BASE_LEAK_BOSS, CAPTURE, CAPTURE_CARD, WILD_HP_PER_LEVEL, MAX_MONSTERS, ENEMY, BURN_DPS_PER_STACK, OVERGROWTH_DPS, HERO, DARK_KILL_STACK, DARK_KILL_STACK_MAX, ELEMENT_COLOR, NEUTRAL_COLOR } from '../data/constants';
+import { ENEMIES } from '../data/enemies';
+import { CARD_BY_ID, type CardEffect, type CardElement } from '../data/cards';
+import { UNIT_SLOTS, BASE_LEAK_NORMAL, BASE_LEAK_MINIBOSS, BASE_LEAK_BOSS, ENEMY, BURN_DPS_PER_STACK, OVERGROWTH_DPS, HERO, DARK_KILL_STACK, DARK_KILL_STACK_MAX, ELEMENT_COLOR, NEUTRAL_COLOR, SYNERGY_COOLDOWN } from '../data/constants';
+import { CORRUPT_MID_ID, CORRUPT_FINAL_ID, CORRUPT_SKILL, CORRUPT_TINT_P2, corruptedDef } from '../data/corrupted';
 
 /** 속성색 (무속성 포함) */
 const colorOf = (el: ElementOrNeutral): number => (el === 'neutral' ? NEUTRAL_COLOR : ELEMENT_COLOR[el]);
@@ -17,10 +18,11 @@ import { affinity } from './affinity';
 import { DeckSystem } from './DeckSystem';
 import { SynergySystem, type SynergyCtx } from './SynergySystem';
 import { bus } from '../core/events';
+import { tintModel } from '../render/ModelLoader';
 
 type Phase = 'placement' | 'wave' | 'stageClear' | 'lost' | 'won';
 
-interface SpawnEvent { t: number; enemy: string; capture?: Element; captureLevel?: number }
+interface SpawnEvent { t: number; enemy: string }
 
 /** 한 스테이지의 전투 시뮬레이션. 모든 시스템을 조율하는 중심. SynergyCtx 구현. */
 export class Battle implements SynergyCtx {
@@ -30,7 +32,7 @@ export class Battle implements SynergyCtx {
   projectiles: Projectile[] = [];
   zones: GroundZone[] = [];
   deck: DeckSystem;
-  private synergy = new SynergySystem();
+  private synergy: SynergySystem;
 
   waveIndex = 0;
   private waveClock = 0;
@@ -41,20 +43,19 @@ export class Battle implements SynergyCtx {
   private deadUnits: OwnedUnit[] = [];
   private time = 0;
 
-  /** 포획 카드 재사용 쿨다운(초). 마나 0 카드의 스팸 방지. */
-  captureCd = 0;
-
   /** 적 반격 피해 배율 (난이도에 따라 완만히 상승). */
   private enemyAtkScale: number;
-  /** 성(거점) 평타 쿨다운. 주인공을 성에 통합 — 성이 근처 적을 공격 + 포획 담당. */
+  /** 성(거점) 평타 쿨다운 — 경로 끝을 지키는 실질적 방어자. */
   private castleCd = 0;
 
   constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number) {
     this.enemyAtkScale = 1 + (hpScale - 1) * 0.6;
     scene.setTheme(stage.theme);
 
+    // 협동기 내부 쿨다운 = 기본 - 갈림길 버프 감소 (§10, 하한 0.5초)
+    this.synergy = new SynergySystem(Math.max(0.5, SYNERGY_COOLDOWN - state.synergyCdCut));
     this.deck = new DeckSystem(state.manaMax, state.manaRegen);
-    this.deck.drawHand(state.battleDeck(), 5 + state.drawBonus);
+    this.deck.drawHand(state.battleDeck(), 5);
 
     this.autoPlace();
     this.hasDarkS3 = state.roster.some((u) => u.element === 'dark' && u.stage >= 3);
@@ -62,7 +63,7 @@ export class Battle implements SynergyCtx {
   }
 
   // ── 배치 ──────────────────────────────────────────
-  /** 성 좌표 (평타/포획 원점). */
+  /** 성 좌표 (평타 원점). */
   private castleXZ(): Vec2 {
     return { x: this.scene.base.position.x, z: this.scene.base.position.z };
   }
@@ -76,7 +77,7 @@ export class Battle implements SynergyCtx {
     return -1;
   }
 
-  /** 기본 자동 배치: 강한 순 유닛을 빈 슬롯에 (주인공은 성에 통합됨). */
+  /** 기본 자동 배치: 강한 순 유닛을 빈 슬롯에. */
   private autoPlace(): void {
     const sorted = [...this.state.roster].sort((a, b) => b.stage - a.stage || b.level - a.level);
     for (const u of sorted.slice(0, this.state.placementCap)) {
@@ -104,7 +105,7 @@ export class Battle implements SynergyCtx {
     }
   }
 
-  /** 배치 UI용: 로스터 유닛의 배치 상태 목록 (주인공은 성에 통합되어 배치 대상 아님) */
+  /** 배치 UI용: 로스터 유닛의 배치 상태 목록 */
   placeablesState(): { id: string; name: string; element: import('../core/types').ElementOrNeutral; placed: boolean }[] {
     const list: { id: string; name: string; element: import('../core/types').ElementOrNeutral; placed: boolean }[] = [];
     for (const u of this.state.roster) {
@@ -138,7 +139,7 @@ export class Battle implements SynergyCtx {
   beginWave(): void {
     if (this.phase !== 'placement') return;
     // 웨이브 시작 시 손패 보충 (다중 웨이브 중 카드 고갈 방지)
-    this.deck.refillTo(this.state.battleDeck(), 5 + this.state.drawBonus);
+    this.deck.refillTo(this.state.battleDeck(), 5);
     this.phase = 'wave';
     this.waveClock = 0;
     this.spawnQueue = [];
@@ -153,12 +154,19 @@ export class Battle implements SynergyCtx {
   }
 
   private spawn(ev: SpawnEvent): void {
+    // 가지 않은 길 (§9): 타락체 자리표시 → 버린 속성의 동적 보스로 치환
+    if (ev.enemy === CORRUPT_MID_ID || ev.enemy === CORRUPT_FINAL_ID) {
+      const { mid, final } = this.state.corruptedBosses();
+      const role = ev.enemy === CORRUPT_MID_ID ? 'mid' : 'final';
+      const el = role === 'mid' ? mid : final;
+      const e = new Enemy(corruptedDef(el, role), this.hpScale, el);
+      this.scene.entities.add(e.view);
+      this.enemies.push(e);
+      bus.emit('toast', { text: `🌑 ${e.def.name} — 버려진 수호자가 월식에 물들어 돌아왔다!`, kind: 'bad' });
+      return;
+    }
     const def = ENEMIES[ev.enemy] ?? ENEMIES.slime; // 미정의 적 ID는 슬라임으로 폴백(크래시 방지)
-    const cap = !!ev.capture;
-    const level = ev.captureLevel ?? 1;
-    // 야생 HP = 기본 야생 HP × (1 + 레벨 비례). 후반 스테이지일수록 단단(=고레벨).
-    const hpScale = cap ? (WILD_HP[ev.capture!] / def.hp) * (1 + (level - 1) * WILD_HP_PER_LEVEL) : this.hpScale;
-    const e = new Enemy(def, hpScale, cap, ev.capture ?? null, level);
+    const e = new Enemy(def, this.hpScale);
     this.scene.entities.add(e.view);
     this.enemies.push(e);
   }
@@ -168,7 +176,6 @@ export class Battle implements SynergyCtx {
     this.time += dt;
     const t = this.time;
     this.deck.regenMana(dt);
-    if (this.captureCd > 0) this.captureCd = Math.max(0, this.captureCd - dt);
     this.synergy.update(dt);
     this.updateCastleAttack(dt);
     this.scene.setBaseHp(this.state.baseHp / this.state.baseHpMax);
@@ -191,7 +198,7 @@ export class Battle implements SynergyCtx {
     if (this.phase === 'wave' && this.spawnQueue.length === 0 && this.enemies.length === 0) {
       this.onWaveClear();
     }
-    // 패배 판정 (성 HP 0 = 패배; 주인공은 성에 통합)
+    // 패배 판정 (성 HP 0 = 런 종료, §1)
     if (this.state.baseHp <= 0 && this.phase !== 'lost' && this.phase !== 'won') {
       this.phase = 'lost';
       bus.emit('base:destroyed', {});
@@ -203,8 +210,8 @@ export class Battle implements SynergyCtx {
     bus.emit('wave:clear', { stage: this.stage.id, wave: this.waveIndex + 1 });
     this.waveIndex++;
     if (this.waveIndex >= this.totalWaves) {
-      this.phase = this.stage.boss === 'chimera' ? 'won' : 'stageClear';
-      if (this.stage.boss === 'chimera') bus.emit('run:win', {});
+      this.phase = this.stage.boss === 'final' ? 'won' : 'stageClear';
+      if (this.stage.boss === 'final') bus.emit('run:win', {});
       else bus.emit('stage:clear', { stage: this.stage.id });
     } else {
       this.phase = 'placement';
@@ -287,7 +294,7 @@ export class Battle implements SynergyCtx {
       e.update(dt, t);
 
       if (e.reachedBase) {
-        if (!e.capturable) this.leak(e); // 포획 대상 야생은 기지에 피해 없이 사라짐(위협 아님)
+        this.leak(e);
         this.despawn(i);
         continue;
       }
@@ -296,20 +303,85 @@ export class Battle implements SynergyCtx {
         this.despawn(i);
         continue;
       }
-      // 보스 2페이즈: HP 50% 이하에서 빛↔어둠 속성 전환 (양 속성 덱에 창을 열어줌)
-      if (e.isBoss && e.bossPhase === 1 && e.hp <= e.maxHp * 0.5) {
-        e.bossPhase = 2;
-        e.element = e.element === 'light' ? 'dark' : 'light';
-        this.scene.vfx.burst(e.pos.x, e.pos.z, e.element === 'dark' ? 0x4a4e9e : 0xf2ce6b, 26, 4, 2);
-        this.scene.vfx.ring(e.pos.x, e.pos.z, 0xffffff, 5, 0.7);
-        bus.emit('toast', { text: '🌗 키메라 페이즈 2 — 속성 전환!', kind: 'bad' });
+      // 타락체 보스: 시그니처 스킬 AI (§9) + 최종보스 2페이즈
+      if (e.corruptEl) this.updateCorrupted(e, dt);
+      // 적 반격: 근처 방어자(유닛) 타격.
+      if (e.atkCd > 0) e.atkCd -= dt;
+      else if (this.dealEnemyAttack(e)) e.atkCd = 1 / ENEMY.attackSpeed;
+    }
+  }
+
+  /** 타락체 보스 갱신: P2 전환(최종만) + 시그니처 스킬 시전 (§9) */
+  private updateCorrupted(e: Enemy, dt: number): void {
+    const el = e.corruptEl!;
+    // 최종보스 2페이즈: HP 50% — 완전 월식 폭주 (스탯 상승 + 스킬 가속 + 팔레트 심화)
+    if (e.isBoss && e.bossPhase === 1 && e.hp <= e.maxHp * 0.5) {
+      e.bossPhase = 2;
+      e.speed *= 1.3;
+      e.def = { ...e.def, attack: Math.round(e.def.attack * 1.35) };
+      e.abilityInterval *= 0.5;
+      tintModel(e.view, CORRUPT_TINT_P2);
+      this.scene.vfx.burst(e.pos.x, e.pos.z, 0x4a4e9e, 30, 5, 2);
+      this.scene.vfx.ring(e.pos.x, e.pos.z, 0x8a5fae, 6, 0.8);
+      bus.emit('toast', { text: `🌑 완전 월식 — ${e.def.name}이(가) 폭주한다!`, kind: 'bad' });
+    }
+    e.abilityCd -= dt;
+    if (e.abilityCd > 0) return;
+    e.abilityCd = e.abilityInterval;
+    const skill = CORRUPT_SKILL[el];
+    const scale = this.enemyAtkScale * (e.bossPhase === 2 ? 1.3 : 1);
+    const alive = this.units.filter((m) => m.alive);
+    switch (skill.kind) {
+      case 'firezone': { // 무작위 유닛 주변 폭염
+        const target = alive[Math.floor(Math.random() * alive.length)];
+        if (!target) break;
+        for (const m of alive) {
+          if (Math.hypot(m.pos.x - target.pos.x, m.pos.z - target.pos.z) <= 3) {
+            m.takeDamage(Math.round(skill.power * scale));
+            this.scene.vfx.floatText(m.pos.x, m.pos.z, `-${Math.round(skill.power * scale)}`, '#ff6a6a');
+          }
+        }
+        this.scene.vfx.ring(target.pos.x, target.pos.z, ELEMENT_COLOR.fire, 3, 0.5);
+        this.scene.vfx.burst(target.pos.x, target.pos.z, ELEMENT_COLOR.fire, 18);
+        break;
       }
-      // 적 반격: 근처 방어자(유닛) 타격. 포획 대상 야생은 비적대.
-      if (!e.capturable) {
-        if (e.atkCd > 0) e.atkCd -= dt;
-        else if (this.dealEnemyAttack(e)) e.atkCd = 1 / ENEMY.attackSpeed;
+      case 'tidalwave': { // 보스 주변 파도 충격
+        for (const m of alive) {
+          if (Math.hypot(m.pos.x - e.pos.x, m.pos.z - e.pos.z) <= 6) {
+            m.takeDamage(Math.round(skill.power * scale));
+            this.scene.vfx.floatText(m.pos.x, m.pos.z, `-${Math.round(skill.power * scale)}`, '#6ad4ff');
+          }
+        }
+        this.scene.vfx.ring(e.pos.x, e.pos.z, ELEMENT_COLOR.water, 6, 0.6);
+        break;
+      }
+      case 'thornheal': { // 자기 회복
+        const amt = Math.round(e.maxHp * skill.power);
+        e.hp = Math.min(e.maxHp, e.hp + amt);
+        this.scene.vfx.floatText(e.pos.x, e.pos.z, `+${amt}`, '#6fae4c');
+        this.scene.vfx.burst(e.pos.x, e.pos.z, ELEMENT_COLOR.grass, 14);
+        break;
+      }
+      case 'darkdrain': { // 가장 강한 유닛 흡수
+        const target = alive.sort((a, b) => b.hp - a.hp)[0];
+        if (!target) break;
+        const dmg = Math.round(skill.power * scale);
+        target.takeDamage(dmg);
+        e.hp = Math.min(e.maxHp, e.hp + dmg * 2);
+        this.scene.vfx.floatText(target.pos.x, target.pos.z, `-${dmg}`, '#b48ae0');
+        this.scene.vfx.burst(e.pos.x, e.pos.z, ELEMENT_COLOR.dark, 14);
+        break;
+      }
+      case 'judgment': { // 전체 신성 피해
+        for (const m of alive) {
+          m.takeDamage(Math.round(skill.power * scale));
+          this.scene.vfx.floatText(m.pos.x, m.pos.z, `-${Math.round(skill.power * scale)}`, '#ffe08a');
+          this.scene.vfx.burst(m.pos.x, m.pos.z, ELEMENT_COLOR.light, 8);
+        }
+        break;
       }
     }
+    bus.emit('toast', { text: `⚠ ${skill.name}!`, kind: 'bad' });
   }
 
   /** 적이 사거리 내 가장 가까운 방어자를 타격. 명중 시 true. */
@@ -404,8 +476,10 @@ export class Battle implements SynergyCtx {
   vfxBurst(x: number, z: number, color: number, n: number): void {
     this.scene.vfx.burst(x, z, color, n);
   }
-  banner(name: string, a: Element, b: Element, x: number, z: number): void {
-    bus.emit('synergy:fire', { name, x, z, a, b });
+  banner(id: string, name: string, a: Element, b: Element, x: number, z: number): void {
+    // 반응 도감 (§7.3): 최초 발동이면 도감 등록 + 발견 연출
+    const isNew = this.state.discoverSynergy(id);
+    bus.emit('synergy:fire', { id, name, x, z, a, b, discovered: isNew });
   }
 
   // ── 타겟팅 ────────────────────────────────────────
@@ -417,107 +491,30 @@ export class Battle implements SynergyCtx {
       const d = Math.hypot(e.pos.x - x, e.pos.z - z);
       if (d > range) continue;
       let score = e.progress();
-      // 야생(포획 대상)은 후순위: 위협을 먼저 처치하고, 야생은 비살상이라 남는 타격으로만 약화.
-      if (e.capturable) score -= 2;
       if (preferCursed && e.marks.has('curse')) score += 1;
       if (score > bestScore) { bestScore = score; best = e; }
     }
     return best;
   }
 
-  // ── 성(거점) 공격/포획 — 주인공 통합 ──────────────
-  /** 성이 사거리 내 적 공격 (공용 스킬 반영: 회전베기 광역 / 함성 강화). */
+  // ── 성(거점) 방어 ─────────────────────────────────
+  /** 성이 사거리 내 선두 적을 공격 — 경로 끝의 마지막 방어선. */
   private updateCastleAttack(dt: number): void {
     if (this.castleCd > 0) { this.castleCd -= dt; return; }
     const base = this.scene.base.position;
-    const range = HERO.range + this.state.heroRangeBonus;
-    const inRange = this.enemies.filter((e) => e.alive && Math.hypot(e.pos.x - base.x, e.pos.z - base.z) <= range);
+    const inRange = this.enemies.filter((e) => e.alive && Math.hypot(e.pos.x - base.x, e.pos.z - base.z) <= HERO.range);
     if (inRange.length === 0) return;
     this.castleCd = 1 / HERO.attackSpeed;
-    let dmg = HERO.attack;
-    if (this.state.flagWarcry) dmg *= 1.1;
-    const score = (e: Enemy) => e.progress() - (e.capturable ? 2 : 0);
-    const targets = this.state.flagWhirl ? inRange : [inRange.sort((a, b) => score(b) - score(a))[0]];
-    for (const e of targets) {
-      const dealt = e.applyDamage(dmg);
-      this.scene.vfx.floatText(e.pos.x, e.pos.z, String(dealt));
-    }
-    // 성 평타 탄 (선두 대상) — 잘 보이게
-    const primary = targets[0];
-    const p = new Projectile(base, primary, 0xffe08a, 16, false, (hit) => {
+    const target = inRange.sort((a, b) => b.progress() - a.progress())[0];
+    const dealt = target.applyDamage(HERO.attack);
+    this.scene.vfx.floatText(target.pos.x, target.pos.z, String(dealt));
+    // 성 평타 탄 — 잘 보이게
+    const p = new Projectile(base, target, 0xffe08a, 16, false, (hit) => {
       if (hit) this.scene.vfx.burst(hit.pos.x, hit.pos.z, 0xffe08a, 6, 2, 1);
     });
     this.projectiles.push(p);
     this.scene.entities.add(p.mesh);
-    this.scene.vfx.ring(base.x, base.z, this.state.flagWhirl ? 0xf2ce6b : 0xffe08a, this.state.flagWhirl ? range : 2.4, 0.25);
-  }
-
-  // ── 포획 카드 (마나 0, 핀 고정) ────────────────────
-  /** 로스터가 가득 차기 전 = 모집, 가득 차면 = 적 속박(§9). */
-  captureMode(): 'recruit' | 'bind' {
-    return this.state.roster.length >= MAX_MONSTERS ? 'bind' : 'recruit';
-  }
-
-  /** 포획 카드 사용 가능 여부 (쿨다운 + 대상 존재). */
-  capturePlayable(): boolean {
-    if (this.captureCd > 0) return false;
-    if (this.captureMode() === 'recruit') return this.enemies.some((e) => e.alive && e.capturable);
-    return this.enemies.some((e) => e.alive);
-  }
-
-  /** 포획 카드 쿨다운 진행률 0~1 (카드 오버레이 표시용). */
-  captureCdFrac(): number {
-    const max = this.captureMode() === 'bind' ? CAPTURE_CARD.bindCd : CAPTURE_CARD.recruitCd;
-    return this.captureCd > 0 ? this.captureCd / max : 0;
-  }
-
-  /** 포획 카드 시전. point = 드롭 지점(정밀), 없으면 스마트 타깃(더블클릭/키). */
-  playCapture(point?: Vec2): boolean {
-    if (this.captureCd > 0) return false;
-    return this.captureMode() === 'bind' ? this.castBind(point) : this.castRecruit(point);
-  }
-
-  /** 모집: 드롭 지점에 가장 가까운 야생 포획 대상에게 포획구 투척. HP 낮을수록 성공률↑. */
-  private castRecruit(point?: Vec2): boolean {
-    const from = point ?? this.castleXZ();
-    let target: Enemy | null = null;
-    let bd = Infinity;
-    for (const e of this.enemies) {
-      if (!e.alive || !e.capturable) continue;
-      const d = Math.hypot(e.pos.x - from.x, e.pos.z - from.z);
-      if (d < bd) { bd = d; target = e; }
-    }
-    if (!target) { bus.emit('toast', { text: '포획할 야생 몬스터가 없습니다', kind: 'bad' }); return false; }
-    this.captureCd = CAPTURE_CARD.recruitCd;
-    const t = target;
-    const orb = new Projectile(this.scene.base.position, t, 0x4fd0c0, 16, true, (hit) => {
-      if (!hit || !hit.alive) return;
-      const chance = hit.captureChance(CAPTURE.base, CAPTURE.hpFactor, CAPTURE.cap, this.state.captureBonus);
-      const success = Math.random() < chance;
-      bus.emit('capture:attempt', { success, chance, element: hit.captureElement! });
-      if (success) {
-        this.captureEnemy(hit);
-      } else {
-        if (this.state.flagThrowBoost) { hit.applyDamage(15); hit.zoneSlow = 0.4; }
-        this.scene.vfx.burst(hit.pos.x, hit.pos.z, 0x888888, 8);
-      }
-    });
-    this.projectiles.push(orb);
-    this.scene.entities.add(orb.mesh);
-    return true;
-  }
-
-  /** 속박: 로스터가 가득 찬 뒤의 포획 카드. 지점 주변 적을 짧게 묶는다. */
-  private castBind(point?: Vec2): boolean {
-    const p = point ?? this.frontEnemyPoint() ?? this.castleXZ();
-    const hit = this.enemiesInRadius(p.x, p.z, CAPTURE_CARD.bindRadius);
-    if (hit.length === 0) { bus.emit('toast', { text: '속박할 적이 없습니다', kind: 'bad' }); return false; }
-    this.captureCd = CAPTURE_CARD.bindCd;
-    for (const e of hit) e.rootTimer = Math.max(e.rootTimer, CAPTURE_CARD.bindDuration);
-    this.scene.vfx.ring(p.x, p.z, 0x4fd0c0, CAPTURE_CARD.bindRadius, 0.5);
-    this.scene.vfx.burst(p.x, p.z, 0x4fd0c0, 12);
-    bus.emit('toast', { text: `적 ${hit.length}체 속박!`, kind: 'good' });
-    return true;
+    this.scene.vfx.ring(base.x, base.z, 0xffe08a, 2.4, 0.25);
   }
 
   /** 가장 앞선(기지 근접) 살아있는 적 위치 — 스마트 타깃용. */
@@ -528,26 +525,6 @@ export class Battle implements SynergyCtx {
       if (!best || e.progress() > best.progress()) best = e;
     }
     return best ? { x: best.pos.x, z: best.pos.z } : null;
-  }
-
-  private captureEnemy(e: Enemy): void {
-    const el = e.captureElement!;
-    const isDup = this.state.hasElement(el);
-    const full = this.state.monstersFull && !isDup;
-    if (full) {
-      // 최대 3종 → 신규 불가. 골드로 보상.
-      this.state.gold += 15;
-      bus.emit('toast', { text: `몬스터 슬롯 가득 참 (최대 ${this.state.roster.length}종). 골드 획득`, kind: 'bad' });
-    } else {
-      this.state.giveUnit(el, e.captureLevel); // 중복이면 내부에서 경험치 처리
-      bus.emit('toast', { text: isDup ? '중복 포획! 경험치 획득' : `야생 몬스터 포획 성공! (Lv${e.captureLevel})`, kind: 'good' });
-    }
-    bus.emit('capture:done', { element: el });
-    this.scene.vfx.ring(e.pos.x, e.pos.z, 0x4fd0c0, 4, 0.6);
-    this.scene.vfx.burst(e.pos.x, e.pos.z, 0x4fd0c0, 24);
-    e.alive = false;
-    const i = this.enemies.indexOf(e);
-    if (i >= 0) this.despawn(i);
   }
 
   // ── 투사체/장판 ───────────────────────────────────
@@ -582,10 +559,9 @@ export class Battle implements SynergyCtx {
   // ── 카드 사용 ─────────────────────────────────────
   /**
    * 카드 시전. point = 전장 드롭 지점(드래그, 정밀). 없으면 지점형 카드는
-   * 최전방 적을 스마트 타깃(더블클릭/숫자키). 포획 카드는 특수 처리.
+   * 최전방 적을 스마트 타깃(더블클릭/숫자키).
    */
   playCard(id: string, point?: Vec2): boolean {
-    if (id === CAPTURE_CARD_ID) return this.playCapture(point);
     const def = CARD_BY_ID[id];
     if (!def) return false;
     // 부활 카드: 대상이 없으면 마나 소모 전에 차단 (헛시전 방지)
@@ -683,7 +659,7 @@ export class Battle implements SynergyCtx {
         break;
       }
       case 'cleanseHeal':
-        this.units.forEach((m) => { m.heal(fx.amount); m.cleanse(); });
+        this.units.forEach((m) => { m.heal(fx.amount); m.cleanse(); this.scene.vfx.floatText(m.pos.x, m.pos.z, `+${fx.amount}`, '#6fae4c'); });
         break;
       case 'judgment':
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
@@ -700,6 +676,11 @@ export class Battle implements SynergyCtx {
           this.state.reviveAvailable = false;
           bus.emit('toast', { text: '유닛 부활!', kind: 'good' });
         }
+        break;
+      case 'baseHeal':
+        this.state.heal(fx.amount);
+        this.scene.vfx.ring(this.scene.base.position.x, this.scene.base.position.z, 0x6fae4c, 3.5, 0.5);
+        bus.emit('toast', { text: `성 HP +${fx.amount}`, kind: 'good' });
         break;
       case 'overheat':
         this.units.filter((m) => m.element === 'fire').forEach((m) => { m.overheatMult = fx.mult; m.overheatTimer = fx.duration; });
@@ -732,9 +713,8 @@ export class Battle implements SynergyCtx {
     }
   }
 
-  /** 스테이지 종료 시 호출 — 죽은 유닛/hero hp 상태를 GameState에 반영, 정리 */
+  /** 스테이지 종료 시 호출 — 정리 */
   finish(): void {
-    // 죽은 유닛 추적 (부활 카드용은 스테이지 내 한정이므로 리셋)
     this.deadUnits = [];
     for (const m of [...this.units]) m.dispose(this.scene.entities);
     for (const e of [...this.enemies]) e.dispose(this.scene.entities);

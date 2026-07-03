@@ -24,6 +24,7 @@ export type CardEffect =
   | { kind: 'cleanseHeal'; amount: number }
   | { kind: 'judgment'; amount: number; radius: number; darkBonus: number }
   | { kind: 'revive' }
+  | { kind: 'baseHeal'; amount: number }
   | { kind: 'overheat'; mult: number; duration: number }
   | { kind: 'draw'; n: number }
   | { kind: 'placementUp'; n: number }
@@ -42,6 +43,8 @@ export interface CardDef {
   target: CardTarget;
   text: string;
   effect: CardEffect;
+  /** 분기 시그니처 카드 (§5.6): 해당 분기를 선택해야만 해금 */
+  branch?: 'A' | 'B';
 }
 
 // ── CSV 파싱 ─────────────────────────────────────────
@@ -78,6 +81,7 @@ function buildEffect(kind: string, p: Params, cardEl: CardElement): CardEffect {
     case 'cleanseHeal': return { kind, amount: num(p, 'amount') };
     case 'judgment': return { kind, amount: num(p, 'amount'), radius: num(p, 'radius', 2), darkBonus: num(p, 'darkBonus', 1.5) };
     case 'revive': return { kind };
+    case 'baseHeal': return { kind, amount: num(p, 'amount', 25) };
     case 'overheat': return { kind, mult: num(p, 'mult', 2), duration: num(p, 'duration', 8) };
     case 'draw': return { kind, n: num(p, 'n', 1) };
     case 'placementUp': return { kind, n: num(p, 'n', 1) };
@@ -93,7 +97,7 @@ function parseCsv(csv: string): CardDef[] {
   const out: CardDef[] = [];
   for (let i = 1; i < lines.length; i++) {
     const c = lines[i].split(',');
-    const [id, character, name, element, learn, cost, target, kind, params, ...textParts] = c;
+    const [id, character, name, element, learn, cost, target, kind, params, branch, ...textParts] = c;
     const text = textParts.join(',');
     out.push({
       id,
@@ -105,6 +109,7 @@ function parseCsv(csv: string): CardDef[] {
       target: target as CardTarget,
       text,
       effect: buildEffect(kind, parseParams(params), element as CardElement),
+      branch: branch === 'A' || branch === 'B' ? branch : undefined,
     });
   }
   return out;
@@ -113,25 +118,7 @@ function parseCsv(csv: string): CardDef[] {
 export const CARDS: CardDef[] = parseCsv(rawCsv);
 export const CARD_BY_ID: Record<string, CardDef> = Object.fromEntries(CARDS.map((c) => [c.id, c]));
 
-/**
- * 포획 카드 — 손패에 항상 고정(핀)되는 특수 카드. 마나 0, 무속성.
- * 덱 셔플/소모 대상이 아니며 Battle이 모드(모집/속박)에 따라 특수 처리한다.
- * effect는 형식상 값(실제 실행은 Battle.playCapture).
- */
-export const CAPTURE_CARD_ID = 'capture';
-CARD_BY_ID[CAPTURE_CARD_ID] = {
-  id: CAPTURE_CARD_ID,
-  character: 'hero',
-  name: '포획',
-  element: 'normal',
-  learnLevel: 1,
-  cost: 0,
-  target: 'point',
-  text: '야생 몬스터 포획 (동료 최대 3)',
-  effect: { kind: 'coinflip' },
-};
-
-/** 캐릭터의 전체 스킬 (20개) */
+/** 캐릭터의 전체 스킬 */
 export function cardsOfCharacter(character: DeckCharacter): CardDef[] {
   return CARDS.filter((c) => c.character === character).sort((a, b) => a.learnLevel - b.learnLevel);
 }
@@ -146,7 +133,6 @@ const ELEM_FALLBACK: Record<CardElement, string> = {
  */
 export function cardIcon(def: CardDef): string {
   const n = def.name;
-  if (def.id === CAPTURE_CARD_ID) return '🎯';
 
   // 1) 상징(전설/궁극) 이름
   if (/구미염|여우/.test(n)) return '🦊';
@@ -164,6 +150,7 @@ export function cardIcon(def: CardDef): string {
     case 'blessOne': return '😇';
     case 'judgment': return '⚖️';
     case 'revive': return '🕊️';
+    case 'baseHeal': return '⛑️';
     case 'draw': return '🃏';
     case 'coinflip': return '🪙';
     case 'placementUp': return '🚩';
