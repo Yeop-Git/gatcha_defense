@@ -1,0 +1,253 @@
+import * as THREE from 'three';
+import type { Element, ElementOrNeutral } from '../core/types';
+import { ELEMENT_COLOR, NEUTRAL_COLOR, ELEMENT_ICON } from '../data/constants';
+import { attachModel, modelFile, addOutline } from './ModelLoader';
+
+/**
+ * 폴백 우선 원칙: GLB 모델이 없으면 속성 색 캡슐 + 머리 위 속성 아이콘.
+ * 에셋 없이 완전 플레이 가능해야 함. (CLAUDE.md 원칙 4)
+ * TODO(asset: mon_{element}_{stage}.glb) — 모델 준비되면 loadGLB로 교체.
+ */
+
+function elementColor(el: ElementOrNeutral): number {
+  return el === 'neutral' ? NEUTRAL_COLOR : ELEMENT_COLOR[el];
+}
+
+/** 카툰 셰이딩용 unlit 머티리얼 (GLB 변환과 동일한 flat 룩). */
+function toonMat(color: number, opts: { transparent?: boolean; opacity?: number } = {}): THREE.MeshBasicMaterial {
+  const m = new THREE.MeshBasicMaterial({ color });
+  if (opts.transparent !== undefined) m.transparent = opts.transparent;
+  if (opts.opacity !== undefined) m.opacity = opts.opacity;
+  return m;
+}
+
+/**
+ * 크리처 뷰(makeCreature/makeEnemy/makeHero/makeBase 기반) 자원 해제.
+ * - 아웃라인 메시(userData.outline): 공유 싱글턴 머티리얼 + 부모 지오메트리 공유 → 절대 dispose 금지.
+ * - 폴백 메시(userData.placeholder): 개체 고유 지오메트리/머티리얼 → dispose.
+ * - 그 외(클론된 GLB 메시): 캐시와 지오메트리/머티리얼 공유 → dispose 금지(다음 클론이 깨짐).
+ * - 스프라이트(이름표/표식/아이콘): 개체 고유 캔버스 텍스처 → map+material dispose.
+ */
+export function disposeCreatureView(view: THREE.Object3D): void {
+  view.traverse((o) => {
+    if (o.userData.outline) return;
+    if (o instanceof THREE.Mesh) {
+      if (o.userData.placeholder) {
+        o.geometry.dispose();
+        (o.material as THREE.Material).dispose();
+      }
+    } else if (o instanceof THREE.Sprite) {
+      const sm = o.material as THREE.SpriteMaterial;
+      sm.map?.dispose();
+      sm.dispose();
+    }
+  });
+}
+
+/** 텍스트/이모지 스프라이트 (아이콘·표식·중첩수) */
+export function makeTextSprite(text: string, size = 0.9, bg?: string): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  if (bg) {
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.arc(64, 64, 58, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.font = '84px "Jua", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 64, 72);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 4;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const sp = new THREE.Sprite(mat);
+  sp.scale.set(size, size, size);
+  return sp;
+}
+
+/**
+ * 이름표/텍스트 라벨 스프라이트 — 여러 글자(한글 이름/Lv)도 안 깨지게 폭을 텍스트에 맞춰 생성.
+ * (makeTextSprite는 128²에 84px 단일 이모지 전용이라 다글자 텍스트가 잘림.)
+ */
+export function makeLabelSprite(text: string, opts: { color?: string; worldHeight?: number } = {}): THREE.Sprite {
+  const font = 46;
+  const pad = 12;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d')!;
+  ctx.font = `bold ${font}px 'Jua', sans-serif`;
+  const w = Math.max(32, Math.ceil(ctx.measureText(text).width) + pad * 2);
+  const h = font + pad * 2;
+  canvas.width = w; canvas.height = h;
+  ctx.font = `bold ${font}px 'Jua', sans-serif`; // 캔버스 리사이즈로 상태 초기화됨 → 재설정
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 7;
+  ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+  ctx.strokeText(text, w / 2, h / 2 + 2);
+  ctx.fillStyle = opts.color ?? '#ffffff';
+  ctx.fillText(text, w / 2, h / 2 + 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 4;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  const hgt = opts.worldHeight ?? 0.5;
+  sp.scale.set(hgt * (w / h), hgt, 1);
+  return sp;
+}
+
+/** HP 등 상태 바 스프라이트 (금테). set(frac)로 갱신. */
+export function makeBarSprite(worldWidth = 3, color = '#e05a4a'): { sprite: THREE.Sprite; set: (frac: number) => void } {
+  const W = 100, H = 16;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const tex = new THREE.CanvasTexture(canvas);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sp.scale.set(worldWidth, worldWidth * (H / W), 1);
+  let last = -1;
+  const set = (frac: number): void => {
+    const q = Math.round(Math.max(0, Math.min(1, frac)) * 100);
+    if (q === last) return; // 값이 바뀔 때만 캔버스 재렌더 (매 프레임 재업로드 방지)
+    last = q;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(20,14,8,0.72)';
+    ctx.fillRect(0, 0, W, H);
+    const f = Math.max(0, Math.min(1, frac));
+    ctx.fillStyle = f > 0.5 ? color : f > 0.25 ? '#d8a93b' : '#c0392b';
+    ctx.fillRect(3, 3, (W - 6) * f, H - 6);
+    ctx.strokeStyle = '#d8a93b';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, W - 2, H - 2);
+    tex.needsUpdate = true;
+  };
+  set(1);
+  return { sprite: sp, set };
+}
+
+/** 유닛/야생 몬스터 폴백 캡슐 (속성색 + 아이콘). height로 진화 크기 표현. */
+export function makeCreature(el: Element, scale = 1, stage = 1): THREE.Group {
+  const g = new THREE.Group();
+  const color = elementColor(el);
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.55 * scale, 0.5 * scale, 6, 12),
+    toonMat(color),
+  );
+  body.position.y = 0.75 * scale;
+  body.userData.placeholder = true;
+  addOutline(body);
+  g.add(body);
+  g.userData.body = body; // 바운스 연출용 (Enemy가 야생 렌더에 재사용)
+  // 볼터치/눈 느낌의 흰 점 두 개
+  for (const sx of [-0.22, 0.22]) {
+    const eye = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09 * scale, 8, 8),
+      toonMat(0x2b2b2b),
+    );
+    eye.position.set(sx * scale, 0.9 * scale, 0.48 * scale);
+    eye.userData.placeholder = true;
+    g.add(eye);
+  }
+  const icon = makeTextSprite(ELEMENT_ICON[el], 0.7 * scale);
+  icon.position.y = 1.7 * scale;
+  icon.userData.placeholder = true;
+  g.add(icon);
+  g.userData.baseY = 0;
+  attachModel(g, modelFile.creature(el, stage), 1.6 * scale);
+  return g;
+}
+
+/** 주인공 폴백 (무속성 회색 + 모자 느낌 원뿔) */
+export function makeHero(): THREE.Group {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.5, 0.7, 6, 12),
+    toonMat(0xdcc9a0),
+  );
+  body.position.y = 0.85;
+  body.userData.placeholder = true;
+  addOutline(body);
+  g.add(body);
+  const hat = new THREE.Mesh(
+    new THREE.ConeGeometry(0.45, 0.6, 12),
+    toonMat(0x5c4028),
+  );
+  hat.position.y = 1.55;
+  hat.userData.placeholder = true;
+  addOutline(hat);
+  g.add(hat);
+  // 정면 표시용 코 (방향감)
+  const nose = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 8, 8),
+    toonMat(0xd8a93b),
+  );
+  nose.position.set(0, 0.95, 0.5);
+  nose.userData.placeholder = true;
+  g.add(nose);
+  attachModel(g, modelFile.hero(), 1.7);
+  return g;
+}
+
+/** 적 폴백 (속성색 + 살짝 어둡게 + 각진 형태로 아군과 구분) */
+export function makeEnemy(el: ElementOrNeutral, radius: number, flying?: boolean, model?: string): THREE.Group {
+  const g = new THREE.Group();
+  const color = elementColor(el);
+  const geo = flying
+    ? new THREE.OctahedronGeometry(radius, 0)
+    : new THREE.DodecahedronGeometry(radius, 0);
+  const body = new THREE.Mesh(geo, toonMat(color));
+  body.position.y = flying ? radius + 1.2 : radius;
+  body.userData.placeholder = true;
+  addOutline(body);
+  g.add(body);
+  g.userData.body = body;
+  if (model) {
+    attachModel(g, modelFile.enemy(model), radius * 2.2);
+  }
+  return g;
+}
+
+/** 지키는 성(거점) — 카툰 로우폴리 성채(주인공 통합). 위에 HP 바가 떠 있음. */
+export function makeBase(): THREE.Group {
+  const g = new THREE.Group();
+  const STONE = 0x9a8f7a, STONE_D = 0x7a6f5c, ROOF = 0xc0392b, GOLD = 0xd8a93b;
+  const addPart = (mesh: THREE.Mesh, x: number, y: number, z: number): THREE.Mesh => {
+    mesh.position.set(x, y, z);
+    mesh.userData.placeholder = true;
+    addOutline(mesh);
+    g.add(mesh);
+    return mesh;
+  };
+  // 잔디 위 성터(원형 받침)
+  addPart(new THREE.Mesh(new THREE.CylinderGeometry(2.9, 3.2, 0.5, 16), toonMat(STONE_D)), 0, 0.25, 0);
+  // 성벽(사각 본체)
+  addPart(new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.8, 3.6), toonMat(STONE)), 0, 1.4, 0);
+  // 중앙 첨탑(본성)
+  addPart(new THREE.Mesh(new THREE.BoxGeometry(1.9, 2.6, 1.9), toonMat(STONE)), 0, 3.2, 0);
+  addPart(new THREE.Mesh(new THREE.ConeGeometry(1.6, 1.6, 4), toonMat(ROOF)), 0, 5.1, 0).rotation.y = Math.PI / 4;
+  // 네 모서리 탑
+  for (const [sx, sz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]] as const) {
+    addPart(new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 2.8, 8), toonMat(STONE)), sx, 1.9, sz);
+    addPart(new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.1, 8), toonMat(ROOF)), sx, 3.7, sz);
+  }
+  // 성벽 흉벽(크레넬레이션)
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+    addPart(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), toonMat(STONE_D)), Math.cos(a) * 1.7, 2.45, Math.sin(a) * 1.7);
+  }
+  // 수호 코어(발광 크리스털) — 본성 위
+  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), toonMat(0x6fd0e8));
+  crystal.position.y = 6.4;
+  crystal.userData.placeholder = true;
+  addOutline(crystal);
+  g.add(crystal);
+  g.userData.crystal = crystal;
+  // 금색 깃대
+  addPart(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 6), toonMat(GOLD)), 0, 6.0, 0);
+  // 떠 있는 HP 바
+  const bar = makeBarSprite(4.2);
+  bar.sprite.position.set(0, 7.3, 0);
+  g.add(bar.sprite);
+  g.userData.hpbar = bar;
+  return g;
+}
