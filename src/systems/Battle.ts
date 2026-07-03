@@ -131,7 +131,7 @@ export class Battle implements SynergyCtx {
 
   // ── 웨이브 ────────────────────────────────────────
   get totalWaves(): number {
-    return this.stage.waves.length + (this.stage.captureElements.length > 0 ? 1 : 0);
+    return this.stage.waves.length;
   }
 
   /** 다음 웨이브 시작 (UI 버튼) */
@@ -142,29 +142,10 @@ export class Battle implements SynergyCtx {
     this.phase = 'wave';
     this.waveClock = 0;
     this.spawnQueue = [];
-    const captureWave = this.stage.captureElements.length > 0 && this.waveIndex === 0;
-    if (captureWave) {
-      // 모든 스테이지 웨이브1: 5속성 캐릭터의 1단(첫번째 단계) 야생이 모두 등장 → 포획 가능.
-      // 야생 레벨은 스테이지에 따라 상승(진화는 안 됨).
-      const wildLevel = 1 + this.state.stageIndex;
-      let t = 0.6;
-      for (const el of this.stage.captureElements) {
-        this.spawnQueue.push({ t, enemy: 'slime', capture: el, captureLevel: wildLevel });
-        t += 1.3;
-      }
-      // 가벼운 잡몹 섞기 (페이싱)
-      for (let k = 0; k < 2; k++) this.spawnQueue.push({ t: 1.6 + k * 1.7, enemy: 'slime' });
-      // 포획 온보딩 힌트 (초반 스테이지만)
-      if (this.state.stageIndex <= 1 && !this.state.monstersFull) {
-        bus.emit('toast', { text: '✨ 반짝이는 야생 몬스터! 공격으로 HP를 낮춘 뒤 🎯 포획 카드를 몬스터로 드래그(또는 F)', kind: 'info' });
-      }
-    } else {
-      const waveDefIndex = this.stage.captureElements.length > 0 ? this.waveIndex - 1 : this.waveIndex;
-      const groups = this.stage.waves[waveDefIndex] ?? [];
-      for (const g of groups) {
-        for (let k = 0; k < g.count; k++) {
-          this.spawnQueue.push({ t: k * g.interval, enemy: g.enemy });
-        }
+    const groups = this.stage.waves[this.waveIndex] ?? [];
+    for (const g of groups) {
+      for (let k = 0; k < g.count; k++) {
+        this.spawnQueue.push({ t: k * g.interval, enemy: g.enemy });
       }
     }
     this.spawnQueue.sort((a, b) => a.t - b.t);
@@ -172,7 +153,7 @@ export class Battle implements SynergyCtx {
   }
 
   private spawn(ev: SpawnEvent): void {
-    const def = ENEMIES[ev.enemy];
+    const def = ENEMIES[ev.enemy] ?? ENEMIES.slime; // 미정의 적 ID는 슬라임으로 폴백(크래시 방지)
     const cap = !!ev.capture;
     const level = ev.captureLevel ?? 1;
     // 야생 HP = 기본 야생 HP × (1 + 레벨 비례). 후반 스테이지일수록 단단(=고레벨).
@@ -245,7 +226,7 @@ export class Battle implements SynergyCtx {
       if (m.atkCd > 0) continue;
       const target = this.frontTargetInRange(m.pos.x, m.pos.z, m.stats.range, m.element === 'dark');
       if (!target) continue;
-      m.atkCd = 1 / m.stats.attackSpeed;
+      m.atkCd = 1 / m.effAttackSpeed();
       this.fireUnitShot(m, target);
     }
   }
@@ -739,6 +720,14 @@ export class Battle implements SynergyCtx {
       case 'coinflip':
         if (Math.random() < 0.5) { this.state.gold += 20; bus.emit('toast', { text: '동전 앞면! 골드 +20', kind: 'good' }); }
         else bus.emit('toast', { text: '동전 뒷면… 꽝', kind: 'bad' });
+        break;
+      case 'bind':
+        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) e.rootTimer = Math.max(e.rootTimer, fx.duration);
+        this.scene.vfx.ring(p.x, p.z, 0xb8a888, fx.radius, 0.5);
+        this.scene.vfx.burst(p.x, p.z, 0xb8a888, 12);
+        break;
+      case 'haste':
+        this.units.forEach((m) => { m.applyHaste(fx.mult, fx.duration); this.scene.vfx.burst(m.pos.x, m.pos.z, 0xf2ce6b, 6); });
         break;
     }
   }

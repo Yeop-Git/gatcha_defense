@@ -12,7 +12,7 @@ export interface HudInfo {
   baseHp: number; baseHpMax: number;
   mana: number; manaMax: number;
   wave: number; totalWaves: number;
-  recruitUsed: number; recruitMax: number; gold: number;
+  gold: number;
   enemiesLeft: number;
   phaseLabel: string;
   showBeginWave: boolean;
@@ -60,6 +60,7 @@ export class UI {
   onHeroSkill = (_id: string) => {};
   onNode = (_kind: string) => {};
   onBuffPick = (_id: string) => {};
+  onDraftPick = (_element: string) => {};
   onEventPick = (_id: string) => {};
   onNext = () => {};
   onRestart = () => {};
@@ -116,8 +117,8 @@ export class UI {
       <div class="logo">Monster Keepers</div>
       <div class="sub">귀여운 몬스터를 포획해 나만의 덱을 키우는 탑뷰 디펜스 로그라이크</div>
       <button class="btn primary" id="start-btn">모험 시작</button>
-      <div class="tip">중앙의 <b>성(거점)</b>이 근처 적을 자동 공격하고 포획을 담당 · 웨이브 사이에 포획한 <b>몬스터를 슬롯에 배치</b>(자동 공격)<br/>
-      카드는 <b>전장으로 드래그</b>하거나 <b>더블클릭</b>해 스킬·버프 사용 · <b>포획 카드(무료)</b>로 반짝이는 야생 몬스터를 모집 (HP 낮을수록 성공률↑, 최대 3종 → 이후 적 속박)</div>`;
+      <div class="tip">스테이지 1·2·3 시작마다 <b>수호 몬스터 3택1 드래프트</b> — 3마리를 뽑아 키운다 (안 뽑은 2종은 후반 타락체 보스로 회귀!)<br/>
+      웨이브 사이 <b>몬스터를 슬롯에 배치</b>(자동 공격) · 카드는 <b>전장으로 드래그</b>하거나 <b>더블탭</b>해 스킬·버프 사용 · 성(거점)이 근처 적을 자동 방어</div>`;
     this.root.appendChild(this.title);
     (this.title.querySelector('#start-btn') as HTMLButtonElement).onclick = () => this.onStart();
   }
@@ -147,11 +148,10 @@ export class UI {
       </div>
       <div class="chip">🌊 <span id="wave-val">웨이브 -</span></div>
       <div class="chip" title="남은 적">👹 <span id="enemy-val">0</span></div>
-      <div class="chip" title="보유 동료 / 최대(포획 카드로 모집)">🐾 <span id="recruit-val">0/3</span></div>
       <div class="chip">🪙 <span id="gold-val">0</span></div>
       <div class="chip stage-label"><span id="stage-val">스테이지</span></div>`;
     this.root.appendChild(this.hudTop);
-    ['hp-bar','hp-val','wave-val','enemy-val','recruit-val','gold-val','stage-val'].forEach((id) => {
+    ['hp-bar','hp-val','wave-val','enemy-val','gold-val','stage-val'].forEach((id) => {
       this.refs[id] = this.hudTop.querySelector('#' + id) as HTMLElement;
     });
     this.buildManaBar();
@@ -195,7 +195,6 @@ export class UI {
     this.refs['mana-max'].textContent = `${info.manaMax}`;
     this.refs['wave-val'].textContent = `웨이브 ${info.wave}/${info.totalWaves}`;
     this.refs['enemy-val'].textContent = `${info.enemiesLeft}`;
-    this.refs['recruit-val'].textContent = `${info.recruitUsed}/${info.recruitMax}`;
     this.refs['gold-val'].textContent = `${info.gold}`;
     this.refs['stage-val'].textContent = info.stageLabel;
     this.beginCta.style.display = info.showBeginWave ? 'flex' : 'none';
@@ -306,7 +305,7 @@ export class UI {
   // ── 배치 바 (웨이브 사이에만 표시) ──
   showPlacement(items: { id: string; name: string; element: string; placed: boolean }[]): void {
     this.placementBar.style.display = 'flex';
-    this.placementBar.innerHTML = `<div class="place-hint">🪵 배치: 몬스터를 눌러 슬롯에 놓거나 회수 (성은 거점에서 자동 방어·포획)</div>`;
+    this.placementBar.innerHTML = `<div class="place-hint">🪵 배치: 몬스터를 눌러 슬롯에 놓거나 회수 (성은 거점에서 자동 방어)</div>`;
     const row = el('div', 'place-row');
     for (const it of items) {
       const icon = it.element === 'neutral' ? '🧑' : (ELEMENT_ICON as Record<string, string>)[it.element] ?? '❓';
@@ -332,6 +331,26 @@ export class UI {
     return scroll;
   }
   clearModal(): void { this.modalHost.innerHTML = ''; }
+
+  /** 드래프트: 미보유 3종을 세로 카드로 제시. 3택1. */
+  showDraft(elements: Element[]): void {
+    const scroll = this.modal(`<h1>수호 몬스터 선택</h1>
+      <p>함께 싸울 몬스터를 하나 고르세요.</p>
+      <div class="choice-row draft-row"></div>`);
+    const row = scroll.querySelector('.choice-row')!;
+    for (const elm of elements) {
+      const def = MONSTERS[elm];
+      const s1 = def.stages[0];
+      const card = el('div', `choice draft-card el-${elm}`,
+        `<div class="dc-el">${ELEMENT_ICON[elm]} ${ELEMENT_NAME_KO[elm]}</div>
+         <div class="dc-ico">${ELEMENT_ICON[elm]}</div>
+         <div class="ct">${s1.name}</div>
+         <div class="cd">${s1.role}</div>`);
+      applyPortrait(card.querySelector('.dc-ico') as HTMLElement, elm, 1);
+      card.onclick = () => { this.clearModal(); this.onDraftPick(elm); };
+      row.appendChild(card);
+    }
+  }
 
   showHeroLevelUp(skills: { id: string; name: string; desc: string }[]): void {
     const scroll = this.modal(`<h1>레벨 업!</h1><p>공용 스킬을 하나 선택하세요.</p><div class="choice-row"></div>`);

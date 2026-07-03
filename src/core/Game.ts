@@ -6,8 +6,9 @@ import { saveRun, clearRun } from './save';
 import { Battle } from '../systems/Battle';
 import { STAGES, BUFF_NODES, EVENT_NODES } from '../data/stages';
 import { HERO_SKILLS } from '../data/skills';
-import { cardsOfCharacter, CARD_BY_ID, CAPTURE_CARD_ID, cardIcon } from '../data/cards';
-import { DIFFICULTY_JUMP_MULT, FIXED_DT, MAX_MONSTERS } from '../data/constants';
+import { cardsOfCharacter, CARD_BY_ID, cardIcon } from '../data/cards';
+import type { Element } from './types';
+import { DIFFICULTY_JUMP_MULT, FIXED_DT } from '../data/constants';
 import { bus } from './events';
 
 type Mode = 'title' | 'lobby' | 'battle' | 'viewer' | 'manage';
@@ -48,6 +49,7 @@ export class Game {
     this.ui.onHeroSkill = (id) => this.pickHeroSkill(id);
     this.ui.onNode = (kind) => this.chooseNode(kind);
     this.ui.onBuffPick = (id) => { state.applyBuff(id); this.backToLobby(); };
+    this.ui.onDraftPick = (el) => this.pickDraft(el);
     this.ui.onEventPick = (id) => { this.applyEvent(id); this.backToLobby(); };
     this.ui.onNext = () => this.afterStageClear();
     this.ui.onRestart = () => { clearRun(); this.startRun(); };
@@ -69,10 +71,9 @@ export class Game {
   }
 
   private wireInput(): void {
-    // 주인공은 고정 배치형 — 이동 입력 없음. F/Space = 포획 카드(스마트), 숫자키 = 손패 카드 스마트 시전.
+    // 숫자키 = 손패 카드 스마트 시전.
     window.addEventListener('keydown', (e) => {
       if (this.mode !== 'battle' || !this.battle || this.paused) return;
-      if (e.code === 'KeyF' || e.code === 'Space') { e.preventDefault(); this.smartCast(CAPTURE_CARD_ID); return; }
       if (e.code.startsWith('Digit')) {
         const idx = parseInt(e.code.slice(5)) - 1;
         const id = this.battle.deck.hand[idx];
@@ -88,7 +89,6 @@ export class Game {
   private lastTapId = '';
   private lastTapAt = 0;
   private tapHintShown = false;
-  private bindToastShown = false;
 
   /** 하단 카드 선반 높이(px) — 그 위쪽이 전장. isOverField 판정용. */
   private static readonly SHELF_H = 176;
@@ -169,10 +169,9 @@ export class Game {
   private makeDragGhost(id: string): HTMLElement {
     const ghost = document.createElement('div');
     ghost.className = 'card-drag-ghost';
-    const cap = id === CAPTURE_CARD_ID;
     const def = CARD_BY_ID[id];
-    const icon = cap ? '🎯' : (def ? cardIcon(def) : '⚪');
-    const name = cap ? (this.battle?.captureMode() === 'bind' ? '속박' : '포획') : (def?.name ?? '카드');
+    const icon = def ? cardIcon(def) : '⚪';
+    const name = def?.name ?? '카드';
     ghost.innerHTML = `<div class="dg-ico">${icon}</div><div class="dg-name">${name}</div>`;
     document.body.appendChild(ghost);
     return ghost;
@@ -210,6 +209,19 @@ export class Game {
   private enterBattle(): void {
     this.ui.hideLobby();
     this.mode = 'battle';
+    // v3: 스테이지 1·2·3 시작 시 3택1 드래프트 먼저
+    if (state.needsDraft) {
+      this.paused = true;
+      this.ui.showDraft(state.draftOptions());
+      return;
+    }
+    this.startStage(state.stageIndex);
+  }
+
+  private pickDraft(element: string): void {
+    state.draftPick(element as Element);
+    saveRun();
+    this.ui.toast(`${unitName(state.roster[state.roster.length - 1])} 합류!`, 'good');
     this.startStage(state.stageIndex);
   }
 
@@ -262,7 +274,6 @@ export class Game {
     this.battle = new Battle(this.scene, state, def, hpScale);
     this.paused = false;
     this.lastPhase = this.battle.phase;
-    this.lastCaptureSig = '';
     this.refreshHand();
     this.refreshPlacement();
     this.ui.toast(`${def.label}`, 'info');
@@ -274,40 +285,11 @@ export class Game {
     if (!this.battle) return;
     const b = this.battle;
     const cards: HandCard[] = [];
-    // 포획 카드 — 손패에 항상 고정(마나 0). 로스터 상태에 따라 모집/속박 모드.
-    const recruit = b.captureMode() === 'recruit';
-    if (!recruit && !this.bindToastShown) { // 동료 가득 → 속박 전환 최초 1회 안내
-      this.bindToastShown = true;
-      this.ui.toast('동료가 가득 찼습니다 — 이제 포획 카드는 적을 속박합니다', 'info');
-    }
-    const capPlayable = b.capturePlayable();
-    cards.push({
-      id: CAPTURE_CARD_ID,
-      pinned: true,
-      playable: capPlayable,
-      label: recruit ? '포획' : '속박',
-      desc: recruit
-        ? `야생 몬스터 모집 (${state.roster.length}/${MAX_MONSTERS})`
-        : '지점 주변 적 속박 (동료 가득)',
-      cdFrac: b.captureCdFrac(),
-      reason: b.captureCdFrac() > 0 ? '포획 재사용 대기 중' : (recruit ? '포획할 야생이 없습니다' : '속박할 적이 없습니다'),
-    });
     for (const id of b.deck.hand) {
       const playable = b.deck.canPlay(id);
       cards.push({ id, playable, reason: playable ? undefined : '마나가 부족합니다' });
     }
     this.ui.refreshHand(cards);
-  }
-
-  /**
-   * 포획 카드는 마나 소모가 없어 mana:change로 갱신되지 않는다.
-   * 사용 가능 여부/쿨다운/로스터가 바뀔 때만 손패를 다시 그린다(매 프레임 리빌드 방지).
-   */
-  private lastCaptureSig = '';
-  private refreshCaptureIfChanged(): void {
-    if (!this.battle) return;
-    const sig = `${this.battle.capturePlayable()}|${Math.round(this.battle.captureCdFrac() * 12)}|${state.roster.length}`;
-    if (sig !== this.lastCaptureSig) { this.lastCaptureSig = sig; this.refreshHand(); }
   }
 
   // ── 뷰어 ──
@@ -450,7 +432,6 @@ export class Game {
       }
       this.updateHUD();
       this.checkBattlePhase();
-      if (this.battle) this.refreshCaptureIfChanged();
       if (this.battle && this.battle.phase !== this.lastPhase) {
         this.lastPhase = this.battle.phase;
         this.refreshPlacement();
@@ -489,7 +470,7 @@ export class Game {
       baseHp: state.baseHp, baseHpMax: state.baseHpMax,
       mana: b.deck.mana, manaMax: b.deck.manaMax,
       wave: Math.min(b.waveIndex + 1, b.totalWaves), totalWaves: b.totalWaves,
-      recruitUsed: state.roster.length, recruitMax: MAX_MONSTERS, gold: state.gold,
+      gold: state.gold,
       enemiesLeft: b.enemies.filter((e) => e.alive).length,
       phaseLabel: b.phase,
       showBeginWave: b.phase === 'placement',

@@ -2,7 +2,7 @@ import type { Element } from './types';
 import { MONSTERS } from '../data/monsters';
 import { CARD_BY_ID, cardsOfCharacter, type DeckCharacter } from '../data/cards';
 import {
-  BASE_HP, BOND_CAP, BOND_PER_STAGE, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
+  BASE_HP, BOND_CAP, BOND_PER_STAGE, ELEMENTS, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
   MANA_REGEN, MAX_MONSTERS, UNIT_BASE,
 } from '../data/constants';
 
@@ -196,6 +196,30 @@ export class GameState {
   /** 스테이지 클리어 시 보유 유닛의 유대 누적(상한 BOND_CAP). 새 유닛일수록 낮게 시작 → 뚝심 육성 보상. */
   growBond(): void {
     for (const u of this.roster) u.bond = Math.min(BOND_CAP, (u.bond ?? 0) + BOND_PER_STAGE);
+  }
+
+  // ── 드래프트(v3): 스테이지 1·2·3 시작 시 3택1 ─────────
+  /** 이번 스테이지 시작에 드래프트가 필요한가 (1·2·3, 아직 그 스테이지분을 안 뽑음). */
+  get needsDraft(): boolean {
+    return this.stageIndex <= 2 && this.roster.length <= this.stageIndex;
+  }
+
+  /** 드래프트 후보: 미보유 5속성 중 최대 3종(무작위). */
+  draftOptions(): Element[] {
+    const owned = new Set(this.roster.map((u) => u.element));
+    const pool = ELEMENTS.filter((e) => !owned.has(e));
+    return pool.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+  }
+
+  /** 드래프트 선택 → 로스터 합류 (1단·레벨1). */
+  draftPick(element: Element): void {
+    this.giveUnit(element, 1);
+  }
+
+  /** 드래프트에서 버려진(미보유) 2속성 — §9 타락체 보스용. */
+  unpickedElements(): Element[] {
+    const owned = new Set(this.roster.map((u) => u.element));
+    return ELEMENTS.filter((e) => !owned.has(e));
   }
 
   /** 유닛 경험치 지급 → 레벨업/진화/스킬 학습. 반환: 새로 배운 카드 이름들 */

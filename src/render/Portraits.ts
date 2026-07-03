@@ -9,7 +9,8 @@ import type { Element } from '../core/types';
 /**
  * 몬스터 포트레이트(PNG) 정규화 로더.
  * 원본이 제각각 크기/여백/배경이어도 런타임에 자동 처리 → 일관된 썸네일 dataURL.
- *  1) 흰 배경이면 가장자리 flood-fill 로 배경만 투명 처리(누끼). 캐릭터 내부 흰색은 보존.
+ *  1) 단색 스튜디오 배경(흰색·회색·크림 등)이면 코너에서 배경색을 샘플링해
+ *     가장자리 flood-fill 로 그 색만 투명 처리(누끼). 캐릭터 내부 밝은 색은 보존.
  *  2) 남은 내용의 바운딩박스로 크롭 → 고정 정사각형(PORTRAIT_SIZE)에 중앙 정렬.
  *
  * ▼ 사용법: /public/assets/portraits/ 에 PNG를 넣으면 됩니다.
@@ -22,31 +23,62 @@ const cache = new Map<string, Promise<string | null>>();
 
 export const portraitFile = (el: Element, stage: number) => `mon_${el}_${stage}.png`;
 
-/** 흰색(255,255,255)과의 유클리드 색거리 (0~441). */
-function whiteDist(r: number, g: number, b: number): number {
-  const dr = 255 - r, dg = 255 - g, db = 255 - b;
+type RGB = [number, number, number];
+
+/** 두 색의 유클리드 거리 (0~441). */
+function colorDist(r: number, g: number, b: number, c: RGB): number {
+  const dr = c[0] - r, dg = c[1] - g, db = c[2] - b;
   return Math.sqrt(dr * dr + dg * dg + db * db);
 }
 
-/** 테두리가 대부분 불투명 흰색이면 "흰 배경 이미지"로 판단 → 누끼 대상. */
-function hasWhiteBackground(d: Uint8ClampedArray, w: number, h: number): boolean {
-  let white = 0, total = 0;
-  const step = Math.max(1, Math.floor(Math.min(w, h) / 64));
-  const test = (x: number, y: number) => {
+/**
+ * 네 코너 픽셀에서 배경색을 추정. 코너들이 서로 비슷하고(단색), 밝고(스튜디오 배경),
+ * 불투명일 때만 누끼 대상으로 판단해 그 배경색을 반환. 아니면 null(누끼 생략).
+ * 흰색 고정이 아니라 실제 배경색을 잡으므로 옅은 회색(240)·크림 배경도 처리됨.
+ */
+function sampleBackground(d: Uint8ClampedArray, w: number, h: number): RGB | null {
+  const at = (x: number, y: number): RGB & { a: number } => {
     const i = (y * w + x) * 4;
-    total++;
-    if (d[i + 3] > 200 && whiteDist(d[i], d[i + 1], d[i + 2]) < PORTRAIT_KEY_LOW) white++;
+    const c = [d[i], d[i + 1], d[i + 2]] as RGB & { a: number };
+    c.a = d[i + 3];
+    return c;
   };
-  for (let x = 0; x < w; x += step) { test(x, 0); test(x, h - 1); }
-  for (let y = 0; y < h; y += step) { test(0, y); test(w - 1, y); }
-  return total > 0 && white / total > 0.6;
+  // 불투명 코너에서만 배경색 추정. (일부 코너가 이미 투명한 반가공 소스도 지원)
+  const opaque = [at(0, 0), at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)].filter((c) => c.a >= 250);
+  if (opaque.length === 0) return null; // 코너 전부 투명 → 이미 배경 제거됨
+  const avg: RGB = [0, 0, 0];
+  for (const c of opaque) { avg[0] += c[0]; avg[1] += c[1]; avg[2] += c[2]; }
+  avg[0] /= opaque.length; avg[1] /= opaque.length; avg[2] /= opaque.length;
+  // 불투명 코너들이 서로 일관되고(단색 배경) 충분히 밝아야(어두운 풀블리드 아트 오검출 방지) 함.
+  const spread = Math.max(...opaque.map((c) => colorDist(c[0], c[1], c[2], avg)));
+  const brightness = Math.min(avg[0], avg[1], avg[2]);
+  if (spread > 20 || brightness < 180) return null;
+  return avg;
 }
 
 /**
- * 가장자리에서 흰색과 연결된 배경을 flood-fill 로 투명 처리.
- * 경계(LOW~HIGH)는 알파 페더 + 흰 테두리 언프리멀티플로 제거. 반환: 알파 수정 완료.
+ * 불투명 테두리 픽셀 중 상당수가 배경색(±LOW)과 일치해야 실제 단색 배경으로 확정.
+ * (이미 투명한 픽셀은 배경으로 간주해 분모에서 제외 → 반가공 소스도 통과)
  */
-function keyOutWhite(d: Uint8ClampedArray, w: number, h: number): void {
+function borderMatchesBackground(d: Uint8ClampedArray, w: number, h: number, bg: RGB): boolean {
+  let match = 0, opaque = 0;
+  const step = Math.max(1, Math.floor(Math.min(w, h) / 64));
+  const test = (x: number, y: number) => {
+    const i = (y * w + x) * 4;
+    if (d[i + 3] <= 200) return; // 이미 투명 → 배경 취급, 분모 제외
+    opaque++;
+    if (colorDist(d[i], d[i + 1], d[i + 2], bg) < PORTRAIT_KEY_LOW) match++;
+  };
+  for (let x = 0; x < w; x += step) { test(x, 0); test(x, h - 1); }
+  for (let y = 0; y < h; y += step) { test(0, y); test(w - 1, y); }
+  return opaque > 0 && match / opaque > 0.6;
+}
+
+/**
+ * 가장자리에서 배경색과 연결된 영역을 flood-fill 로 투명 처리.
+ * 경계(LOW~HIGH)는 알파 페더 + 배경색 언프리멀티플로 배경 테두리 띠를 제거.
+ */
+function keyOutBackground(d: Uint8ClampedArray, w: number, h: number, bg: RGB): void {
   const seen = new Uint8Array(w * h);
   const stack: number[] = [];
   const push = (x: number, y: number) => {
@@ -61,18 +93,18 @@ function keyOutWhite(d: Uint8ClampedArray, w: number, h: number): void {
   while (stack.length) {
     const p = stack.pop()!;
     const i = p * 4;
-    const dist = whiteDist(d[i], d[i + 1], d[i + 2]);
+    const dist = colorDist(d[i], d[i + 1], d[i + 2], bg);
     if (dist >= PORTRAIT_KEY_HIGH) continue; // 캐릭터 경계 → 제거/전파 중단
     if (dist <= PORTRAIT_KEY_LOW) {
       d[i + 3] = 0; // 순수 배경 → 완전 투명
     } else {
-      // 경계 페더: 알파 부분 적용 + 흰색 성분 언프리멀티플(테두리 하얀 띠 제거)
+      // 경계 페더: 알파 부분 적용 + 배경색 성분 언프리멀티플(테두리 띠 제거)
       const a = (dist - PORTRAIT_KEY_LOW) / span; // 0~1
       d[i + 3] = Math.round(d[i + 3] * a);
       const inv = 1 - a;
-      d[i] = Math.min(255, Math.max(0, (d[i] - 255 * inv) / Math.max(a, 0.001)));
-      d[i + 1] = Math.min(255, Math.max(0, (d[i + 1] - 255 * inv) / Math.max(a, 0.001)));
-      d[i + 2] = Math.min(255, Math.max(0, (d[i + 2] - 255 * inv) / Math.max(a, 0.001)));
+      d[i] = Math.min(255, Math.max(0, (d[i] - bg[0] * inv) / Math.max(a, 0.001)));
+      d[i + 1] = Math.min(255, Math.max(0, (d[i + 1] - bg[1] * inv) / Math.max(a, 0.001)));
+      d[i + 2] = Math.min(255, Math.max(0, (d[i + 2] - bg[2] * inv) / Math.max(a, 0.001)));
     }
     const x = p % w, y = (p - x) / w;
     push(x + 1, y); push(x - 1, y); push(x, y + 1); push(x, y - 1);
@@ -106,8 +138,9 @@ function normalize(img: HTMLImageElement): string {
   let box: { x: number; y: number; w: number; h: number };
   try {
     const id = sctx.getImageData(0, 0, nw, nh);
-    if (hasWhiteBackground(id.data, nw, nh)) {
-      keyOutWhite(id.data, nw, nh); // 흰 배경 누끼
+    const bg = sampleBackground(id.data, nw, nh);
+    if (bg && borderMatchesBackground(id.data, nw, nh, bg)) {
+      keyOutBackground(id.data, nw, nh, bg); // 샘플링한 배경색 누끼
       sctx.putImageData(id, 0, 0);
     }
     box = alphaBounds(id.data, nw, nh);

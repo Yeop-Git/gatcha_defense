@@ -222,6 +222,27 @@ body { font-family: 'Gowun Batang', 'Jua', serif; color: var(--ink); -webkit-use
 .choice .ct { font-family: 'Jua'; font-size: 17px; margin-bottom: 6px; color: var(--wood-dark); }
 .choice .cd { font-size: 12.5px; color: #5a4632; line-height: 1.4; }
 
+/* ── 드래프트 카드: 세로로 길쭉한 3장 가로 배치 ── */
+.draft-row { gap: 22px; align-items: stretch; }
+.draft-card {
+  flex: 0 0 172px; max-width: 172px; min-height: 380px; padding: 18px 14px 22px;
+  border-width: 4px; position: relative; display: flex; flex-direction: column; align-items: center;
+}
+.draft-card .dc-el { font-size: 15px; font-family: 'Jua'; margin-bottom: 12px; letter-spacing: 1px; }
+.draft-card .dc-ico {
+  width: 132px; height: 176px; margin: 0 auto 14px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; font-size: 74px;
+  background: rgba(255,255,255,0.5); border: 3px solid var(--gold); background-size: cover; background-position: center;
+}
+.draft-card .ct { font-size: 19px; }
+.draft-card .cd { margin-top: auto; }
+.draft-card.el-fire { border-color: var(--el-fire); } .draft-card.el-fire .dc-el { color: var(--el-fire); }
+.draft-card.el-water { border-color: var(--el-water); } .draft-card.el-water .dc-el { color: var(--el-water); }
+.draft-card.el-grass { border-color: var(--el-grass); } .draft-card.el-grass .dc-el { color: var(--el-grass); }
+.draft-card.el-light { border-color: var(--el-light); } .draft-card.el-light .dc-el { color: #b78a1e; }
+.draft-card.el-dark { border-color: var(--el-dark); } .draft-card.el-dark .dc-el { color: var(--el-dark); }
+.draft-card:hover { transform: translateY(-10px) scale(1.04); box-shadow: 0 14px 30px rgba(0,0,0,0.5), 0 0 22px var(--gold-bright); }
+
 /* ── 협동기 배너 (가로 두루마리) ── */
 #banner-layer { position: absolute; top: 34%; left: 0; right: 0; display: flex; justify-content: center; z-index: 25; pointer-events: none; }
 .synergy-banner {

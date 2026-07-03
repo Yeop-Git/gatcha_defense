@@ -20,6 +20,8 @@ export class Monster {
   alive = true;
   overheatTimer = 0;
   overheatMult = 1;
+  hasteMult = 1;
+  private hasteTimer = 0;
   private shieldMesh: THREE.Mesh;
   private blessSprite?: THREE.Sprite;
 
@@ -92,11 +94,26 @@ export class Monster {
     if (this.hp <= 0) this.alive = false;
   }
 
+  /** 공속 버프 (전열 강화 카드). */
+  applyHaste(mult: number, duration: number): void {
+    this.hasteMult = Math.max(this.hasteMult, mult);
+    this.hasteTimer = duration;
+  }
+
+  /** 버프 반영 유효 공속. */
+  effAttackSpeed(): number {
+    return this.stats.attackSpeed * this.hasteMult;
+  }
+
   update(dt: number, t: number): void {
     if (this.atkCd > 0) this.atkCd -= dt;
     if (this.overheatTimer > 0) {
       this.overheatTimer -= dt;
       if (this.overheatTimer <= 0) this.overheatMult = 1;
+    }
+    if (this.hasteTimer > 0) {
+      this.hasteTimer -= dt;
+      if (this.hasteTimer <= 0) this.hasteMult = 1;
     }
     // 빛/어둠 = 부유(floating) 대기 연출. 나머지는 접지(기본 애니메이션 추후).
     this.view.position.y = isFloating(this.element)

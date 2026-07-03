@@ -13,6 +13,9 @@ export const COLORS = {
   hpRuby: 0xc0392b,
 } as const;
 
+/** 5속성 고정 목록 (드래프트/순회용) */
+export const ELEMENTS: Element[] = ['fire', 'water', 'grass', 'light', 'dark'];
+
 /** 속성 포인트 컬러 (폴백 캡슐/이펙트 틴트) */
 export const ELEMENT_COLOR: Record<Element, number> = {
   fire: 0xe8632c,

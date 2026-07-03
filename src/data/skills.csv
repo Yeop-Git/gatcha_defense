@@ -1,121 +1,31 @@
 id,character,name,element,learn,cost,target,kind,params,text
-hero_slash,hero,베기,normal,1,1,point,damage,amount=16;radius=1.6,근접 베기 피해
-hero_firstaid,hero,응급 처치,normal,1,2,ally-all,healAll,amount=20,아군 전체 회복
-hero_regroup,hero,재정비,normal,1,2,self,draw,n=2,카드 2장 드로우
-hero_guard,hero,수호 명령,normal,2,3,ally-all,shieldAll,pct=0.12,아군 보호막
-hero_whirl,hero,회전베기,normal,2,2,enemy-area,damage,amount=14;radius=2.6,주변 광역 베기
-hero_rally,hero,집결의 나팔,normal,3,2,ally-all,healAll,amount=28,아군 회복(강)
-hero_manaflow,hero,마나 순환,normal,3,1,self,draw,n=1,저코스트 드로우
-hero_muster,hero,긴급 소집,normal,4,3,self,placementUp,n=1,이번 웨이브 배치 상한 +1
-hero_pierce,hero,관통 사격,normal,4,2,point,damage,amount=24;radius=1.2,단일 강타
-hero_bigshield,hero,대방벽,normal,5,4,ally-all,shieldAll,pct=0.2,아군 큰 보호막
-hero_cleave,hero,광역 참격,normal,5,3,enemy-area,damage,amount=22;radius=3,광역 참격
-hero_focus,hero,전열 정비,normal,6,2,ally-all,healAll,amount=40,아군 회복(대)
-hero_command,hero,작전 지시,normal,6,3,self,draw,n=3,드로우 3
-hero_bash,hero,강타,normal,7,3,point,damage,amount=34;radius=1.4;knockback=2,강타+넉백
-hero_muster2,hero,총동원령,normal,7,4,self,placementUp,n=1,배치 상한 +1
-hero_aegis,hero,불굴의 방패,normal,8,5,ally-all,shieldAll,pct=0.28,아군 최대 보호막
-hero_slam,hero,대지 가르기,normal,8,4,enemy-area,damage,amount=30;radius=3.4,대형 광역
-hero_lucky,hero,행운의 동전,normal,9,1,self,coinflip,,50% 골드 2배
-hero_greatheal,hero,대회복술,normal,9,4,ally-all,healAll,amount=60,전체 대회복
-hero_finish,hero,결전의 일격,normal,10,5,point,damage,amount=60;radius=1.6,최강 단일기
-water_shot,water,물방울탄,water,1,1,point,damage,amount=14;radius=1.2;mark=wet;markStacks=1,물방울+젖음
-water_slowpool,water,감속 웅덩이,water,1,2,point,zone,zone=slow;radius=3;duration=6;slow=0.4,감속 장판
-water_bubble,water,물거품 방패,water,1,2,ally-all,shieldAll,pct=0.1,소보호막
-water_cannon,water,물대포,water,2,2,point,damage,amount=24;radius=1.3;mark=wet;markStacks=1;knockback=1.5,물대포+넉백
-water_chill,water,냉기 파동,water,2,2,enemy-area,markArea,mark=wet;stacks=1;radius=3,광역 젖음
-water_wave,water,파도타기,water,3,3,point,damage,amount=20;radius=3;mark=wet;knockback=3,광역 넉백
-water_guard,water,수호의 물결,water,3,3,ally-all,shieldAll,pct=0.15,전체 보호막
-water_deepslow,water,심해 장판,water,4,3,point,zone,zone=slow;radius=3.4;duration=7;slow=0.5,강감속 장판
-water_burst,water,고압수류,water,4,3,point,damage,amount=34;radius=1.4;mark=wet,고압 단일
-water_tide,water,해일,water,5,3,point,damage,amount=26;radius=3.4;mark=wet;knockback=4,대형 넉백
-water_barrier,water,대수막,water,5,4,ally-all,shieldAll,pct=0.22,큰 보호막
-water_whirlpool,water,소용돌이,water,6,3,point,zone,zone=slow;radius=3;duration=6;slow=0.6;root=1,감속+속박
-water_hydro,water,하이드로펌프,water,6,4,point,damage,amount=48;radius=1.6;mark=wet,초강력 단일
-water_frost,water,서리 지대,water,7,3,point,zone,zone=slow;radius=3.6;duration=7;slow=0.55;dps=6,감속+도트
-water_guard3,water,해신의 가호,water,7,4,ally-all,shieldAll,pct=0.28,최대 보호막
-water_tsunami,water,대해일,water,8,4,point,damage,amount=40;radius=3.8;mark=wet;knockback=5,초광역 넉백
-water_abyss,water,심연의 늪,water,8,4,point,zone,zone=slow;radius=4;duration=8;slow=0.7;root=1.5,강속박 장판
-water_torrent,water,격류 연타,water,9,4,point,chain,amount=22;targets=4;mark=wet,4체 도탄+젖음
-water_sanctuary,water,심해의 결계,water,9,5,ally-all,shieldAll,pct=0.35,궁극 보호막
-water_leviathan,water,해룡 강림,water,10,5,point,damage,amount=64;radius=4;mark=wet;knockback=6,최종 광역기
-grass_seed,grass,씨앗탄,grass,1,1,point,zone,zone=overgrowth;radius=2.4;duration=6;slow=0.4;dps=4,풀 장판
-grass_heal,grass,새싹 회복,grass,1,2,ally-all,healAll,amount=18,소회복
-grass_thorn,grass,가시 한줌,grass,1,1,point,damage,amount=14;radius=1.6;mark=overgrowth,가시 피해
-grass_vine,grass,덩굴 감옥,grass,2,2,point,zone,zone=overgrowth;radius=2.6;duration=3;root=3;slow=0.4,속박 장판
-grass_breath,grass,생명의 숨결,grass,2,2,ally-all,healAll,amount=26,회복
-grass_bush,grass,가시덤불,grass,3,3,point,zone,zone=thorn;radius=3;duration=6;slow=0.3;dps=8,감속+도트
-grass_bloom,grass,개화,grass,3,2,ally-all,healAll,amount=34,회복(강)
-grass_root,grass,대지의 속박,grass,4,3,point,zone,zone=overgrowth;radius=3;duration=4;root=3;slow=0.5,광역 속박
-grass_spore,grass,포자 폭발,grass,4,3,point,damage,amount=26;radius=2.8;mark=overgrowth,광역 포자
-grass_field,grass,야생의 들판,grass,5,3,point,zone,zone=overgrowth;radius=3.6;duration=8;slow=0.45;dps=6,넓은 풀 장판
-grass_regrow,grass,재생의 바람,grass,5,4,ally-all,healAll,amount=50,회복(대)
-grass_bramble,grass,가시넝쿨 지옥,grass,6,4,point,zone,zone=thorn;radius=3.6;duration=7;slow=0.4;dps=12,강도트 장판
-grass_wrath,grass,자연의 분노,grass,6,4,point,damage,amount=40;radius=3;mark=overgrowth,광역 강타
-grass_forest,grass,원시림,grass,7,4,point,zone,zone=overgrowth;radius=4;duration=9;slow=0.5;root=1;dps=6,거대 풀 장판
-grass_lifewave,grass,생명의 물결,grass,7,4,ally-all,healAll,amount=70,대회복
-grass_snare,grass,세계수의 뿌리,grass,8,4,point,zone,zone=overgrowth;radius=4;duration=6;root=4;slow=0.6,강속박 장판
-grass_barrage,grass,씨앗 폭풍,grass,8,4,point,chain,amount=20;targets=4;mark=overgrowth,4체 씨앗
-grass_sanct,grass,신성한 숲,grass,9,5,point,zone,zone=overgrowth;radius=4.4;duration=10;slow=0.5;dps=10,궁극 장판
-grass_worldheal,grass,세계수의 축복,grass,9,5,ally-all,healAll,amount=100,궁극 회복
-grass_guardian,grass,수호록의 강림,grass,10,5,point,zone,zone=overgrowth;radius=5;duration=10;slow=0.6;root=2;dps=12,최종 장판
-fire_spark,fire,불씨탄,fire,1,1,point,damage,amount=16;radius=1.2;mark=burn;markStacks=1,불씨+화상
-fire_ember,fire,연쇄 불씨,fire,1,2,point,chain,amount=14;targets=3;mark=burn;markStacks=1,3체 도탄
-fire_ball,fire,파이어볼,fire,1,2,point,damage,amount=24;radius=2.2;mark=burn;markStacks=2,광역+화상
-fire_lash,fire,화염 채찍,fire,2,2,point,damage,amount=22;radius=1.4;mark=burn;markStacks=2,단일 화상
-fire_zone,fire,폭염 지대,fire,2,3,point,zone,zone=fire;radius=3;duration=5;dps=12,화염 장판
-fire_blast,fire,화염 폭발,fire,3,3,point,damage,amount=32;radius=2.6;mark=burn;markStacks=2,광역 폭발
-fire_overheat,fire,오버히트,fire,3,4,self,overheat,mult=2;duration=8,불 유닛 강화
-fire_chain2,fire,겹불씨,fire,4,3,point,chain,amount=20;targets=4;mark=burn;markStacks=2,4체 도탄
-fire_pillar,fire,화염 기둥,fire,4,3,point,damage,amount=38;radius=1.6;mark=burn;markStacks=3,단일 대화상
-fire_wall,fire,불의 장벽,fire,5,3,point,zone,zone=fire;radius=3.4;duration=6;dps=16,강화염 장판
-fire_nova,fire,화염 노바,fire,5,4,enemy-area,damage,amount=36;radius=3.4;mark=burn;markStacks=3,초광역 화상
-fire_meteor,fire,소형 운석,fire,6,4,point,damage,amount=48;radius=2.8;mark=burn;markStacks=3,운석 강타
-fire_inferno,fire,인페르노,fire,6,4,point,zone,zone=fire;radius=3.8;duration=6;dps=20,지옥불 장판
-fire_burst3,fire,다연장 화염,fire,7,4,point,chain,amount=26;targets=5;mark=burn;markStacks=2,5체 도탄
-fire_overheat2,fire,초과열,fire,7,5,self,overheat,mult=2.5;duration=8,불 유닛 초강화
-fire_firestorm,fire,파이어스톰,fire,8,4,enemy-area,damage,amount=44;radius=3.8;mark=burn;markStacks=4,화염 폭풍
-fire_volcano,fire,분화구,fire,8,4,point,zone,zone=fire;radius=4;duration=7;dps=26,화산 장판
-fire_comet,fire,대운석,fire,9,5,point,damage,amount=64;radius=3.2;mark=burn;markStacks=4,초대형 운석
-fire_phoenix,fire,불사조의 불길,fire,9,5,enemy-area,damage,amount=52;radius=4.2;mark=burn;markStacks=4,광역 궁극
-fire_ragnarok,fire,구미염의 겁화,fire,10,5,point,zone,zone=fire;radius=4.6;duration=8;dps=34,최종 화염 장판
-dark_bolt,dark,그림자탄,dark,1,1,point,damage,amount=12;radius=1.2;mark=curse;markStacks=1,그림자+저주
-dark_mark,dark,저주 표식,dark,1,1,enemy-area,markArea,mark=curse;stacks=2;radius=2.6,광역 저주
-dark_drain,dark,흡수의 손길,dark,1,2,point,drain,amount=18;radius=2.2;drainPct=0.5,흡수
-dark_weaken,dark,약화의 저주,dark,2,2,enemy-area,defDown,pct=0.4;duration=8;radius=2.6,방어 감소
-dark_curse2,dark,겹저주,dark,2,2,enemy-area,markArea,mark=curse;stacks=3;radius=3,강저주
-dark_shadow,dark,어둠 폭발,dark,3,3,point,damage,amount=28;radius=2.6;mark=curse;markStacks=2,광역 저주 피해
-dark_drain2,dark,생명 갈취,dark,3,3,point,drain,amount=28;radius=2.4;drainPct=0.6,강흡수
-dark_terror,dark,공포의 낙인,dark,4,3,enemy-area,defDown,pct=0.5;duration=8;radius=3,강방깎
-dark_night,dark,밤의 장막,dark,4,3,point,damage,amount=36;radius=2.8;mark=curse;markStacks=3,광역 강타
-dark_verdict,dark,월식 선고,dark,5,4,point,eclipseVerdict,radius=3;executePct=0.2,표식 폭발+즉사
-dark_drain3,dark,영혼 흡수,dark,5,4,point,drain,amount=40;radius=2.6;drainPct=0.7,대흡수
-dark_plague,dark,역병의 저주,dark,6,4,enemy-area,markArea,mark=curse;stacks=5;radius=3.2,최대 저주
-dark_abyss,dark,심연 강타,dark,6,4,point,damage,amount=48;radius=3;mark=curse;markStacks=3,광역 대타
-dark_doom,dark,파멸의 선고,dark,7,5,point,eclipseVerdict,radius=3.6;executePct=0.25,강표식 폭발
-dark_wither,dark,쇠약의 저주,dark,7,4,enemy-area,defDown,pct=0.6;duration=10;radius=3.2,극방깎
-dark_reap,dark,사신의 낫,dark,8,4,point,drain,amount=56;radius=2.8;drainPct=0.75,초흡수
-dark_eclipse,dark,개기월식,dark,8,5,enemy-area,damage,amount=52;radius=3.8;mark=curse;markStacks=4,초광역 저주
-dark_oblivion,dark,망각의 어둠,dark,9,5,point,eclipseVerdict,radius=4;executePct=0.3,궁극 처형
-dark_soulstorm,dark,영혼 폭풍,dark,9,5,point,drain,amount=70;radius=3.2;drainPct=0.8,궁극 흡수
-dark_eclipsa,dark,이클립사의 강림,dark,10,5,enemy-area,damage,amount=72;radius=4.2;mark=curse;markStacks=5,최종 어둠기
-light_bolt,light,빛탄,light,1,1,point,judgment,amount=14;radius=1.4;darkBonus=1.5,신성 피해
-light_heal,light,소생의 빛,light,1,2,ally-all,healAll,amount=18,소회복
-light_bless,light,축복,light,1,2,ally-one,blessOne,stacks=2,축복 2중첩
-light_shield,light,빛의 방패,light,2,2,ally-all,shieldAll,pct=0.12,보호막
-light_purify,light,정화의 기도,light,2,2,ally-all,cleanseHeal,amount=20,정화+회복
-light_smite,light,심판의 빛,light,3,3,enemy-area,judgment,amount=24;radius=2.8;darkBonus=1.5,광역 심판
-light_bless2,light,이중 축복,light,3,2,ally-one,blessOne,stacks=3,축복 3중첩
-light_ward,light,성역,light,4,3,ally-all,shieldAll,pct=0.18,큰 보호막
-light_dawn,light,여명의 회복,light,4,3,ally-all,healAll,amount=40,회복(강)
-light_judge,light,신성 심판,light,5,3,enemy-area,judgment,amount=34;radius=3;darkBonus=1.6,강심판
-light_cleanse,light,대정화,light,5,3,ally-all,cleanseHeal,amount=40,정화+회복(강)
-light_revive,light,소생술,light,6,5,self,revive,,유닛 부활(런 1회)
-light_aegis,light,천상의 방벽,light,6,4,ally-all,shieldAll,pct=0.26,대보호막
-light_wrath,light,천벌,light,7,4,enemy-area,judgment,amount=44;radius=3.4;darkBonus=1.7,광역 천벌
-light_grace,light,은총의 빛,light,7,4,ally-all,healAll,amount=70,대회복
-light_sanctuary,light,대성역,light,8,5,ally-all,shieldAll,pct=0.34,궁극 보호막
-light_judgment,light,최후의 심판,light,8,5,enemy-area,judgment,amount=56;radius=3.8;darkBonus=1.8,초광역 심판
-light_resurrection,light,부활의 기적,light,9,5,self,revive,,유닛 부활
-light_seraph,light,세라핌의 가호,light,9,5,ally-all,shieldAll,pct=0.4,궁극 방벽
-light_judgmentday,light,세라핌의 심판,light,10,5,enemy-area,judgment,amount=76;radius=4.2;darkBonus=2,최종 심판
+n_draw,hero,재정비,normal,1,2,self,draw,n=2,카드 2장을 뽑는다
+n_muster,hero,긴급 소집,normal,1,3,self,placementUp,n=1,이번 웨이브 배치 상한 +1
+n_coin,hero,동전 던지기,normal,1,1,self,coinflip,,50% 확률로 골드 2배 아니면 꽝
+n_bind,hero,속박,normal,1,2,point,bind,radius=2.6;duration=2.5,범위 2.6 적을 2.5초 묶는다
+n_haste,hero,전열 강화,normal,1,3,ally-all,haste,mult=1.3;duration=6,모든 유닛 공격속도 +30% 6초
+water_cannon,water,물대포,water,1,2,point,damage,amount=20;radius=1.3;mark=wet;markStacks=1;knockback=1.5,적 1마리에 20 피해 · 1.5 밀치기 · 젖음 1
+water_pool,water,감속 웅덩이,water,1,2,point,zone,zone=slow;radius=3;duration=6;slow=0.4,웅덩이 생성 · 이동속도 -40% · 6초
+water_tide,water,해일,water,3,3,point,damage,amount=26;radius=3;mark=wet;knockback=4,직선 범위에 26 피해 · 4 밀치기 · 젖음
+water_guard,water,수호의 물결,water,4,3,ally-all,shieldAll,pct=0.15,모든 유닛에 최대체력 15% 보호막
+water_whirl,water,소용돌이,water,6,4,point,zone,zone=slow;radius=3;duration=6;slow=0.6;root=1,소용돌이 · 이동 -60% · 짧게 속박 · 6초
+fire_spark,fire,불씨탄,fire,1,1,point,damage,amount=16;radius=1.2;mark=burn;markStacks=1,적에게 16 피해 · 화상 1
+fire_ball,fire,파이어볼,fire,1,2,point,damage,amount=24;radius=2.2;mark=burn;markStacks=2,범위 2.2에 24 피해 · 화상 2
+fire_chain,fire,연쇄 불씨,fire,3,2,point,chain,amount=14;targets=3;mark=burn;markStacks=1,가까운 적 3마리에 14 피해 · 화상 1
+fire_zone,fire,폭염 지대,fire,4,3,point,zone,zone=fire;radius=3;duration=5;dps=12,화염 지대 · 초당 12 피해 · 5초
+fire_overheat,fire,오버히트,fire,6,4,self,overheat,mult=2;duration=8,불 유닛 공격력 2배 · 8초
+grass_seed,grass,씨앗탄,grass,1,1,point,zone,zone=overgrowth;radius=2.4;duration=6;slow=0.4;dps=4,풀 장판 · 이동 -40% · 초당 4 피해 · 6초
+grass_thorn,grass,가시 한줌,grass,1,1,point,damage,amount=16;radius=1.6;mark=overgrowth,적에게 16 피해 · 덩굴 표식
+grass_vine,grass,덩굴 감옥,grass,3,2,point,zone,zone=overgrowth;radius=2.6;duration=3;root=3;slow=0.4,범위 적을 3초 묶는다
+grass_bush,grass,가시덤불,grass,4,3,point,zone,zone=thorn;radius=3;duration=6;slow=0.3;dps=8,가시밭 · 이동 -30% · 초당 8 피해 · 6초
+grass_spore,grass,포자 폭발,grass,6,3,point,damage,amount=26;radius=2.8;mark=overgrowth,범위 2.8에 26 피해 · 덩굴 표식
+dark_bolt,dark,그림자탄,dark,1,1,point,damage,amount=12;radius=1.2;mark=curse;markStacks=1,적에게 12 피해 · 저주 1
+dark_mark,dark,저주 표식,dark,1,1,enemy-area,markArea,mark=curse;stacks=2;radius=2.6,범위 적에게 저주 2
+dark_weaken,dark,약화의 저주,dark,3,2,enemy-area,defDown,pct=0.4;duration=8;radius=2.6,범위 적 방어 -40% · 8초
+dark_burst,dark,어둠 폭발,dark,4,3,point,damage,amount=28;radius=2.6;mark=curse;markStacks=2,범위 2.6에 28 피해 · 저주 2
+dark_verdict,dark,월식 선고,dark,6,4,point,eclipseVerdict,radius=3;executePct=0.2,저주 5 적 표식 폭발 · 체력 20% 이하 즉사 · 보스 제외
+light_bolt,light,빛탄,light,1,1,point,judgment,amount=14;radius=1.4;darkBonus=1.5,적에게 14 신성 피해 · 어둠 적 1.5배
+light_bless,light,축복,light,1,2,ally-one,blessOne,stacks=2,유닛 1마리 공격과 방어 +20%
+light_shield,light,빛의 방패,light,3,2,ally-all,shieldAll,pct=0.12,모든 유닛에 최대체력 12% 보호막
+light_smite,light,심판의 빛,light,4,3,enemy-area,judgment,amount=24;radius=2.8;darkBonus=1.5,범위 2.8에 24 신성 피해 · 어둠 적 1.5배
+light_ward,light,천상의 방벽,light,6,4,ally-all,shieldAll,pct=0.26,모든 유닛에 최대체력 26% 보호막

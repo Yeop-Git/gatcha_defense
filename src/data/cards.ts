@@ -27,7 +27,9 @@ export type CardEffect =
   | { kind: 'overheat'; mult: number; duration: number }
   | { kind: 'draw'; n: number }
   | { kind: 'placementUp'; n: number }
-  | { kind: 'coinflip' };
+  | { kind: 'coinflip' }
+  | { kind: 'bind'; radius: number; duration: number }
+  | { kind: 'haste'; mult: number; duration: number };
 
 export interface CardDef {
   id: string;
@@ -80,6 +82,8 @@ function buildEffect(kind: string, p: Params, cardEl: CardElement): CardEffect {
     case 'draw': return { kind, n: num(p, 'n', 1) };
     case 'placementUp': return { kind, n: num(p, 'n', 1) };
     case 'coinflip': return { kind };
+    case 'bind': return { kind, radius: num(p, 'radius', 2.6), duration: num(p, 'duration', 2.5) };
+    case 'haste': return { kind, mult: num(p, 'mult', 1.3), duration: num(p, 'duration', 6) };
     default: return { kind: 'damage', amount: 10, radius: 1, element: el };
   }
 }
@@ -163,6 +167,8 @@ export function cardIcon(def: CardDef): string {
     case 'draw': return '🃏';
     case 'coinflip': return '🪙';
     case 'placementUp': return '🚩';
+    case 'bind': return '🕸️';
+    case 'haste': return '💨';
     case 'overheat': return '♨️';
     case 'drain': return '🩸';
     case 'defDown': return '💢';
