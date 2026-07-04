@@ -93,10 +93,10 @@ export class Monster {
 
   /** 유효 공격력 (버프/축복/오버히트/글로벌 반영) */
   attackPower(): number {
-    let p = this.stats.attack * this._atkMult;
+    // 공격 버프(unitAtkMult)는 deriveStats에서 이미 반영됨(이중 적용 방지).
+    let p = this.stats.attack;
     p *= 1 + this.blessStacks * BLESS_BUFF_PER_STACK;
     p *= this.overheatMult;
-    // 포획 tier 추가 공격배수는 제거 — deriveEnemyStats의 tier 기준 공격력이 이미 차등을 반영(이중배수 방지).
     return p;
   }
 

@@ -112,9 +112,11 @@ export interface BuffOption {
 }
 
 export const BUFF_NODES: BuffOption[] = [
-  { id: 'atk', label: '전 유닛 공격 +10%', apply: 'atk10' },
-  { id: 'basehp', label: '성 HP +20', apply: 'basehp20' },
-  { id: 'mana', label: '마나 재생 +20%', apply: 'mana20' },
+  { id: 'atk', label: '⚔️ 공격력 +12%', apply: 'atk' },
+  { id: 'range', label: '🎯 사거리 +0.6', apply: 'range' },
+  { id: 'aspd', label: '⚡ 공격속도 +0.12', apply: 'aspd' },
+  { id: 'crit', label: '💥 치명타 확률 +6%', apply: 'crit' },
+  { id: 'critdmg', label: '🔥 치명타 피해 +25%', apply: 'critdmg' },
 ];
 
 /** 이벤트 노드 (§10) */

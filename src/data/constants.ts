@@ -244,6 +244,12 @@ export const CREATURE_DISPLAY_SCALE: Record<Element, number> = {
 export const MAX_LEVEL = 30;
 /** 레벨당 스탯 성장률(HP·공격). 30레벨 확장에 맞춰 완만하게. */
 export const LEVEL_GROWTH_PER = 0.035;
+
+/** 치명타 스탯: 레벨업=부드럽게, 진화=든든하게 증가. */
+export const CRIT = {
+  chanceBase: 0.05, chancePerLevel: 0.004, chancePerStage: 0.03, chanceMax: 0.5,
+  dmgBase: 1.5, dmgPerLevel: 0.01, dmgPerStage: 0.12,
+} as const;
 /** ?꾨뱶 ???뺢퇋???믪씠 (?곗뼱蹂???蹂댁뒪/誘몃땲蹂댁뒪???쇰????ш쾶). */
 export const ENEMY_HEIGHT: Record<EnemyTier, number> = {
   swarm: 1.6, flyer: 1.8, normal: 2.0, healer: 2.0, tank: 2.4, elite: 2.8, miniboss: 4.2, boss: 6.2,

@@ -5,7 +5,7 @@ import { CARD_BY_ID, cardsOfCharacter, type CardDef, type DeckCharacter } from '
 import { unlockCreature } from './Dex';
 import {
   BASE_HP, BOND_CAP, BOND_PER_STAGE, CAPTURE, ELEMENTS, ENEMY_EVOLVE_LEVEL, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
-  LEVEL_GROWTH_PER, MANA_MAX, MANA_REGEN, MAX_LEVEL, MAX_MONSTERS, UNIT_BASE,
+  CRIT, LEVEL_GROWTH_PER, MANA_MAX, MANA_REGEN, MAX_LEVEL, MAX_MONSTERS, UNIT_BASE,
 } from '../data/constants';
 
 /** 무속성 적을 플레이어블 유닛으로 쓸 때의 대체 속성 (마크/색 판정용). */
@@ -60,8 +60,20 @@ export interface DerivedStats {
   attack: number;
   range: number;
   attackSpeed: number;
+  /** 치명타 확률 0~1 */
+  critChance: number;
+  /** 치명타 피해 배율 (예: 1.8 = +80%) */
+  critDmg: number;
   /** 유대 보너스 비율(표시용) */
   bond: number;
+}
+
+/** 레벨/진화에 따른 치명타 스탯 (레벨업=부드럽게, 진화=든든하게). */
+function critFor(level: number, stage: number): { critChance: number; critDmg: number } {
+  return {
+    critChance: Math.min(CRIT.chanceMax, CRIT.chanceBase + (level - 1) * CRIT.chancePerLevel + (stage - 1) * CRIT.chancePerStage),
+    critDmg: CRIT.dmgBase + (level - 1) * CRIT.dmgPerLevel + (stage - 1) * CRIT.dmgPerStage,
+  };
 }
 
 /** XP 곡선: 레벨 n → n+1 필요량. 만렙 30 확장 + 레벨업 완화(기존 20+12n에서 상향). */
@@ -90,11 +102,14 @@ function deriveEnemyStats(unit: OwnedUnit): DerivedStats {
   const lv = 1 + (unit.level - 1) * LEVEL_GROWTH_PER;
   const bond = Math.min(BOND_CAP, unit.bond ?? 0);
   const growth = lv * (1 + bond);
+  const c = critFor(unit.level, unit.stage);
   return {
     hp: Math.round(PLAY_BASE_HP[def.tier] * growth),
-    attack: Math.round(PLAY_BASE_ATK[def.tier] * growth),
-    range: UNIT_BASE.range + (def.flying ? 0.6 : 0) + (unit.stage - 1) * 0.4,
-    attackSpeed: UNIT_BASE.attackSpeed,
+    attack: Math.round(PLAY_BASE_ATK[def.tier] * growth * state.unitAtkMult),
+    range: UNIT_BASE.range + (def.flying ? 0.6 : 0) + (unit.stage - 1) * 0.4 + (unit.level - 1) * 0.015 + state.rangeBonus,
+    attackSpeed: UNIT_BASE.attackSpeed + (unit.level - 1) * 0.008 + state.aspdBonus,
+    critChance: Math.min(0.6, c.critChance + state.critChanceBonus),
+    critDmg: c.critDmg + state.critDmgBonus,
     bond,
   };
 }
@@ -119,11 +134,14 @@ export function deriveStats(unit: OwnedUnit): DerivedStats {
   const lv = 1 + (unit.level - 1) * LEVEL_GROWTH_PER;
   const bond = Math.min(BOND_CAP, unit.bond ?? 0);
   const growth = lv * (1 + bond);
+  const c = critFor(unit.level, unit.stage);
   return {
     hp: Math.round(hp * growth),
-    attack: Math.round(attack * growth),
-    range: UNIT_BASE.range + (unit.stage - 1) * 0.6,
-    attackSpeed: UNIT_BASE.attackSpeed + (unit.stage - 1) * 0.15,
+    attack: Math.round(attack * growth * state.unitAtkMult),
+    range: UNIT_BASE.range + (unit.stage - 1) * 0.6 + (unit.level - 1) * 0.015 + state.rangeBonus,
+    attackSpeed: UNIT_BASE.attackSpeed + (unit.stage - 1) * 0.15 + (unit.level - 1) * 0.008 + state.aspdBonus,
+    critChance: Math.min(0.6, c.critChance + state.critChanceBonus),
+    critDmg: c.critDmg + state.critDmgBonus,
     bond,
   };
 }
@@ -159,8 +177,12 @@ export class GameState {
   // 마나 상한 (런타임 마나는 DeckSystem이 스테이지 단위로 관리)
   manaMax = MANA_MAX;
 
-  // 스탯 수정자 (갈림길 버프)
+  // 스탯 수정자 (웨이브 보너스 버프 — 5스탯)
   unitAtkMult = 1;
+  rangeBonus = 0;
+  aspdBonus = 0;
+  critChanceBonus = 0;
+  critDmgBonus = 0;
   manaRegenMult = 1;
   /** 어둠 3단 처치 스택 (§5.4) — 런 내 영구 누적, 공격력 +비율 (상한 DARK_KILL_STACK_MAX) */
   darkKillStacks = 0;
@@ -468,6 +490,12 @@ export class GameState {
 
   applyBuff(apply: string): void {
     switch (apply) {
+      case 'atk': this.unitAtkMult *= 1.12; break;
+      case 'range': this.rangeBonus += 0.6; break;
+      case 'aspd': this.aspdBonus += 0.12; break;
+      case 'crit': this.critChanceBonus += 0.06; break;
+      case 'critdmg': this.critDmgBonus += 0.25; break;
+      // 하위호환 (구버전 노드/세이브)
       case 'atk10': this.unitAtkMult *= 1.1; break;
       case 'basehp20': this.baseHpMax += 20; this.baseHp += 20; break;
       case 'mana20': this.manaRegenMult *= 1.2; break;

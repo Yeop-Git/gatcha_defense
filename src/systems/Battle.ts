@@ -268,6 +268,11 @@ export class Battle {
     return this.stage.waves.length;
   }
 
+  /** 웨이브 보너스 버프 적용 후 배치된 유닛 스탯 즉시 갱신. */
+  refreshUnitStats(): void {
+    for (const m of this.units) m.refreshStats();
+  }
+
   beginWave(): void {
     if (this.phase !== 'placement') return;
     this.deck.drawHand(this.state.battleDeck(), 5, [CAPTURE_CARD_ID]);
@@ -372,12 +377,16 @@ export class Battle {
     if (this.time - this.atkSfxAt > 0.11) { playSfx('attack'); this.atkSfxAt = this.time; }
     let power = m.attackPower();
     if (m.element === 'dark' && this.hasDarkS3) power *= 1 + this.state.darkKillStacks;
+    // 치명타 판정 (평타). 발사 시점 스탯 기준.
+    const crit = Math.random() < m.stats.critChance;
+    if (crit) power *= m.stats.critDmg;
     m.faceTowards(target.pos.x, target.pos.z);
     const stage = m.unit.stage;
     this.scene.vfx.burst(m.pos.x, m.pos.z, color, 5, 1.3, 1.3);
     const p = new Projectile(m.view.position, target, color, 15, false, (hit) => {
       if (!hit) return;
-      this.hitEnemy(hit, power, m.element, stage);
+      const dealt = this.hitEnemy(hit, power, m.element, stage);
+      if (crit) { this.scene.vfx.floatText(hit.pos.x, hit.pos.z + 0.5, `⚡${dealt}`, '#ff5a3c'); this.scene.vfx.burst(hit.pos.x, hit.pos.z, 0xffcf3c, 10, 2.6, 0.9); }
       this.applyCapturedAttackPassive(m, hit, power, stage);
       this.scene.vfx.burst(hit.pos.x, hit.pos.z, color, 8, 2.2, 1.0);
       this.scene.vfx.ring(hit.pos.x, hit.pos.z, color, 1.1, 0.22);

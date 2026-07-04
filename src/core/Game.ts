@@ -67,7 +67,7 @@ export class Game {
     };
     this.ui.onNode = (kind) => this.chooseNode(kind);
     this.ui.onBuffPick = (id) => { state.applyBuff(id); this.backToLobby(); };
-    this.ui.onBonusPick = (id) => { state.applyBuff(id); saveRun(); this.paused = false; this.ui.toast('강화를 획득했습니다.', 'good'); this.refreshHand(); this.refreshPlacement(); };
+    this.ui.onBonusPick = (id) => { state.applyBuff(id); this.battle?.refreshUnitStats(); saveRun(); this.paused = false; this.ui.toast('강화를 획득했습니다.', 'good'); this.refreshHand(); this.refreshPlacement(); };
     this.ui.onDraftPick = (el) => this.pickDraft(el);
     this.ui.onEventPick = (id) => { this.applyEvent(id); this.afterEvent(); };
     this.ui.onNext = () => this.afterStageClear();
