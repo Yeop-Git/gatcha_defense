@@ -6,7 +6,7 @@ import type { Element, ElementOrNeutral, Vec2 } from '../core/types';
 import { ENEMIES, creatureEnemyId } from '../data/enemies';
 import { MONSTERS } from '../data/monsters';
 import { makeCreature, makeEnemy, disposeCreatureView } from '../render/fallback';
-import { unitHeight, CAPTURED_BOSS_SCALE } from '../data/constants';
+import { unitHeight, CAPTURED_BOSS_SCALE, setStageLayout } from '../data/constants';
 import { CARD_BY_ID, type CardEffect, type CardElement } from '../data/cards';
 import {
   UNIT_SLOTS,
@@ -65,7 +65,9 @@ export class Battle {
   private unitGhost: THREE.Group | null = null; // 배치 드래그 반투명 미리보기 모델
 
   constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number) {
+    setStageLayout(stage.id - 1); // 스테이지별 경로/슬롯 적용 (FIELD.path·UNIT_SLOTS 인플레이스 교체)
     scene.setTheme(stage.theme);
+    scene.rebuildMap();
     this.deck = new DeckSystem(state.manaMax, state.manaRegen);
     this.autoPlace();
     this.hasDarkS3 = state.roster.some((u) => u.element === 'dark' && u.stage >= 3);

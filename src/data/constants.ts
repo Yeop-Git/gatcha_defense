@@ -64,8 +64,13 @@ export function cellCenter(col: number, row: number): { x: number; z: number } {
 }
 
 /** 寃쎈줈 瑗?쭞??(寃⑹옄 ?, 吏곴컖?쇰줈留?爰얠엫). 留덉?留?= 湲곗?. */
-const PATH_CORNERS: [number, number][] = [
-  [0, 3], [4, 3], [4, 8], [10, 8], [10, 3], [14, 3], [14, 8], [16, 8],
+/** 스테이지별 경로 레이아웃(꺾은선 코너, 축정렬). 스테이지마다 진로가 달라진다. */
+const PATH_LAYOUTS: [number, number][][] = [
+  [[0, 3], [4, 3], [4, 8], [10, 8], [10, 3], [14, 3], [14, 8], [16, 8]],            // 0 지그재그
+  [[0, 2], [6, 2], [6, 9], [12, 9], [12, 2], [16, 2]],                              // 1 S자
+  [[0, 6], [5, 6], [5, 2], [11, 2], [11, 9], [16, 9]],                              // 2 계단
+  [[0, 3], [3, 3], [3, 8], [7, 8], [7, 3], [11, 3], [11, 8], [15, 8], [15, 4], [16, 4]], // 3 톱니
+  [[0, 9], [13, 9], [13, 2], [16, 2]],                                             // 4 ㄴ자 롱
 ];
 
 /** 瑗?쭞???ъ씠瑜?紐⑤뱺 寃⑹옄 ?濡??꾧컻 (寃쎈줈 ????뚮뜑/?먯젙?? */
@@ -87,10 +92,39 @@ export const FIELD = {
   rows: GRID_ROWS,
   cellCenter,
   /** ??吏꾧꺽 寃쎈줈 (醫뚢넂?? 留덉?留됱씠 湲곗?) */
-  path: PATH_CORNERS.map(([c, r]) => cellCenter(c, r)),
+  path: [] as { x: number; z: number }[],
   /** 寃쎈줈媛 ?먯쑀?섎뒗 寃⑹옄 ? 吏묓빀 "col,row" */
-  pathCellSet: new Set(expandCells(PATH_CORNERS).map(([c, r]) => `${c},${r}`)),
+  pathCellSet: new Set<string>(),
 };
+
+/** 경로 인접(비경로) 셀에 배치 슬롯 자동 생성 — 경로를 따라 고르게 count개. */
+function genSlots(cells: Set<string>, count = 6): { x: number; z: number }[] {
+  const cand: { col: number; row: number }[] = [];
+  for (let col = 0; col < GRID_COLS; col++) for (let row = 0; row < GRID_ROWS; row++) {
+    if (cells.has(`${col},${row}`)) continue;
+    const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => cells.has(`${col + dc},${row + dr}`));
+    if (near) cand.push({ col, row });
+  }
+  cand.sort((a, b) => a.col - b.col || a.row - b.row); // 좌→우(진행 방향 근사)로 정렬
+  if (cand.length <= count) return cand.map((c) => cellCenter(c.col, c.row));
+  const out: { x: number; z: number }[] = [];
+  for (let i = 0; i < count; i++) {
+    const idx = Math.round((i * (cand.length - 1)) / (count - 1));
+    out.push(cellCenter(cand[idx].col, cand[idx].row));
+  }
+  return out;
+}
+
+/** 스테이지 레이아웃 적용 — FIELD.path/pathCellSet/UNIT_SLOTS를 인플레이스로 교체(참조 유지). */
+export function setStageLayout(stageIndex: number): void {
+  const corners = PATH_LAYOUTS[((stageIndex % PATH_LAYOUTS.length) + PATH_LAYOUTS.length) % PATH_LAYOUTS.length];
+  const pts = corners.map(([c, r]) => cellCenter(c, r));
+  FIELD.path.length = 0; FIELD.path.push(...pts);
+  FIELD.pathCellSet.clear();
+  for (const [c, r] of expandCells(corners)) FIELD.pathCellSet.add(`${c},${r}`);
+  const slots = genSlots(FIELD.pathCellSet, 6);
+  UNIT_SLOTS.length = 0; UNIT_SLOTS.push(...slots);
+}
 
 /** ?좊떅 怨좎젙 諛곗튂 ?щ’ (寃쎈줈 ?몄젒 ?붾뵒 ?). 二쇱씤怨??ы븿 理쒕? 4媛??ъ슜. 짠2 */
 // ?쒖꽌 = autoPlace ?곗꽑?쒖쐞. ??3媛쒓? 吏꾩엯/以묒븰/?꾨컲??怨좊Ⅴ寃?而ㅻ쾭?섎룄濡?諛곗튂(寃쎈줈 ?꾨컲 諛⑹뼱).
@@ -104,6 +138,8 @@ export const UNIT_SLOTS: { x: number; z: number }[] = [
 ];
 
 /** ?꾪룷??GLB ?띿뒪泥?理쒕? ?댁긽??(?⑸웾 ?덇컧). 珥덇낵 ??罹붾쾭?ㅻ줈 異뺤냼. */
+setStageLayout(0); // 초기 레이아웃(모듈 로드 시 FIELD.path/슬롯 채우기)
+
 export const MODEL_MAX_TEXTURE = 1024;
 
 /** 移댄댆 ?뚮뜑: GLB 癒명떚由ъ뼹??unlit(MeshBasic)濡?蹂??+ 寃? ?멸낸??inverted hull). */

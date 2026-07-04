@@ -33,6 +33,8 @@ export class Scene {
   /** 엔티티/장판/이펙트 컨테이너 */
   entities = new THREE.Group();
   zones = new THREE.Group();
+  /** 맵 타일 + 배치 슬롯 (스테이지별 재구성 대상) */
+  private mapGroup = new THREE.Group();
 
   base: THREE.Group;
   private grassTopMat!: THREE.MeshBasicMaterial;
@@ -73,6 +75,7 @@ export class Scene {
     // 격자 큐브 맵 (unlit + 옆면 음영으로 격자 구분)
     this.grassTopMat = new THREE.MeshBasicMaterial({ color: THEME_GROUND.grassland });
     this.grassSideMat = new THREE.MeshBasicMaterial({ color: darken(THEME_GROUND.grassland, SIDE_SHADE) });
+    this.scene.add(this.mapGroup);
     this.buildGrid();
     this.buildSlots();
     this.buildCapturePreview();
@@ -112,9 +115,23 @@ export class Scene {
         // 경로는 살짝 낮게(파인 길), 잔디는 윗면 y=0
         const topY = isPath ? -0.14 : 0;
         mesh.position.set(c.x, topY - cubeH / 2, c.z);
-        this.scene.add(mesh);
+        this.mapGroup.add(mesh);
       }
     }
+  }
+
+  /** 스테이지 레이아웃 변경 시 맵 타일/슬롯 재구성 + 기지 위치 갱신. */
+  rebuildMap(): void {
+    for (const c of [...this.mapGroup.children]) {
+      this.mapGroup.remove(c);
+      const m = c as THREE.Mesh;
+      m.geometry?.dispose(); // 지오메트리만 해제(머티리얼은 공유/재사용)
+    }
+    this.slotMeshes = [];
+    this.buildGrid();
+    this.buildSlots();
+    const last = FIELD.path[FIELD.path.length - 1];
+    if (last) this.base.position.set(last.x, 0, last.z);
   }
 
   private buildSlots(): void {
@@ -126,7 +143,7 @@ export class Scene {
       ring.rotation.x = -Math.PI / 2;
       ring.rotation.z = Math.PI / 4;
       ring.position.set(s.x, 0.06, s.z);
-      this.scene.add(ring);
+      this.mapGroup.add(ring);
       this.slotMeshes.push(ring);
     }
   }
