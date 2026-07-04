@@ -53,6 +53,7 @@ export class Enemy {
   slowTimer = 0;
   defDownPct = 0;
   defDownTimer = 0;
+  fearTimer = 0; // 공포(어둠): >0이면 경로를 역주행(뒤로 도망)
   atkCd = 0; // 적 반격 쿨다운 (근처 방어자 타격)
 
   private bar: THREE.Sprite;
@@ -102,6 +103,11 @@ export class Enemy {
   /** 속박 적용 (CC 저항 반영). */
   applyRoot(duration: number): void {
     this.rootTimer = Math.max(this.rootTimer, duration * this.ccFactor);
+  }
+
+  /** 공포 적용 (CC 저항 반영) — 지속시간 동안 경로를 역주행. */
+  applyFear(duration: number): void {
+    this.fearTimer = Math.max(this.fearTimer, duration * this.ccFactor);
   }
 
   /** 임시 감속 적용 (증기 장막 등, CC 저항 반영). */
@@ -161,6 +167,13 @@ export class Enemy {
     // GLTF 내장 애니메이션 (걷기 등) — 감속/속박 시 재생 속도도 함께 줄어 자연스럽게
     const mixer = this.view.userData.mixer as THREE.AnimationMixer | undefined;
     if (mixer) mixer.update(dt * Math.max(0.25, this.speedMult()));
+
+    // 공포(어둠): 경로를 역주행(뒤로 도망). 전진/기지도달 판정 스킵.
+    if (this.fearTimer > 0) {
+      this.fearTimer -= dt;
+      this.knockback(this.speed * dt * 1.2);
+      return;
+    }
 
     // 이동 (경로 따라)
     const mult = this.speedMult();

@@ -742,6 +742,25 @@ export class Battle {
       case 'haste':
         this.units.forEach((m) => { m.applyHaste(fx.mult, fx.duration); this.scene.vfx.burst(m.pos.x, m.pos.z, 0xf2ce6b, 6); });
         break;
+      case 'manaGain':
+        // 물: 마나 즉시 보충
+        this.deck.mana = Math.min(this.deck.manaMax, this.deck.mana + fx.amount);
+        bus.emit('mana:change', { mana: this.deck.mana, max: this.deck.manaMax });
+        bus.emit('toast', { text: `마나 +${fx.amount}`, kind: 'good' });
+        this.scene.vfx.ring(this.castleXZ().x, this.castleXZ().z, ELEMENT_COLOR.water, 2.4, 0.4);
+        break;
+      case 'fear':
+        // 어둠: 공포 — 적이 잠깐 경로를 역주행(뒤로 도망)
+        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) e.applyFear(fx.duration);
+        this.scene.vfx.ring(p.x, p.z, ELEMENT_COLOR.dark, fx.radius, 0.5);
+        this.scene.vfx.burst(p.x, p.z, 0x2a2050, 14);
+        break;
+      case 'block':
+        // 풀: 덩굴 벽 — 적 이동을 막는 지속 속박 장판(블록)
+        this.addZone('overgrowth', fx.element, p.x, p.z, fx.radius, fx.duration, { slow: fx.slow ?? 0.9, dps: fx.dps ?? 3, root: fx.duration });
+        this.scene.vfx.ring(p.x, p.z, ELEMENT_COLOR.grass, fx.radius, 0.5);
+        this.scene.vfx.burst(p.x, p.z, ELEMENT_COLOR.grass, 16);
+        break;
       case 'capture': {
         const orb = new CaptureOrb(this.castleXZ(), p, CAPTURE.orbDuration, CAPTURE.arcHeight, (land) => this.resolveCapture(land, fx.radius));
         this.captureOrbs.push(orb);
