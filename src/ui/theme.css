@@ -640,3 +640,27 @@ body { font-family: 'Gowun Batang', 'Jua', serif; color: var(--ink); -webkit-use
 #manage-cards .mc-grid .card.locked { opacity: 0.42; filter: grayscale(0.6); cursor: default; }
 #manage-cards .mc-grid .card.equipped { outline: 2px solid var(--gold-bright); outline-offset: 1px; }
 .card .mc-foot { color: var(--gold-bright); font-family: 'Jua', sans-serif; }
+
+/* ── 폴리시 패스: 타이틀 연출 · 배치/가독성 다듬기 ── */
+#title-screen .logo { animation: logo-float 3.4s ease-in-out infinite; }
+@keyframes logo-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+#title-screen .sub { max-width: 520px; text-align: center; line-height: 1.6; }
+#title-screen .title-btns { margin-top: 6px; }
+#title-screen .title-btns .btn { min-width: 128px; }
+
+/* 모달 선택지: 클릭 유도 강화 */
+.choice { position: relative; }
+.choice:active { transform: translateY(-1px) scale(0.99); }
+.overlay-center { backdrop-filter: blur(2px); }
+
+/* HUD 칩 가독성 — 값 강조 */
+.chip span[id] { color: var(--gold-bright); font-weight: 700; }
+#hud-top .gauge .val { color: var(--gold-bright); }
+
+/* 로비 메뉴 카드 클릭감 */
+.menu-card { transition: transform 0.1s, box-shadow 0.12s, border-color 0.12s; }
+.menu-card:active { transform: translateY(1px); }
+
+/* 도감 셀 hover */
+.dex-cell:not(.locked) .dex-pic { transition: transform 0.12s; }
+.dex-cell:not(.locked):hover .dex-pic { transform: scale(1.08); }

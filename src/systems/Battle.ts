@@ -426,7 +426,8 @@ export class Battle {
     const healers = this.enemies.filter((e) => e.def.healer && e.alive);
     if (!healers.length) return;
     for (const e of this.enemies) {
-      if (!e.alive || e.def.healer || e.isBoss) continue;
+      // 힐러/보스/미니보스는 회복 대상 제외 — 미니보스가 계속 회복돼 포획 기절창을 못 여는 버그 방지.
+      if (!e.alive || e.def.healer || e.isBoss || e.isMini) continue;
       if (healers.some((h) => e.pos.distanceTo(h.pos) < 5)) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.04);
     }
   }

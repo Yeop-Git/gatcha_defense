@@ -491,7 +491,7 @@ export class Game {
 
   // ── 손패 갱신 ──
   private refreshHand(): void {
-    if (!this.battle) return;
+    if (!this.battle || this.paused) return; // 모달(보너스/성장 등) 표시 중엔 손패/셸프 재렌더 생략
     const b = this.battle;
     if (b.phase === 'placement') {
       this.ui.showUnitShelf(b.placeablesState());

@@ -72,7 +72,7 @@ export type SfxName =
 
 /** 효과음 재생. settings.sfx=false면 무음. */
 export function playSfx(name: SfxName): void {
-  if (!settings.sfx) return;
+  if (!settings.sfx || settings.volume <= 0) return;
   switch (name) {
     case 'click': tone({ freq: 420, to: 520, dur: 0.06, type: 'triangle', gain: 0.14 }); break;
     case 'select': tone({ freq: 620, to: 760, dur: 0.07, type: 'triangle', gain: 0.16 }); break;
