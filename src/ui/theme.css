@@ -587,6 +587,31 @@ body { font-family: 'Gothic A1', 'Jua', sans-serif; font-weight: 500; color: var
 @keyframes evoRing { 0% { width: 60px; height: 60px; opacity: 0.95; } 100% { width: 280px; height: 280px; opacity: 0; } }
 @keyframes evoRise { 0% { transform: translateY(16px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
 
+/* ── 진화 연출 강화: 회전 광선 + 셰이크 + 이중 링 ── */
+.evolve-stage { animation: evoShake 0.55s ease-out; }
+@keyframes evoShake { 0%,100% { transform: translateX(0); } 15% { transform: translateX(-6px); } 30% { transform: translateX(6px); } 45% { transform: translateX(-4px); } 60% { transform: translateX(4px); } 75% { transform: translateX(-2px); } }
+.evolve-stage::before {
+  content: ''; position: absolute; top: 82px; left: 50%; width: 320px; height: 320px;
+  transform: translate(-50%, -50%); z-index: 0; pointer-events: none; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(242,206,107,0) 0deg, rgba(242,206,107,0.32) 10deg, rgba(242,206,107,0) 22deg,
+    rgba(242,206,107,0) 60deg, rgba(242,206,107,0.32) 70deg, rgba(242,206,107,0) 82deg,
+    rgba(242,206,107,0) 120deg, rgba(242,206,107,0.32) 130deg, rgba(242,206,107,0) 142deg,
+    rgba(242,206,107,0) 180deg, rgba(242,206,107,0.32) 190deg, rgba(242,206,107,0) 202deg,
+    rgba(242,206,107,0) 240deg, rgba(242,206,107,0.32) 250deg, rgba(242,206,107,0) 262deg,
+    rgba(242,206,107,0) 300deg, rgba(242,206,107,0.32) 310deg, rgba(242,206,107,0) 322deg);
+  -webkit-mask: radial-gradient(circle, transparent 26%, #000 46%, transparent 78%);
+  mask: radial-gradient(circle, transparent 26%, #000 46%, transparent 78%);
+  animation: evoRays 3.2s linear infinite, evoRaysIn 1s ease-out both;
+}
+@keyframes evoRays { to { transform: translate(-50%, -50%) rotate(360deg); } }
+@keyframes evoRaysIn { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: 0.6; } }
+.evolve-stage::after {
+  content: ''; position: absolute; top: 82px; left: 50%; width: 60px; height: 60px;
+  transform: translate(-50%, -50%); border-radius: 50%; border: 3px solid #fff6cf; opacity: 0;
+  z-index: 1; pointer-events: none; animation: evoRing 1.2s ease-out 0.4s both;
+}
+.evo-ico { box-shadow: 0 0 26px rgba(242,206,107,0.55); }
+
 .enemy-portrait {
   position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center;
   color: var(--parchment); background:

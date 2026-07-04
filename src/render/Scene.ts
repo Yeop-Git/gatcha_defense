@@ -17,6 +17,30 @@ const THEME_GROUND: Record<Theme, number> = {
 function darken(hex: number, f: number): number {
   return new THREE.Color(hex).multiplyScalar(f).getHex();
 }
+
+/** 테마별 장식 프롭 (로우폴리 unlit). 잔디/비경로 셀에 흩뿌린다. */
+function makeProp(theme: Theme): THREE.Group {
+  const g = new THREE.Group();
+  const mat = (c: number): THREE.MeshBasicMaterial => new THREE.MeshBasicMaterial({ color: c });
+  const r = Math.random();
+  if (theme === 'forest') {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.6, 6), mat(0x6b4a2b)); trunk.position.y = 0.3; g.add(trunk);
+    const top = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.1, 7), mat(r < 0.5 ? 0x2f6b34 : 0x3c7a3e)); top.position.y = 1.05; g.add(top);
+  } else if (theme === 'cave') {
+    if (r < 0.5) { const cr = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 0), mat(0x9a86e0)); cr.position.y = 0.5; cr.scale.y = 1.7; g.add(cr); }
+    else { const rk = new THREE.Mesh(new THREE.DodecahedronGeometry(0.42, 0), mat(0x6a6470)); rk.position.y = 0.32; g.add(rk); }
+  } else if (theme === 'volcano') {
+    const rk = new THREE.Mesh(new THREE.DodecahedronGeometry(0.44, 0), mat(0x3a2420)); rk.position.y = 0.34; g.add(rk);
+    if (r < 0.4) { const em = new THREE.Mesh(new THREE.IcosahedronGeometry(0.18, 0), mat(0xe8632c)); em.position.set(0.22, 0.5, 0.1); g.add(em); }
+  } else if (theme === 'temple') {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 1.3, 8), mat(0xbdb08c)); col.position.y = 0.65; g.add(col);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.2, 0.8), mat(0xd8a93b)); cap.position.y = 1.4; g.add(cap);
+  } else { // grassland
+    const bush = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), mat(r < 0.5 ? 0x5a8a3c : 0x6b9a44)); bush.position.y = 0.32; bush.scale.y = 0.8; g.add(bush);
+    if (r < 0.3) { const flower = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12, 0), mat(0xe8a0c0)); flower.position.set(0.35, 0.2, 0.2); g.add(flower); }
+  }
+  return g;
+}
 const SIDE_SHADE = 0.62; // 타일 옆면 밝기 비율
 /** BoxGeometry 6면 머티리얼 배열: 윗면(+Y)만 밝게, 나머지는 옆면색. */
 function faceMats(top: THREE.Material, side: THREE.Material): THREE.Material[] {
@@ -33,8 +57,9 @@ export class Scene {
   /** 엔티티/장판/이펙트 컨테이너 */
   entities = new THREE.Group();
   zones = new THREE.Group();
-  /** 맵 타일 + 배치 슬롯 (스테이지별 재구성 대상) */
+  /** 맵 타일 + 배치 슬롯 + 장식 (스테이지별 재구성 대상) */
   private mapGroup = new THREE.Group();
+  private theme: Theme = 'grassland';
 
   base: THREE.Group;
   private grassTopMat!: THREE.MeshBasicMaterial;
@@ -124,14 +149,35 @@ export class Scene {
   rebuildMap(): void {
     for (const c of [...this.mapGroup.children]) {
       this.mapGroup.remove(c);
-      const m = c as THREE.Mesh;
-      m.geometry?.dispose(); // 지오메트리만 해제(머티리얼은 공유/재사용)
+      c.traverse((o) => (o as THREE.Mesh).geometry?.dispose()); // 지오메트리만 해제(머티리얼 공유/재사용)
     }
     this.slotMeshes = [];
     this.buildGrid();
     this.buildSlots();
     const last = FIELD.path[FIELD.path.length - 1];
     if (last) this.base.position.set(last.x, 0, last.z);
+    this.buildDecor();
+  }
+
+  /** 비경로 셀에 테마 장식 흩뿌리기 (기지 주변 제외). */
+  private buildDecor(): void {
+    const cands: { x: number; z: number }[] = [];
+    for (let col = 1; col < FIELD.cols - 1; col++) for (let row = 1; row < FIELD.rows - 1; row++) {
+      if (FIELD.pathCellSet.has(`${col},${row}`)) continue;
+      cands.push(FIELD.cellCenter(col, row));
+    }
+    const base = this.base.position;
+    const usable = cands.filter((c) => Math.hypot(c.x - base.x, c.z - base.z) > 3.6);
+    for (let i = usable.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [usable[i], usable[j]] = [usable[j], usable[i]]; }
+    const count = Math.min(14, usable.length);
+    for (let i = 0; i < count; i++) {
+      const c = usable[i];
+      const prop = makeProp(this.theme);
+      prop.position.set(c.x + (Math.random() - 0.5) * 0.6, 0, c.z + (Math.random() - 0.5) * 0.6);
+      prop.rotation.y = Math.random() * Math.PI * 2;
+      prop.scale.multiplyScalar(0.8 + Math.random() * 0.5);
+      this.mapGroup.add(prop);
+    }
   }
 
   private buildSlots(): void {
@@ -217,6 +263,7 @@ export class Scene {
   }
 
   setTheme(theme: Theme): void {
+    this.theme = theme;
     this.grassTopMat.color.setHex(THEME_GROUND[theme]);
     this.grassSideMat.color.setHex(darken(THEME_GROUND[theme], SIDE_SHADE));
   }
