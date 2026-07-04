@@ -125,6 +125,7 @@ export class UI {
   onSettingsChange = () => {};
   onDex = () => {};
   onExit = () => {};
+  onToTitle = () => {};
   onManageSelectHolder = (_id: string) => {};
   onManageToggle = (_holderId: string, _cardId: string) => {};
 
@@ -594,6 +595,7 @@ export class UI {
   }
 
   openViewer(roster: OwnedUnit[], selectedUid?: string): void {
+    this.setGameplayVisible(false); // 전투 HUD/선반/전투버튼이 뷰어 뒤로 비쳐 보이지 않게 숨김
     this.viewerUI.classList.add('on');
     const list = this.viewerUI.querySelector('#roster-items')!;
     list.innerHTML = '';
@@ -618,12 +620,13 @@ export class UI {
     this.lobbyUI = el('div');
     this.lobbyUI.id = 'lobby';
     this.lobbyUI.style.display = 'none';
-    this.lobbyUI.innerHTML = `<div class="lobby-head"><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div><div class="menu-card" id="lobby-dex"><div class="mc-ico">📖</div><div class="mc-title">도감</div><div class="mc-sub">수집 컬렉션</div></div></div></div><button class="btn primary lobby-cta" id="lobby-battle"><span class="lc-ico">⚔️</span><span class="lc-title">출정</span><span class="lc-sub" id="lobby-next-stage"></span></button>`;
+    this.lobbyUI.innerHTML = `<div class="lobby-head"><button class="btn lobby-title-btn" id="lobby-title">☰ 타이틀</button><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div><div class="menu-card" id="lobby-dex"><div class="mc-ico">📖</div><div class="mc-title">도감</div><div class="mc-sub">수집 컬렉션</div></div></div></div><button class="btn primary lobby-cta" id="lobby-battle"><span class="lc-ico">⚔️</span><span class="lc-title">출정</span><span class="lc-sub" id="lobby-next-stage"></span></button>`;
     this.root.appendChild(this.lobbyUI);
     (this.lobbyUI.querySelector('#lobby-battle') as HTMLElement).onclick = () => this.onEnterBattle();
     (this.lobbyUI.querySelector('#lobby-manage') as HTMLElement).onclick = () => this.onManage();
     (this.lobbyUI.querySelector('#lobby-viewer') as HTMLElement).onclick = () => this.onOpenViewer();
     (this.lobbyUI.querySelector('#lobby-dex') as HTMLElement).onclick = () => { playSfx('click'); this.onDex(); };
+    (this.lobbyUI.querySelector('#lobby-title') as HTMLElement).onclick = () => { playSfx('click'); this.onToTitle(); };
   }
 
   showLobby(info: { stageNo: number; stageLabel: string; gold: number; roster: OwnedUnit[]; capturedCount: number }): void {

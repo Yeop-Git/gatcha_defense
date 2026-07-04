@@ -83,6 +83,7 @@ export class Game {
     this.ui.onSettingsChange = () => { this.speed = settings.speed; };
     this.ui.onDex = () => this.ui.showDex();
     this.ui.onExit = () => this.exitBattle();
+    this.ui.onToTitle = () => this.toTitle();
     this.ui.onManageSelectHolder = (id) => { this.manageHolder = id; this.renderManage(); };
     this.ui.onManageToggle = (holderId, cardId) => this.toggleEquip(holderId, cardId);
     this.ui.onCaptureDiscardPick = (id) => this.onCaptureDiscardPick(id);
@@ -704,6 +705,18 @@ export class Game {
     if (state.stageIndex >= STAGES.length) { this.win(); return; }
     saveRun();
     this.showLobby();
+  }
+
+  /** 로비 → 타이틀 화면으로. 진행 상황은 저장돼 있어 '이어하기'로 복귀 가능. */
+  private toTitle(): void {
+    this.ui.hideLobby();
+    this.ui.hideManage();
+    this.viewer.setActive(false);
+    this.ui.closeViewer();
+    this.mode = 'title';
+    this.paused = true;
+    saveRun();
+    this.ui.showTitle(hasRun());
   }
 
   /** 전투 중 ESC/나가기 → 원정대(홈)로 복귀. 현재 스테이지는 포기(다시 출정 가능). */
