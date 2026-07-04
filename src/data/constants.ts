@@ -169,6 +169,7 @@ export const MANA_REGEN = 0.65; // Base mana per second. Kept tight so card timi
 /** ? = 留덈굹 ?뚰븨: 諛곗튂??? ?좊떅 1泥대떦 珥덈떦 異붽? 留덈굹 */
 export const GRASS_MANA_REGEN = 0.18;
 export const HAND_SIZE = 5;
+export const CAPTURE_CARD_ID = 'n_capture';
 /** ?묎툒 泥섏튂(湲곗? ?뚮났) ?ъ궗??荑⑤떎??珥? ??짠6.2 "荑⑤떎??議댁옱" */
 export const BASE_HEAL_CD = 18;
 

@@ -1,7 +1,7 @@
 import type { Element, ElementOrNeutral } from './types';
 import { MONSTERS } from '../data/monsters';
-import { ENEMIES } from '../data/enemies';
-import { CARD_BY_ID, cardsOfCharacter, type DeckCharacter } from '../data/cards';
+import { ENEMIES, type EnemyTier } from '../data/enemies';
+import { CARD_BY_ID, cardsOfCharacter, type CardDef, type DeckCharacter } from '../data/cards';
 import {
   BASE_HP, BOND_CAP, BOND_PER_STAGE, CAPTURE, ELEMENTS, ENEMY_EVOLVE_LEVEL, ENEMY_PLAY, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
   MANA_MAX, MANA_REGEN, MAX_MONSTERS, UNIT_BASE,
@@ -180,6 +180,38 @@ export class GameState {
     return this.learnedIdsFor(character, level).slice(-EQUIP_CAP);
   }
 
+  private enemyCardScore(card: CardDef, tier: EnemyTier): number {
+    let score = card.learnLevel * 2 - card.cost * 0.15;
+    const kind = card.effect.kind;
+    if (tier === 'swarm' || tier === 'flyer') {
+      if (card.cost <= 2) score += 4;
+      if (kind === 'chain' || kind === 'damage' || kind === 'judgment') score += 3;
+      if (kind === 'markArea') score += 2;
+    } else if (tier === 'tank') {
+      if (kind === 'zone' || kind === 'defDown' || kind === 'markArea') score += 4;
+      if (kind === 'damage' && card.cost >= 2) score += 1.5;
+    } else if (tier === 'healer') {
+      if (kind === 'healAll' || kind === 'shieldAll' || kind === 'cleanseHeal' || kind === 'blessOne' || kind === 'drain') score += 5;
+      if (kind === 'markArea' || kind === 'defDown') score += 1.5;
+    } else if (tier === 'elite' || tier === 'miniboss' || tier === 'boss') {
+      if (kind === 'damage' || kind === 'judgment' || kind === 'drain') score += 4;
+      if (card.cost >= 3) score += 2;
+      if (card.effect.kind === 'zone') score += 1.5;
+    } else {
+      if (kind === 'damage' || kind === 'zone' || kind === 'markArea') score += 2;
+    }
+    return score;
+  }
+
+  private defaultEnemyEquip(element: Element, tier: EnemyTier, level: number): string[] {
+    return cardsOfCharacter(`e_${element}` as DeckCharacter)
+      .filter((c) => c.learnLevel <= level)
+      .sort((a, b) => this.enemyCardScore(b, tier) - this.enemyCardScore(a, tier) || a.learnLevel - b.learnLevel)
+      .slice(0, EQUIP_CAP)
+      .sort((a, b) => a.learnLevel - b.learnLevel || a.cost - b.cost)
+      .map((c) => c.id);
+  }
+
   /** 전투 덱 = 성(무색) + 로스터 각자의 장착 카드 (총 최대 4×5=20장, §6) */
   battleDeck(): string[] {
     return [...this.heroEquipped, ...this.roster.flatMap((u) => u.equipped)];
@@ -243,7 +275,7 @@ export class GameState {
       uid: nextUid(), kind: 'enemy', species: sp, element: el,
       level: startLevel, stage, xp: 0, equipped: [], discarded: [], bond: 0,
     };
-    unit.equipped = this.defaultEquip(`e_${el}` as DeckCharacter, startLevel);
+    unit.equipped = this.defaultEnemyEquip(el, ENEMIES[sp].tier, startLevel);
     this.roster.push(unit);
     return unit;
   }

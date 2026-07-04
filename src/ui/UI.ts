@@ -23,6 +23,7 @@ export interface HudInfo {
 export interface HandCard {
   id: string;
   playable: boolean;
+  pinned?: boolean;
   cdFrac?: number;
   reason?: string;
 }
@@ -31,6 +32,9 @@ export interface UnitCard {
   id: string;
   name: string;
   element: string;
+  kind: 'creature' | 'enemy';
+  species?: string;
+  stage: 1 | 2 | 3;
   placed: boolean;
   dead?: boolean;
 }
@@ -214,7 +218,7 @@ export class UI {
     this.beginCta.id = 'begin-cta';
     this.beginCta.onclick = () => this.onBeginWave();
     this.beginCta.style.display = 'none';
-    this.root.appendChild(this.beginCta);
+    this.actions.append(this.beginCta);
 
     this.dropZone = el('div');
     this.dropZone.id = 'drop-zone';
@@ -299,6 +303,7 @@ export class UI {
         <div class="unit-state">${stateLabel}</div>
         <div class="unit-art">${icon}</div>
         <div class="unit-name">${it.name}</div>`);
+      applyUnitPortrait(card.querySelector('.unit-art') as HTMLElement, it);
       card.addEventListener('pointerdown', (e) => this.onUnitCardGrab(it.id, e as PointerEvent));
       this.shelf.appendChild(card);
     }
@@ -328,7 +333,7 @@ export class UI {
   private updateCardEl(card: HTMLElement, c: HandCard): void {
     const def = CARD_BY_ID[c.id];
     const keep = `${card.classList.contains('dealing') ? ' dealing' : ''}${card.classList.contains('dragging') ? ' dragging' : ''}${card.classList.contains('selected') ? ' selected' : ''}`;
-    card.className = `card el-${def.element}${c.playable ? '' : ' disabled'}${keep}`;
+    card.className = `card el-${def.element}${c.playable ? '' : ' disabled'}${c.pinned ? ' pinned' : ''}${keep}`;
     card.dataset.playable = c.playable ? '1' : '0';
     card.dataset.reason = c.reason ?? '';
     card.innerHTML = `
@@ -340,13 +345,14 @@ export class UI {
       ${c.cdFrac && c.cdFrac > 0 ? `<div class="cd-overlay" style="height:${Math.round(c.cdFrac * 100)}%"></div>` : ''}`;
   }
 
-  showPlacement(items: { id: string; name: string; element: string; placed: boolean; dead?: boolean }[]): void {
+  showPlacement(items: { id: string; name: string; element: string; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3; placed: boolean; dead?: boolean }[]): void {
     this.placementBar.style.display = 'flex';
     this.placementBar.innerHTML = '<div class="place-hint">유닛 카드를 전장으로 드래그해 배치하세요. 배치된 유닛을 드래그하면 위치를 바꿀 수 있습니다.</div>';
     const row = el('div', 'place-row');
     for (const it of items) {
       const stateLabel = it.placed ? '배치됨' : '대기';
       const chip = el('div', `place-chip${it.placed ? ' placed' : ''}`, `<span class="pc-ico">${cardElemIcon(it.element)}</span><span class="pc-name">${it.name}</span><span class="pc-state">${stateLabel}</span>`);
+      applyUnitPortrait(chip.querySelector('.pc-ico') as HTMLElement, it);
       chip.onclick = () => this.onPlacementToggle(it.id);
       row.appendChild(chip);
     }
@@ -404,16 +410,17 @@ export class UI {
     }
   }
 
-  showCaptureDiscard(data: { newName: string; newElement: string; options: { id: string; name: string; sub: string; element: string }[] }): void {
+  showCaptureDiscard(data: { newName: string; newElement: string; newSpecies?: string; options: { id: string; name: string; sub: string; element: string; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3 }[] }): void {
     const scroll = this.modal(`<h1>원정대가 가득 찼습니다</h1><p>최대 ${MAX_MONSTERS}마리까지 함께할 수 있습니다. 보낼 동료를 고르거나 새 포획체를 놓아주세요.</p><div class="replace-row"></div>`);
     const row = scroll.querySelector('.replace-row')!;
-    const mk = (id: string, name: string, sub: string, element: string, isNew: boolean): void => {
+    const mk = (id: string, name: string, sub: string, element: string, kind: 'creature' | 'enemy', species: string | undefined, stage: 1 | 2 | 3, isNew: boolean): void => {
       const wrap = el('div', 'replace-slot', `${isNew ? '<div class="rs-tag new">새 포획체</div>' : '<div class="rs-tag old">동료</div>'}<div class="big-card el-${element}"><div class="card-elem">${cardElemIcon(element)}</div><div class="art">${cardElemIcon(element)}</div><div class="name">${name}</div><div class="desc">${sub}</div></div>`);
+      applyUnitPortrait(wrap.querySelector('.art') as HTMLElement, { name, element, kind, species, stage });
       wrap.onclick = () => { this.clearModal(); this.onCaptureDiscardPick(id); };
       row.appendChild(wrap);
     };
-    for (const o of data.options) mk(o.id, o.name, o.sub, o.element, false);
-    mk('__new__', data.newName, '방금 포획한 개체', data.newElement, true);
+    for (const o of data.options) mk(o.id, o.name, o.sub, o.element, o.kind, o.species, o.stage, false);
+    mk('__new__', data.newName, '방금 포획한 개체', data.newElement, 'enemy', data.newSpecies, 1, true);
   }
 
   showStageClear(stageLabel: string, rewards: string[]): void {
@@ -476,7 +483,7 @@ export class UI {
     list.innerHTML = '';
     roster.forEach((u, i) => {
       const item = el('div', 'roster-item' + (i === 0 ? ' sel' : ''), `<div class="ri-pic">${ELEMENT_ICON[u.element]}</div><div class="ri-text"><div class="ri-name">${displayName(u)}</div><div class="ri-sub">${ELEMENT_NAME_KO[u.element]} · Lv${u.level} · ${u.stage}단</div></div>`);
-      applyPortrait(item.querySelector('.ri-pic') as HTMLElement, u.element, u.stage);
+      applyOwnedPortrait(item.querySelector('.ri-pic') as HTMLElement, u);
       item.onclick = () => {
         list.querySelectorAll('.roster-item').forEach((x) => x.classList.remove('sel'));
         item.classList.add('sel');
@@ -511,7 +518,7 @@ export class UI {
     r.appendChild(el('div', 'lobby-mon', '<div class="lm-ico">성</div><div class="lm-name">성</div><div class="lm-sub">공용 카드 5장</div>'));
     for (const u of info.roster) {
       const chip = el('div', 'lobby-mon', `<div class="lm-ico">${cardElemIcon(u.element)}</div><div class="lm-name">${displayName(u)}</div><div class="lm-sub">Lv${u.level} · ${u.stage}단</div>`);
-      applyPortrait(chip.querySelector('.lm-ico') as HTMLElement, u.element, u.stage);
+      applyOwnedPortrait(chip.querySelector('.lm-ico') as HTMLElement, u);
       r.appendChild(chip);
     }
     if (info.roster.length === 0) r.appendChild(el('div', 'lobby-empty', '아직 동료가 없습니다.<br/>출정해서 첫 동료를 선택하세요.'));
@@ -527,7 +534,7 @@ export class UI {
     (this.manageUI.querySelector('#manage-close') as HTMLButtonElement).onclick = () => this.onManageClose();
   }
 
-  showManage(data: { holders: { id: string; name: string; element: string; level: number }[]; selected: string; level: number; equippedCount: number; cap: number; avgCost: number; deckSummary: string; cards: { id: string; name: string; element: string; cost: number; text: string; learnLevel: number; learned: boolean; equipped: boolean }[] }): void {
+  showManage(data: { holders: { id: string; name: string; element: string; level: number; kind?: 'creature' | 'enemy'; species?: string; stage?: 1 | 2 | 3 }[]; selected: string; level: number; equippedCount: number; cap: number; avgCost: number; deckSummary: string; cards: { id: string; name: string; element: string; cost: number; text: string; learnLevel: number; learned: boolean; equipped: boolean }[] }): void {
     this.setGameplayVisible(false);
     this.hideLobby();
     this.manageUI.style.display = 'flex';
@@ -535,6 +542,7 @@ export class UI {
     h.innerHTML = '<h2>대상</h2>';
     for (const ho of data.holders) {
       const item = el('div', 'holder-item' + (ho.id === data.selected ? ' sel' : ''), `<span class="hi-ico">${cardElemIcon(ho.element)}</span><span class="hi-name">${ho.name}</span><span class="hi-lv">Lv${ho.level}</span>`);
+      if (ho.kind && ho.stage) applyUnitPortrait(item.querySelector('.hi-ico') as HTMLElement, { name: ho.name, element: ho.element, kind: ho.kind, species: ho.species, stage: ho.stage });
       item.onclick = () => this.onManageSelectHolder(ho.id);
       h.appendChild(item);
     }
@@ -564,7 +572,7 @@ export class UI {
     const stageRow = isEnemy ? `<div class="row"><span>구분</span><span>포획 개체 · ${u.stage}단</span></div>` : `<div class="row"><span>진화 단계</span><span>${u.stage}단 / 3</span></div><div class="row"><span>진화 레벨</span><span>${MONSTERS[u.element].evolveLevels.join(' / ')}</span></div>`;
     const body = this.viewerUI.querySelector('#info-body')!;
     body.innerHTML = `<div class="info-pic">${ELEMENT_ICON[u.element]}</div><h2>${displayName(u)} <button class="rename-btn" id="rename-btn" title="이름 짓기">수정</button></h2><div class="row"><span>종족</span><span>${unitName(u)}</span></div><div class="row"><span>속성</span><span>${ELEMENT_NAME_KO[u.element]}</span></div><div class="row"><span>레벨</span><span>Lv ${u.level}</span></div>${stageRow}${traitLabel ? `<div class="row"><span>포획 특성</span><span>${traitLabel}</span></div>` : ''}<div class="row"><span>공격력</span><span>${s.attack}</span></div><div class="row"><span>사거리</span><span>${s.range.toFixed(1)}</span></div><div class="row"><span>공속</span><span>${s.attackSpeed.toFixed(2)}</span></div><div class="row"><span>유대 보너스</span><span>+${Math.round(s.bond * 100)}%</span></div><p style="margin-top:10px;font-size:12.5px;opacity:0.9">${traitDesc || roleText}</p>`;
-    applyPortrait(body.querySelector('.info-pic') as HTMLElement, u.element, u.stage);
+    applyOwnedPortrait(body.querySelector('.info-pic') as HTMLElement, u);
     (body.querySelector('#rename-btn') as HTMLButtonElement).onclick = () => this.showRenameDialog(u);
   }
 
@@ -586,5 +594,51 @@ function applyPortrait(elm: HTMLElement | null, element: Element, stage: number)
     elm.textContent = '';
     elm.style.backgroundImage = `url("${url}")`;
     elm.classList.add('has-img');
+  });
+}
+
+function enemyTierShort(tier?: string): string {
+  if (tier === 'swarm') return '무리';
+  if (tier === 'flyer') return '비행';
+  if (tier === 'tank') return '탱커';
+  if (tier === 'healer') return '지원';
+  if (tier === 'elite') return '정예';
+  if (tier === 'miniboss') return '거대';
+  if (tier === 'boss') return '보스';
+  return '포획';
+}
+
+function initials(name: string): string {
+  return Array.from(name.replace(/\s+/g, '')).slice(0, 2).join('') || '?';
+}
+
+function applyEnemyPortrait(elm: HTMLElement | null, element: string, species?: string, name?: string): void {
+  if (!elm) return;
+  const def = species ? ENEMIES[species] : undefined;
+  const label = initials(name ?? def?.name ?? cardElemIcon(element));
+  elm.textContent = '';
+  elm.style.backgroundImage = '';
+  elm.classList.add('enemy-portrait', `el-${element}`);
+  elm.innerHTML = `<span class="ep-mark">${cardElemIcon(element)}</span><span class="ep-face">${label}</span><span class="ep-tier">${enemyTierShort(def?.tier)}</span>`;
+}
+
+function applyUnitPortrait(elm: HTMLElement | null, unit: { name: string; element: string; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3 }): void {
+  if (!elm) return;
+  elm.classList.remove('has-img', 'enemy-portrait');
+  elm.className = elm.className.replace(/\bel-(fire|water|grass|light|dark|neutral|normal)\b/g, '').trim();
+  if (unit.kind === 'enemy') {
+    applyEnemyPortrait(elm, unit.element, unit.species, unit.name);
+    return;
+  }
+  applyPortrait(elm, unit.element as Element, unit.stage);
+}
+
+function applyOwnedPortrait(elm: HTMLElement | null, unit: OwnedUnit): void {
+  applyUnitPortrait(elm, {
+    name: displayName(unit),
+    element: unit.element,
+    kind: unit.kind,
+    species: unit.species,
+    stage: unit.stage,
   });
 }

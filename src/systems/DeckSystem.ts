@@ -50,11 +50,18 @@ export class DeckSystem {
     }
   }
 
-  drawHand(pool: string[], size = HAND_SIZE): void {
+  drawHand(pool: string[], size = HAND_SIZE, priority: string[] = []): void {
     this.hand = [];
     this.discardPile = [];
     this.drawPile = shuffle(this.uniqueDeck(pool));
-    this.drawCards(size);
+    for (const id of priority) {
+      if (this.hand.length >= size || !CARD_BY_ID[id]) continue;
+      const i = this.drawPile.indexOf(id);
+      if (i < 0) continue;
+      this.drawPile.splice(i, 1);
+      this.hand.push(id);
+    }
+    this.drawCards(size - this.hand.length);
   }
 
   def(id: string): CardDef {
@@ -101,6 +108,23 @@ export class DeckSystem {
       this.drawCards(1);
       if (this.hand.length === before) break;
     }
+  }
+
+  ensureInHand(id: string, pool: string[], size = HAND_SIZE): boolean {
+    if (this.hand.includes(id) || this.cdFrac(id) > 0) return false;
+    if (!this.uniqueDeck(pool).includes(id) || this.hand.length >= size) return false;
+    this.syncDeck(pool);
+    const fromDraw = this.drawPile.indexOf(id);
+    if (fromDraw >= 0) {
+      this.drawPile.splice(fromDraw, 1);
+    } else {
+      const fromDiscard = this.discardPile.indexOf(id);
+      if (fromDiscard < 0) return false;
+      this.discardPile.splice(fromDiscard, 1);
+    }
+    this.hand.push(id);
+    bus.emit('mana:change', { mana: this.mana, max: this.manaMax });
+    return true;
   }
 
   regenMana(dt: number): void {

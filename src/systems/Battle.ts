@@ -20,6 +20,7 @@ import {
   GRASS_MANA_REGEN,
   BASE_HEAL_CD,
   CAPTURE,
+  CAPTURE_CARD_ID,
   CAPTURE_RADIUS,
 } from '../data/constants';
 import { CaptureOrb } from '../entities/CaptureOrb';
@@ -109,13 +110,16 @@ export class Battle {
     }
   }
 
-  placeablesState(): { id: string; name: string; element: ElementOrNeutral; placed: boolean; dead: boolean }[] {
+  placeablesState(): { id: string; name: string; element: ElementOrNeutral; placed: boolean; dead: boolean; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3 }[] {
     return this.state.roster.map((u) => ({
       id: u.uid,
       name: displayName(u),
       element: u.element,
       placed: this.units.some((m) => m.unit.uid === u.uid),
       dead: false,
+      kind: u.kind,
+      species: u.species,
+      stage: u.stage,
     }));
   }
 
@@ -209,7 +213,7 @@ export class Battle {
 
   beginWave(): void {
     if (this.phase !== 'placement') return;
-    this.deck.drawHand(this.state.battleDeck(), 5);
+    this.deck.drawHand(this.state.battleDeck(), 5, [CAPTURE_CARD_ID]);
     this.phase = 'wave';
     this.waveClock = 0;
     this.spawnQueue = [];
@@ -233,6 +237,7 @@ export class Battle {
     this.deck.bonusRegen = this.units.filter((m) => m.alive && m.element === 'grass').length * GRASS_MANA_REGEN;
     this.deck.regenMana(dt);
     this.deck.updateCooldowns(dt);
+    this.refreshCaptureAccess();
     this.updateCastleAttack(dt);
     this.scene.setBaseHp(this.state.baseHp / this.state.baseHpMax);
 
@@ -256,6 +261,15 @@ export class Battle {
       return;
     }
     if (this.phase === 'wave' && this.spawnQueue.length === 0 && this.enemies.length === 0) this.onWaveClear();
+  }
+
+  private refreshCaptureAccess(): void {
+    if (this.phase !== 'wave') return;
+    const hasTarget = this.enemies.some((e) => e.alive && ((!e.isBoss && !e.isMini) || e.stunTimer > 0));
+    if (!hasTarget) return;
+    if (this.deck.ensureInHand(CAPTURE_CARD_ID, this.state.battleDeck(), 5)) {
+      bus.emit('toast', { text: '포획구를 회수했습니다.', kind: 'info' });
+    }
   }
 
   private onWaveClear(): void {

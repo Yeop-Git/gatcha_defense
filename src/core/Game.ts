@@ -8,7 +8,7 @@ import { STAGES, BUFF_NODES, EVENT_NODES } from '../data/stages';
 import { ENEMIES } from '../data/enemies';
 import { cardsOfCharacter, CARD_BY_ID, cardIcon, cardRole } from '../data/cards';
 import type { Element } from './types';
-import { DIFFICULTY_JUMP_MULT, FIXED_DT } from '../data/constants';
+import { CAPTURE_CARD_ID, DIFFICULTY_JUMP_MULT, FIXED_DT } from '../data/constants';
 import { bus } from './events';
 
 type Mode = 'title' | 'lobby' | 'battle' | 'viewer' | 'manage';
@@ -72,7 +72,7 @@ export class Game {
     this.ui.onEvolveAck = () => this.onEvolveAck();
     this.ui.onCardReplacePick = (discardId) => this.pickCardReplace(discardId);
     this.ui.onRestart = () => { clearRun(); this.startRun(); };
-    this.ui.onPlacementToggle = (id) => { this.battle?.togglePlace(id); this.refreshPlacement(); };
+    this.ui.onPlacementToggle = (_id) => {};
     this.ui.onEnterBattle = () => this.enterBattle();
     this.ui.onManage = () => this.openManage();
     this.ui.onManageClose = () => this.showLobby();
@@ -84,11 +84,7 @@ export class Game {
   private lastPhase = '';
   private speed: 1 | 2 | 3 = 1;
   private refreshPlacement(): void {
-    if (this.battle && this.battle.phase === 'placement' && !this.paused) {
-      this.ui.showPlacement(this.battle.placeablesState());
-    } else {
-      this.ui.hidePlacement();
-    }
+    this.ui.hidePlacement();
   }
 
   private wireInput(): void {
@@ -335,8 +331,9 @@ export class Game {
     const def = ENEMIES[species];
     const oldest = state.roster.slice(0, 2).map((u) => ({
       id: u.uid, name: displayName(u), sub: `Lv${u.level} · ${unitName(u)}`, element: u.element as string,
+      kind: u.kind, species: u.species, stage: u.stage,
     }));
-    this.ui.showCaptureDiscard({ newName: name, newElement: def?.element ?? 'neutral', options: oldest });
+    this.ui.showCaptureDiscard({ newName: name, newElement: def?.element ?? 'neutral', newSpecies: species, options: oldest });
   }
 
   private onCaptureDiscardPick(id: string): void {
@@ -418,7 +415,7 @@ export class Game {
     const id = this.manageHolder;
     const holders = [
       { id: 'hero', name: '성 (공용)', element: 'neutral' as const, level: 1 },
-      ...state.roster.map((u) => ({ id: u.uid, name: displayName(u), element: u.element, level: u.level })),
+      ...state.roster.map((u) => ({ id: u.uid, name: displayName(u), element: u.element, level: u.level, kind: u.kind, species: u.species, stage: u.stage })),
     ];
     const lvl = state.holderLevel(id);
     const equipped = state.equippedOf(id);
@@ -484,7 +481,7 @@ export class Game {
     for (const id of b.deck.hand) {
       const playable = b.deck.canPlay(id);
       const cdFrac = b.deck.cdFrac(id);
-      cards.push({ id, playable, cdFrac, reason: playable ? undefined : cdFrac > 0 ? '재사용 대기 중' : '마나가 부족합니다' });
+      cards.push({ id, playable, pinned: id === CAPTURE_CARD_ID, cdFrac, reason: playable ? undefined : cdFrac > 0 ? '재사용 대기 중' : '마나가 부족합니다' });
     }
     this.ui.refreshHand(cards);
   }
