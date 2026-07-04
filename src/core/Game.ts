@@ -261,21 +261,11 @@ export class Game {
     return ghost;
   }
 
-  private makeUnitDragGhost(id: string): HTMLElement {
-    const item = this.battle?.placeablesState().find((x) => x.id === id);
-    const ghost = document.createElement('div');
-    ghost.className = 'card-drag-ghost unit';
-    ghost.innerHTML = `<div class="dg-ico">${item?.name?.slice(0, 2) ?? 'Unit'}</div><div class="dg-name">${item?.name ?? 'Unit'}</div>`;
-    document.body.appendChild(ghost);
-    return ghost;
-  }
-
   private beginUnitCardDrag(id: string, ev: PointerEvent): void {
     if (!this.battle || this.mode !== 'battle' || this.paused || this.battle.phase !== 'placement') return;
     const startX = ev.clientX;
     const startY = ev.clientY;
     let moved = false;
-    let ghost: HTMLElement | null = null;
     let hlSlot = -1;
     const range = this.battle.placeableRange(id);
     const move = (e: PointerEvent) => {
@@ -283,13 +273,13 @@ export class Game {
       if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 6) return;
       if (!moved) {
         moved = true;
-        ghost = this.makeUnitDragGhost(id);
+        this.battle.showUnitGhost(id); // 반투명 캐릭터 모델을 필드에 표시(직관적 배치)
         document.body.style.userSelect = 'none';
       }
       e.preventDefault();
-      if (ghost) { ghost.style.left = `${e.clientX}px`; ghost.style.top = `${e.clientY}px`; }
       const p = this.scene.groundPoint(e.clientX, e.clientY);
       if (!p) return;
+      this.battle.moveUnitGhost(p.x, p.z);
       this.scene.showRangePreview(p.x, p.z, range);
       const slot = this.battle.nearestSlot(p.x, p.z);
       if (slot !== hlSlot) {
@@ -302,7 +292,7 @@ export class Game {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       document.body.style.userSelect = '';
-      if (ghost) ghost.remove();
+      this.battle?.hideUnitGhost();
       if (hlSlot >= 0) this.scene.setSlotHighlight(hlSlot, false);
       this.scene.hideRangePreview();
       if (!this.battle) return;

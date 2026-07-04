@@ -363,6 +363,7 @@ export class UI {
   }
 
   refreshHand(cards: HandCard[]): void {
+    this.shelf.classList.remove('placement'); // 웨이브: 카드 선반 원위치
     const ids = cards.map((c) => c.id);
     const same = ids.length === this.handIds.length && ids.every((id, i) => id === this.handIds[i]);
     if (same && cards.length > 0) {
@@ -394,6 +395,7 @@ export class UI {
   showUnitShelf(items: UnitCard[]): void {
     this.handIds = items.map((c) => c.id);
     this.cardEls.clear();
+    this.shelf.classList.add('placement'); // 배치 페이즈: 카드 위로, 전투 버튼 하단 중앙
     this.shelf.innerHTML = '';
     for (const it of items) {
       const icon = cardElemIcon(it.element);
@@ -616,7 +618,7 @@ export class UI {
     this.lobbyUI = el('div');
     this.lobbyUI.id = 'lobby';
     this.lobbyUI.style.display = 'none';
-    this.lobbyUI.innerHTML = `<div class="lobby-head"><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card primary" id="lobby-battle"><div class="mc-ico">⚔️</div><div class="mc-title">출정</div><div class="mc-sub" id="lobby-next-stage"></div></div><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div><div class="menu-card" id="lobby-dex"><div class="mc-ico">📖</div><div class="mc-title">도감</div><div class="mc-sub">수집 컬렉션</div></div></div></div>`;
+    this.lobbyUI.innerHTML = `<div class="lobby-head"><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div><div class="menu-card" id="lobby-dex"><div class="mc-ico">📖</div><div class="mc-title">도감</div><div class="mc-sub">수집 컬렉션</div></div></div></div><button class="btn primary lobby-cta" id="lobby-battle"><span class="lc-ico">⚔️</span><span class="lc-title">출정</span><span class="lc-sub" id="lobby-next-stage"></span></button>`;
     this.root.appendChild(this.lobbyUI);
     (this.lobbyUI.querySelector('#lobby-battle') as HTMLElement).onclick = () => this.onEnterBattle();
     (this.lobbyUI.querySelector('#lobby-manage') as HTMLElement).onclick = () => this.onManage();

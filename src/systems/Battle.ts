@@ -5,6 +5,8 @@ import type { StageDef } from '../data/stages';
 import type { Element, ElementOrNeutral, Vec2 } from '../core/types';
 import { ENEMIES, creatureEnemyId } from '../data/enemies';
 import { MONSTERS } from '../data/monsters';
+import { makeCreature, makeEnemy, disposeCreatureView } from '../render/fallback';
+import { unitHeight, CAPTURED_BOSS_SCALE } from '../data/constants';
 import { CARD_BY_ID, type CardEffect, type CardElement } from '../data/cards';
 import {
   UNIT_SLOTS,
@@ -57,6 +59,8 @@ export class Battle {
   private hasDarkS3 = false;
   private time = 0;
   private castleCd = 0;
+  private atkSfxAt = -1; // 평타 효과음 스로틀
+  private unitGhost: THREE.Group | null = null; // 배치 드래그 반투명 미리보기 모델
 
   constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number) {
     scene.setTheme(stage.theme);
@@ -177,6 +181,54 @@ export class Battle {
       if (d <= bd) { bd = d; best = m; }
     }
     return best;
+  }
+
+  // ── 배치 드래그: 반투명 캐릭터 모델 미리보기 (직관적 배치) ──
+  /** 드래그 중인 유닛의 반투명 모델을 필드에 생성(위치는 moveUnitGhost로). */
+  showUnitGhost(id: string): void {
+    this.hideUnitGhost();
+    const u = this.state.roster.find((x) => x.uid === id);
+    if (!u) return;
+    let g: THREE.Group;
+    if (u.kind === 'enemy') {
+      const edef = ENEMIES[u.species ?? ''] ?? ENEMIES.slime;
+      const bossy = edef.tier === 'boss' || edef.tier === 'miniboss';
+      const h = unitHeight(u.stage) * (bossy ? CAPTURED_BOSS_SCALE : 1);
+      g = edef.creatureStage
+        ? makeCreature(edef.element as Element, h / 1.85, edef.creatureStage)
+        : makeEnemy(edef.element, edef.radius, edef.flying, edef.model, 'idle', h);
+    } else {
+      g = makeCreature(u.element, unitHeight(u.stage) / 1.85, u.stage);
+    }
+    g.position.set(0, -200, 0); // 위치 지정 전엔 화면 밖
+    this.ghostOpacity(g);
+    this.scene.entities.add(g);
+    this.unitGhost = g;
+  }
+
+  moveUnitGhost(x: number, z: number): void {
+    if (!this.unitGhost) return;
+    this.unitGhost.position.set(x, 0, z);
+    this.ghostOpacity(this.unitGhost); // 모델 비동기 로드 후에도 반투명 유지
+  }
+
+  hideUnitGhost(): void {
+    if (!this.unitGhost) return;
+    this.scene.entities.remove(this.unitGhost);
+    disposeCreatureView(this.unitGhost);
+    this.unitGhost = null;
+  }
+
+  /** 그룹의 모든 메시를 반투명 처리(아웃라인은 숨김). */
+  private ghostOpacity(g: THREE.Group): void {
+    g.traverse((o) => {
+      if (o.userData.outline) { o.visible = false; return; }
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh) {
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const m of mats) { m.transparent = true; m.opacity = 0.45; m.depthWrite = false; }
+      }
+    });
   }
 
   nearestSlot(x: number, z: number): number {
@@ -316,6 +368,8 @@ export class Battle {
 
   private fireUnitShot(m: Monster, target: Enemy): void {
     const color = ELEMENT_COLOR[m.element];
+    // 아군 평타 효과음 (여러 유닛 동시 발사 시 스로틀로 과다 재생 방지)
+    if (this.time - this.atkSfxAt > 0.11) { playSfx('attack'); this.atkSfxAt = this.time; }
     let power = m.attackPower();
     if (m.element === 'dark' && this.hasDarkS3) power *= 1 + this.state.darkKillStacks;
     m.faceTowards(target.pos.x, target.pos.z);
@@ -798,6 +852,7 @@ export class Battle {
   }
 
   finish(): void {
+    this.hideUnitGhost();
     for (const m of [...this.units]) m.dispose(this.scene.entities);
     for (const e of [...this.enemies]) e.dispose(this.scene.entities);
     for (const p of [...this.projectiles]) p.dispose(this.scene.entities);
