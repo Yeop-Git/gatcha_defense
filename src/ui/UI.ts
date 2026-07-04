@@ -171,13 +171,16 @@ export class UI {
     this.title = el('div');
     this.title.id = 'title-screen';
     this.title.innerHTML = `
-      <div class="logo">Monster Keepers</div>
-      <div class="sub">적을 포획해 나만의 몬스터로 길들이고, 함께 육성해 성을 지키는 디펜스 로그라이크.</div>
-      <div class="title-btns">
-        <button class="btn primary" id="continue-btn">이어하기</button>
-        <button class="btn" id="new-btn">새 모험</button>
-        <button class="btn" id="settings-btn">설정</button>
-      </div>`;
+      <div class="title-inner">
+        <div class="logo-banner"><span class="logo">Monster Keepers</span></div>
+        <div class="sub">적을 포획해 나만의 몬스터로 길들이고,<br/>함께 육성해 성을 지키는 디펜스 로그라이크.</div>
+        <nav class="title-menu">
+          <button class="menu-item primary" id="continue-btn">이어하기</button>
+          <button class="menu-item" id="new-btn">새 모험</button>
+          <button class="menu-item" id="settings-btn">설정</button>
+        </nav>
+      </div>
+      <div class="title-hint" id="title-hint">적을 포획해 원정대를 키우고, 몰려오는 적으로부터 성을 지키세요.</div>`;
     this.root.appendChild(this.title);
     (this.title.querySelector('#continue-btn') as HTMLButtonElement).onclick = () => { playSfx('click'); if (this.hasSave) this.onContinue(); else this.onStart(); };
     (this.title.querySelector('#new-btn') as HTMLButtonElement).onclick = () => { playSfx('click'); this.onStart(); };
