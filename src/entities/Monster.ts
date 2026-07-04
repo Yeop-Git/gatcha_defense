@@ -57,8 +57,8 @@ export class Monster {
     this.pos.set(x, 0, z);
     this.view.position.copy(this.pos);
 
-    // 이름표 (닉네임 우선, 다글자 한글도 안 깨지는 라벨).
-    const label = makeLabelSprite(displayName(unit), { worldHeight: 0.5 });
+    // 이름표 (레벨 + 닉네임). 머리 위에 몇 레벨인지 표시.
+    const label = makeLabelSprite(`Lv${unit.level} ${displayName(unit)}`, { worldHeight: 0.5 });
     label.position.set(0, labelY, 0);
     this.view.add(label);
 

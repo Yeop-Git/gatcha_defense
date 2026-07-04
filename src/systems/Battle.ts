@@ -112,7 +112,7 @@ export class Battle {
     }
   }
 
-  placeablesState(): { id: string; name: string; element: ElementOrNeutral; placed: boolean; dead: boolean; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3 }[] {
+  placeablesState(): { id: string; name: string; element: ElementOrNeutral; placed: boolean; dead: boolean; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3; level: number }[] {
     return this.state.roster.map((u) => ({
       id: u.uid,
       name: displayName(u),
@@ -122,6 +122,7 @@ export class Battle {
       kind: u.kind,
       species: u.species,
       stage: u.stage,
+      level: u.level,
     }));
   }
 

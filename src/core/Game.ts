@@ -6,7 +6,7 @@ import { saveRun, loadRun, clearRun, hasRun } from './save';
 import { Battle } from '../systems/Battle';
 import { STAGES, BUFF_NODES, EVENT_NODES } from '../data/stages';
 import { ENEMIES } from '../data/enemies';
-import { cardsOfCharacter, CARD_BY_ID, cardIcon, cardRole } from '../data/cards';
+import { cardsOfCharacter, CARDS, CARD_BY_ID, cardIcon, cardRole } from '../data/cards';
 import type { Element } from './types';
 import { CAPTURE_CARD_ID, DIFFICULTY_JUMP_MULT, FIXED_DT } from '../data/constants';
 import { bus } from './events';
@@ -333,7 +333,8 @@ export class Game {
     this.pendingCaptureSpecies = species;
     this.paused = true; // 전투 일시정지 후 선택
     const def = ENEMIES[species];
-    const oldest = state.roster.slice(0, 2).map((u) => ({
+    // 오버플로 교체 통일: 오래된 3 + 신규 1 중에서 버리기 (카드 교체와 동일 규칙).
+    const oldest = state.roster.slice(0, 3).map((u) => ({
       id: u.uid, name: displayName(u), sub: `Lv${u.level} · ${unitName(u)}`, element: u.element as string,
       kind: u.kind, species: u.species, stage: u.stage,
     }));
@@ -423,9 +424,16 @@ export class Game {
   private renderManage(): void {
     const id = this.manageHolder;
     const holders = [
+      { id: '__all__', name: '전체 카드', element: 'normal' as const, level: 0 },
       { id: 'hero', name: '성 (공용)', element: 'neutral' as const, level: 1 },
       ...state.roster.map((u) => ({ id: u.uid, name: displayName(u), element: u.element, level: u.level, kind: u.kind, species: u.species, stage: u.stage })),
     ];
+    // 전체 카드 보기(도감성): 모든 카드를 읽기 전용으로 나열.
+    if (id === '__all__') {
+      const cards = CARDS.map((c) => ({ id: c.id, name: c.name, element: c.element, cost: c.cost, text: c.text, learnLevel: c.learnLevel, learned: true, equipped: false }));
+      this.ui.showManage({ holders, selected: id, level: 0, cards, equippedCount: 0, cap: EQUIP_CAP, avgCost: 0, deckSummary: `전체 ${cards.length}종`, readOnly: true });
+      return;
+    }
     const lvl = state.holderLevel(id);
     const equipped = state.equippedOf(id);
     const discarded = state.holderDiscarded(id);

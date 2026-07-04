@@ -40,6 +40,7 @@ export interface UnitCard {
   stage: 1 | 2 | 3;
   placed: boolean;
   dead?: boolean;
+  level?: number;
 }
 
 const el = (tag: string, cls?: string, html?: string): HTMLElement => {
@@ -351,6 +352,7 @@ export class UI {
       const icon = cardElemIcon(it.element);
       const stateLabel = it.placed ? '배치됨' : '대기';
       const card = el('div', `unit-card el-${it.element}${it.placed ? ' placed' : ''}`, `
+        <div class="unit-lv" style="position:absolute;top:4px;left:6px;font-size:11px;font-weight:800;color:#f2ce6b;text-shadow:0 1px 2px #000;z-index:2">Lv${it.level ?? 1}</div>
         <div class="unit-state">${stateLabel}</div>
         <div class="unit-art">${icon}</div>
         <div class="unit-name">${it.name}</div>`);
@@ -611,7 +613,7 @@ export class UI {
     (this.manageUI.querySelector('#manage-close') as HTMLButtonElement).onclick = () => this.onManageClose();
   }
 
-  showManage(data: { holders: { id: string; name: string; element: string; level: number; kind?: 'creature' | 'enemy'; species?: string; stage?: 1 | 2 | 3 }[]; selected: string; level: number; equippedCount: number; cap: number; avgCost: number; deckSummary: string; cards: { id: string; name: string; element: string; cost: number; text: string; learnLevel: number; learned: boolean; equipped: boolean }[] }): void {
+  showManage(data: { holders: { id: string; name: string; element: string; level: number; kind?: 'creature' | 'enemy'; species?: string; stage?: 1 | 2 | 3 }[]; selected: string; level: number; equippedCount: number; cap: number; avgCost: number; deckSummary: string; readOnly?: boolean; cards: { id: string; name: string; element: string; cost: number; text: string; learnLevel: number; learned: boolean; equipped: boolean }[] }): void {
     this.setGameplayVisible(false);
     this.hideLobby();
     this.manageUI.style.display = 'flex';
@@ -624,16 +626,20 @@ export class UI {
       h.appendChild(item);
     }
     const cc = this.manageUI.querySelector('#manage-cards') as HTMLElement;
-    cc.innerHTML = `<h2>장착 카드 ${data.equippedCount}/${data.cap}</h2><div class="deck-summary">평균 비용 ${data.avgCost.toFixed(1)} · ${data.deckSummary}</div><div class="mc-grid"></div>`;
+    const header = data.readOnly
+      ? `<h2>전체 카드 ${data.cards.length}</h2><div class="deck-summary">${data.deckSummary}</div>`
+      : `<h2>장착 카드 ${data.equippedCount}/${data.cap}</h2><div class="deck-summary">평균 비용 ${data.avgCost.toFixed(1)} · ${data.deckSummary}</div>`;
+    cc.innerHTML = `${header}<div class="mc-grid"></div>`;
     const grid = cc.querySelector('.mc-grid') as HTMLElement;
     for (const c of data.cards) {
-      const cls = `mcard el-${c.element}${c.equipped ? ' equipped' : ''}${c.learned ? '' : ' locked'}`;
-      const foot = c.learned ? (c.equipped ? '장착 중' : '장착하기') : `Lv${c.learnLevel} 필요`;
       const def = CARD_BY_ID[c.id];
-      const role = def ? cardRole(def) : '기술';
-      const meta = def ? cardMeta(def) : `Lv${c.learnLevel}`;
-      const card = el('div', cls, `<div class="cost">${c.cost}</div><div class="card-elem">${cardElemIcon(c.element)}</div><div class="mc-role">${role}</div><div class="mc-name">${def ? cardIcon(def) : cardElemIcon(c.element)} ${c.name}</div><div class="mc-meta">${meta}</div><div class="mc-desc">${c.text}</div><div class="mc-foot">${foot}</div>`);
-      if (c.learned) card.onclick = () => this.onManageToggle(data.selected, c.id);
+      // 전투 손패와 동일한 .card UI + 관리 전용 하단 상태(.mc-foot).
+      const cls = `card mcard el-${c.element}${c.equipped ? ' equipped' : ''}${c.learned ? '' : ' locked'}`;
+      const foot = data.readOnly
+        ? (def ? cardMeta(def) : `Lv${c.learnLevel}`)
+        : (c.learned ? (c.equipped ? '장착 중 · 탭하여 해제' : '탭하여 장착') : `Lv${c.learnLevel} 필요`);
+      const card = el('div', cls, `<div class="cost">${c.cost}</div><div class="card-elem">${cardElemIcon(c.element)}</div><div class="art">${def ? cardIcon(def) : '❔'}</div><div class="name">${c.name}</div><div class="desc">${c.text}</div><div class="mc-foot" style="margin-top:auto;font-size:11px;opacity:0.85;padding-top:4px">${foot}</div>`);
+      if (!data.readOnly && c.learned) card.onclick = () => this.onManageToggle(data.selected, c.id);
       grid.appendChild(card);
     }
   }
