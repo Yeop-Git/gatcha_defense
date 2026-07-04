@@ -1,68 +1,66 @@
-import * as THREE from 'three';
+﻿import * as THREE from 'three';
 import type { Scene } from '../render/Scene';
-import { type GameState, type OwnedUnit, displayName } from '../core/GameState';
+import { type GameState, type OwnedUnit, displayName, deriveStats, unitName } from '../core/GameState';
 import type { StageDef } from '../data/stages';
 import type { Element, ElementOrNeutral, Vec2 } from '../core/types';
 import { ENEMIES } from '../data/enemies';
 import { CARD_BY_ID, type CardEffect, type CardElement } from '../data/cards';
-import { UNIT_SLOTS, BASE_LEAK_NORMAL, BASE_LEAK_MINIBOSS, BASE_LEAK_BOSS, ENEMY, BURN_DPS_PER_STACK, OVERGROWTH_DPS, HERO, DARK_KILL_STACK, DARK_KILL_STACK_MAX, ELEMENT_COLOR, NEUTRAL_COLOR, SYNERGY_COOLDOWN, GRASS_MANA_REGEN, BASE_HEAL_CD } from '../data/constants';
-import { CORRUPT_MID_ID, CORRUPT_FINAL_ID, CORRUPT_SKILL, CORRUPT_TINT_P2, corruptedDef } from '../data/corrupted';
-
-/** 속성색 (무속성 포함) */
-const colorOf = (el: ElementOrNeutral): number => (el === 'neutral' ? NEUTRAL_COLOR : ELEMENT_COLOR[el]);
+import {
+  UNIT_SLOTS,
+  BASE_LEAK_NORMAL,
+  BASE_LEAK_MINIBOSS,
+  BASE_LEAK_BOSS,
+  BURN_DPS_PER_STACK,
+  OVERGROWTH_DPS,
+  HERO,
+  DARK_KILL_STACK,
+  DARK_KILL_STACK_MAX,
+  ELEMENT_COLOR,
+  NEUTRAL_COLOR,
+  GRASS_MANA_REGEN,
+  BASE_HEAL_CD,
+  CAPTURE,
+  CAPTURE_RADIUS,
+} from '../data/constants';
+import { CaptureOrb } from '../entities/CaptureOrb';
 import { Enemy } from '../entities/Enemy';
 import { Monster } from '../entities/Monster';
 import { Projectile } from '../entities/Projectile';
 import { GroundZone, type ZoneKind } from '../entities/GroundZone';
 import { affinity } from './affinity';
 import { DeckSystem } from './DeckSystem';
-import { SynergySystem, type SynergyCtx } from './SynergySystem';
 import { bus } from '../core/events';
-import { tintModel } from '../render/ModelLoader';
 
 type Phase = 'placement' | 'wave' | 'stageClear' | 'lost' | 'won';
-
 interface SpawnEvent { t: number; enemy: string }
 
-/** 한 스테이지의 전투 시뮬레이션. 모든 시스템을 조율하는 중심. SynergyCtx 구현. */
-export class Battle implements SynergyCtx {
+const colorOf = (el: ElementOrNeutral): number => (el === 'neutral' ? NEUTRAL_COLOR : ELEMENT_COLOR[el]);
+
+export class Battle {
   phase: Phase = 'placement';
   units: Monster[] = [];
   enemies: Enemy[] = [];
   projectiles: Projectile[] = [];
   zones: GroundZone[] = [];
+  captureOrbs: CaptureOrb[] = [];
   deck: DeckSystem;
-  private synergy: SynergySystem;
 
   waveIndex = 0;
   private waveClock = 0;
   private spawnQueue: SpawnEvent[] = [];
   private healTimer = 0;
   private hasDarkS3 = false;
-  private deadUnits: OwnedUnit[] = [];
   private time = 0;
-
-  /** 적 반격 피해 배율 (난이도에 따라 완만히 상승). */
-  private enemyAtkScale: number;
-  /** 성(거점) 평타 쿨다운 — 경로 끝을 지키는 실질적 방어자. */
   private castleCd = 0;
 
   constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number) {
-    this.enemyAtkScale = 1 + (hpScale - 1) * 0.6;
     scene.setTheme(stage.theme);
-
-    // 협동기 내부 쿨다운 = 기본 - 갈림길 버프 감소 (§10, 하한 0.5초)
-    this.synergy = new SynergySystem(Math.max(0.5, SYNERGY_COOLDOWN - state.synergyCdCut));
     this.deck = new DeckSystem(state.manaMax, state.manaRegen);
-    this.deck.drawHand(state.battleDeck(), 5);
-
     this.autoPlace();
     this.hasDarkS3 = state.roster.some((u) => u.element === 'dark' && u.stage >= 3);
     bus.emit('stage:start', { stage: stage.id });
   }
 
-  // ── 배치 ──────────────────────────────────────────
-  /** 성 좌표 (평타 원점). */
   private castleXZ(): Vec2 {
     return { x: this.scene.base.position.x, z: this.scene.base.position.z };
   }
@@ -76,12 +74,6 @@ export class Battle implements SynergyCtx {
     return -1;
   }
 
-  /** 이 유닛이 이번 스테이지에서 쓰러졌는가 (재배치 불가 — 긴급 소집으로만 복귀). */
-  private isDead(uid: string): boolean {
-    return this.deadUnits.some((u) => u.uid === uid);
-  }
-
-  /** 기본 자동 배치: 강한 순 유닛을 빈 슬롯에. */
   private autoPlace(): void {
     const sorted = [...this.state.roster].sort((a, b) => b.stage - a.stage || b.level - a.level);
     for (const u of sorted.slice(0, this.state.placementCap)) {
@@ -109,110 +101,161 @@ export class Battle implements SynergyCtx {
     }
   }
 
-  /** 배치 UI용: 로스터 유닛의 배치 상태 목록 (쓰러진 유닛은 재배치 불가 표시) */
-  placeablesState(): { id: string; name: string; element: import('../core/types').ElementOrNeutral; placed: boolean; dead: boolean }[] {
-    const list: { id: string; name: string; element: import('../core/types').ElementOrNeutral; placed: boolean; dead: boolean }[] = [];
-    for (const u of this.state.roster) {
-      list.push({ id: u.uid, name: displayName(u), element: u.element, placed: this.units.some((m) => m.unit.uid === u.uid), dead: this.isDead(u.uid) });
+  removeUnitByUid(uid: string): void {
+    const i = this.units.findIndex((m) => m.unit.uid === uid);
+    if (i >= 0) {
+      this.units[i].dispose(this.scene.entities);
+      this.units.splice(i, 1);
     }
-    return list;
   }
 
-  /** 배치 토글 (배치 페이즈에서만 호출). 쓰러진 유닛은 재배치 불가(긴급 소집 카드로만). */
+  placeablesState(): { id: string; name: string; element: ElementOrNeutral; placed: boolean; dead: boolean }[] {
+    return this.state.roster.map((u) => ({
+      id: u.uid,
+      name: displayName(u),
+      element: u.element,
+      placed: this.units.some((m) => m.unit.uid === u.uid),
+      dead: false,
+    }));
+  }
+
+  placeableRange(id: string): number {
+    const live = this.units.find((m) => m.unit.uid === id);
+    if (live) return live.stats.range;
+    const unit = this.state.roster.find((u) => u.uid === id);
+    return unit ? deriveStats(unit).range : 3;
+  }
+
   togglePlace(id: string): void {
     if (this.phase !== 'placement') return;
     const placed = this.units.find((m) => m.unit.uid === id);
     if (placed) { this.removeUnit(placed.slot); return; }
     const unit = this.state.roster.find((u) => u.uid === id);
     if (!unit) return;
-    if (this.isDead(id)) { bus.emit('toast', { text: '쓰러진 유닛은 이번 스테이지에 재배치 불가 (긴급 소집 카드로 복귀)', kind: 'bad' }); return; }
-    if (this.units.length >= this.state.placementCap) { bus.emit('toast', { text: `유닛은 최대 ${this.state.placementCap}체까지 배치`, kind: 'bad' }); return; }
-    const s = this.firstFreeSlot();
-    if (s >= 0) this.placeUnit(unit, s);
+    if (this.units.length >= this.state.placementCap) {
+      bus.emit('toast', { text: `유닛은 최대 ${this.state.placementCap}마리까지 배치할 수 있습니다.`, kind: 'bad' });
+      return;
+    }
+    const slot = this.firstFreeSlot();
+    if (slot >= 0) this.placeUnit(unit, slot);
+  }
+
+  placeUnitAtNearest(id: string, x: number, z: number): boolean {
+    if (this.phase !== 'placement') return false;
+    const slot = this.nearestSlot(x, z);
+    const placed = this.units.find((m) => m.unit.uid === id);
+    if (placed) return this.moveUnitToSlot(placed, slot);
+    const unit = this.state.roster.find((u) => u.uid === id);
+    if (!unit) return false;
+    if (this.units.length >= this.state.placementCap) {
+      bus.emit('toast', { text: `유닛은 최대 ${this.state.placementCap}마리까지 배치할 수 있습니다.`, kind: 'bad' });
+      return false;
+    }
+    const occupant = this.units.find((m) => m.slot === slot);
+    if (occupant) this.removeUnit(occupant.slot);
+    return this.placeUnit(unit, slot);
   }
 
   slotOccupant(slot: number): Monster | undefined {
     return this.units.find((m) => m.slot === slot);
   }
 
-  // ── 웨이브 ────────────────────────────────────────
+  unitNear(x: number, z: number, maxDist: number): Monster | null {
+    let best: Monster | null = null;
+    let bd = maxDist * maxDist;
+    for (const m of this.units) {
+      const d = (m.pos.x - x) ** 2 + (m.pos.z - z) ** 2;
+      if (d <= bd) { bd = d; best = m; }
+    }
+    return best;
+  }
+
+  nearestSlot(x: number, z: number): number {
+    let best = -1;
+    let bd = Infinity;
+    for (let i = 0; i < UNIT_SLOTS.length; i++) {
+      const s = UNIT_SLOTS[i];
+      const d = (s.x - x) ** 2 + (s.z - z) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  moveUnitToSlot(m: Monster, toSlot: number): boolean {
+    if (this.phase !== 'placement') { this.resnapUnit(m); return false; }
+    if (toSlot < 0 || toSlot >= UNIT_SLOTS.length || m.slot === toSlot) { this.resnapUnit(m); return false; }
+    const occupant = this.units.find((u) => u !== m && u.slot === toSlot);
+    const fromSlot = m.slot;
+    this.setUnitSlot(m, toSlot);
+    if (occupant) this.setUnitSlot(occupant, fromSlot);
+    return true;
+  }
+
+  resnapUnit(m: Monster): void {
+    this.setUnitSlot(m, m.slot);
+  }
+
+  private setUnitSlot(m: Monster, slot: number): void {
+    const s = UNIT_SLOTS[slot];
+    m.slot = slot;
+    m.pos.set(s.x, 0, s.z);
+    m.view.position.x = s.x;
+    m.view.position.z = s.z;
+  }
+
   get totalWaves(): number {
     return this.stage.waves.length;
   }
 
-  /** 다음 웨이브 시작 (UI 버튼) */
   beginWave(): void {
     if (this.phase !== 'placement') return;
-    // 웨이브 시작 시 손패 보충 (다중 웨이브 중 카드 고갈 방지)
-    this.deck.refillTo(this.state.battleDeck(), 5);
+    this.deck.drawHand(this.state.battleDeck(), 5);
     this.phase = 'wave';
     this.waveClock = 0;
     this.spawnQueue = [];
     const groups = this.stage.waves[this.waveIndex] ?? [];
     for (const g of groups) {
-      for (let k = 0; k < g.count; k++) {
-        this.spawnQueue.push({ t: k * g.interval, enemy: g.enemy });
-      }
+      for (let k = 0; k < g.count; k++) this.spawnQueue.push({ t: k * g.interval, enemy: g.enemy });
     }
     this.spawnQueue.sort((a, b) => a.t - b.t);
     bus.emit('wave:start', { stage: this.stage.id, wave: this.waveIndex + 1, total: this.totalWaves });
   }
 
   private spawn(ev: SpawnEvent): void {
-    // 가지 않은 길 (§9): 타락체 자리표시 → 버린 속성의 동적 보스로 치환
-    if (ev.enemy === CORRUPT_MID_ID || ev.enemy === CORRUPT_FINAL_ID) {
-      const { mid, final } = this.state.corruptedBosses();
-      const role = ev.enemy === CORRUPT_MID_ID ? 'mid' : 'final';
-      const el = role === 'mid' ? mid : final;
-      const e = new Enemy(corruptedDef(el, role), this.hpScale, el);
-      this.scene.entities.add(e.view);
-      this.enemies.push(e);
-      bus.emit('toast', { text: `🌑 ${e.def.name} — 버려진 수호자가 월식에 물들어 돌아왔다!`, kind: 'bad' });
-      return;
-    }
-    const def = ENEMIES[ev.enemy] ?? ENEMIES.slime; // 미정의 적 ID는 슬라임으로 폴백(크래시 방지)
+    const def = ENEMIES[ev.enemy] ?? ENEMIES.slime;
     const e = new Enemy(def, this.hpScale);
     this.scene.entities.add(e.view);
     this.enemies.push(e);
   }
 
-  // ── 메인 업데이트 ─────────────────────────────────
   update(dt: number): void {
     this.time += dt;
-    const t = this.time;
-    // 풀 = 마나 펌핑: 배치된 풀 유닛 수만큼 마나 재생 보너스 (풀의 "장악" 정체성, §4.2)
     this.deck.bonusRegen = this.units.filter((m) => m.alive && m.element === 'grass').length * GRASS_MANA_REGEN;
     this.deck.regenMana(dt);
     this.deck.updateCooldowns(dt);
-    this.synergy.update(dt);
     this.updateCastleAttack(dt);
     this.scene.setBaseHp(this.state.baseHp / this.state.baseHpMax);
 
     if (this.phase === 'wave') {
       this.waveClock += dt;
-      while (this.spawnQueue.length && this.spawnQueue[0].t <= this.waveClock) {
-        this.spawn(this.spawnQueue.shift()!);
-      }
+      while (this.spawnQueue.length && this.spawnQueue[0].t <= this.waveClock) this.spawn(this.spawnQueue.shift()!);
     }
 
     this.updateUnits(dt);
-    this.updateEnemies(dt, t);
+    this.updateEnemies(dt, this.time);
     this.updateProjectiles(dt);
-    this.updateZones(dt, t);
+    this.updateCaptureOrbs(dt);
+    this.updateZones(dt, this.time);
     this.updateHealers(dt);
     this.scene.vfx.update(dt);
 
-    // 패배 판정을 웨이브 종료 판정보다 먼저 — "보스 통과로 기지 파괴 = 승리" 버그 방지
     if (this.state.baseHp <= 0 && this.phase !== 'lost' && this.phase !== 'won') {
       this.phase = 'lost';
       bus.emit('base:destroyed', {});
       bus.emit('run:lose', {});
       return;
     }
-    // 웨이브 종료 판정
-    if (this.phase === 'wave' && this.spawnQueue.length === 0 && this.enemies.length === 0) {
-      this.onWaveClear();
-    }
+    if (this.phase === 'wave' && this.spawnQueue.length === 0 && this.enemies.length === 0) this.onWaveClear();
   }
 
   private onWaveClear(): void {
@@ -227,21 +270,13 @@ export class Battle implements SynergyCtx {
     }
   }
 
-  // ── 유닛 전투 ─────────────────────────────────────
   private updateUnits(dt: number): void {
-    for (let i = this.units.length - 1; i >= 0; i--) {
-      const m = this.units[i];
-      if (!m.alive) {
-        this.deadUnits.push(m.unit);
-        m.dispose(this.scene.entities);
-        this.units.splice(i, 1);
-        bus.emit('toast', { text: `유닛이 쓰러졌다…`, kind: 'bad' });
-        continue;
-      }
+    for (const m of this.units) {
       m.update(dt, this.time);
-      if (m.atkCd > 0) continue;
       const target = this.frontTargetInRange(m.pos.x, m.pos.z, m.stats.range, m.element === 'dark');
-      if (!target) continue;
+      const face = target ?? this.nearestEnemy(m.pos.x, m.pos.z);
+      if (face) m.faceTowards(face.pos.x, face.pos.z);
+      if (m.atkCd > 0 || !target) continue;
       m.atkCd = 1 / m.effAttackSpeed();
       this.fireUnitShot(m, target);
     }
@@ -251,18 +286,15 @@ export class Battle implements SynergyCtx {
     const color = ELEMENT_COLOR[m.element];
     let power = m.attackPower();
     if (m.element === 'dark' && this.hasDarkS3) power *= 1 + this.state.darkKillStacks;
-    // 공격 타겟을 바라본다
     m.faceTowards(target.pos.x, target.pos.z);
     const stage = m.unit.stage;
-    // 머즐 플래시 — 유닛이 쏘는 게 보이도록
     this.scene.vfx.burst(m.pos.x, m.pos.z, color, 5, 1.3, 1.3);
     const p = new Projectile(m.view.position, target, color, 15, false, (hit) => {
       if (!hit) return;
       this.hitEnemy(hit, power, m.element, stage);
-      // 착탄 이펙트
+      this.applyCapturedAttackPassive(m, hit, power, stage);
       this.scene.vfx.burst(hit.pos.x, hit.pos.z, color, 8, 2.2, 1.0);
       this.scene.vfx.ring(hit.pos.x, hit.pos.z, color, 1.1, 0.22);
-      // 속성별 표식 (시전자 진화 단계 기록 — 협동기 "양쪽" 게이트)
       if (m.element === 'fire') hit.marks.add('burn', 1, stage);
       else if (m.element === 'water') { hit.marks.add('wet', 1, stage); hit.knockback(0.4); }
       else if (m.element === 'dark') hit.marks.add('curse', 1, stage);
@@ -273,148 +305,91 @@ export class Battle implements SynergyCtx {
     this.scene.entities.add(p.mesh);
   }
 
-  /** 빛 유닛 보조: 최저 HP 아군 소회복 + 확률 축복 */
+  private applyCapturedAttackPassive(m: Monster, hit: Enemy, power: number, stage: number): void {
+    const tier = m.capturedTier();
+    if (!tier) return;
+    const color = ELEMENT_COLOR[m.element];
+    if (tier === 'swarm') {
+      if (Math.random() < 0.35) {
+        this.hitEnemy(hit, power * 0.45, m.element, stage);
+        this.scene.vfx.floatText(hit.pos.x, hit.pos.z, '추가타', '#f2ce6b');
+      }
+      return;
+    }
+    if (tier === 'flyer') {
+      const extra = this.enemiesInRadius(hit.pos.x, hit.pos.z, 3.2).find((e) => e !== hit);
+      if (extra) {
+        this.hitEnemy(extra, power * 0.35, m.element, stage);
+        this.scene.vfx.burst(extra.pos.x, extra.pos.z, color, 5, 1.6, 0.8);
+      }
+      return;
+    }
+    if (tier === 'tank') {
+      hit.knockback(0.75);
+      hit.applyRoot(0.35);
+      this.scene.vfx.floatText(hit.pos.x, hit.pos.z, '저지', '#9fd8ff');
+      return;
+    }
+    if (tier === 'healer') {
+      this.repairBase(power * 0.1, 0xf2ce6b);
+      if (Math.random() < 0.18) m.bless(1);
+      return;
+    }
+    if (tier === 'elite' || tier === 'miniboss' || tier === 'boss') {
+      const radius = tier === 'elite' ? 2.1 : tier === 'miniboss' ? 2.7 : 3.2;
+      const splash = tier === 'elite' ? 0.28 : tier === 'miniboss' ? 0.38 : 0.46;
+      for (const e of this.enemiesInRadius(hit.pos.x, hit.pos.z, radius)) {
+        if (e !== hit) this.hitEnemy(e, power * splash, m.element, stage);
+      }
+      this.scene.vfx.ring(hit.pos.x, hit.pos.z, color, radius, 0.25);
+    }
+  }
+
   private lightSupport(m: Monster): void {
-    const lowest = this.units.filter((u) => u.alive).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
-    if (lowest) lowest.heal(m.stats.attack * 0.4);
+    this.repairBase(m.stats.attack * 0.18, 0xf2ce6b);
     if (Math.random() < 0.25) m.bless(1);
   }
 
-  // ── 적 ────────────────────────────────────────────
   private updateEnemies(dt: number, t: number): void {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
-      // 장판 효과 재계산 (매 프레임)
       e.zoneSlow = 0;
       if (!e.def.flying) {
         for (const z of this.zones) {
-          if (z.contains(e.pos.x, e.pos.z)) {
-            e.zoneSlow = Math.max(e.zoneSlow, z.slow);
-            if (z.root > 0) e.applyRoot(0.2); // 보스는 CC 저항으로 반감
-            if (z.dps > 0) this.damageDot(e, z.dps * dt, z.element);
-            // (overgrowth 표식은 풀 '공격'으로만 부여 — 장판 위 상시 스탬프는 협동기 스팸이라 제거)
-          }
+          if (!z.contains(e.pos.x, e.pos.z)) continue;
+          e.zoneSlow = Math.max(e.zoneSlow, z.slow);
+          if (z.root > 0) e.applyRoot(0.2);
+          if (z.dps > 0) this.damageDot(e, z.dps * dt, z.element);
         }
       }
-      // 표식 도트
       const burn = e.marks.stacks('burn');
       if (burn > 0) this.damageDot(e, burn * BURN_DPS_PER_STACK * dt, 'fire');
       if (e.marks.has('overgrowth') && !e.def.flying) this.damageDot(e, OVERGROWTH_DPS * dt, 'grass');
 
       e.update(dt, t);
-
       if (e.reachedBase) {
         this.leak(e);
-        // 보스/미니보스는 통과로 사라지지 않는다 — 기지를 타격하고 경로 시작점으로 회귀 (처치로만 클리어)
         if (e.isBoss || e.isMini) {
           e.resetToPathStart();
-          bus.emit('toast', { text: `💥 ${e.def.name}이(가) 신전을 타격하고 되돌아온다!`, kind: 'bad' });
+          bus.emit('toast', { text: `${e.def.name}이 성을 타격하고 다시 진격합니다.`, kind: 'bad' });
           continue;
         }
         this.despawn(i);
         continue;
       }
       if (!e.alive) {
-        this.onKill(e);
-        this.despawn(i);
-        continue;
-      }
-      // 타락체 보스: 시그니처 스킬 AI (§9) + 최종보스 2페이즈
-      if (e.corruptEl) this.updateCorrupted(e, dt);
-      // 적 반격: 근처 방어자(유닛) 타격.
-      if (e.atkCd > 0) e.atkCd -= dt;
-      else if (this.dealEnemyAttack(e)) e.atkCd = 1 / ENEMY.attackSpeed;
-    }
-  }
-
-  /** 타락체 보스 갱신: P2 전환(최종만) + 시그니처 스킬 시전 (§9) */
-  private updateCorrupted(e: Enemy, dt: number): void {
-    const el = e.corruptEl!;
-    // 최종보스 2페이즈: HP 50% — 완전 월식 폭주 (스탯 상승 + 스킬 가속 + 팔레트 심화)
-    if (e.isBoss && e.bossPhase === 1 && e.hp <= e.maxHp * 0.5) {
-      e.bossPhase = 2;
-      e.speed *= 1.3;
-      e.def = { ...e.def, attack: Math.round(e.def.attack * 1.35) };
-      // 자기 회복형(풀)은 가속하지 않는다 — P2 재생이 가용 DPS를 넘어서는 소프트 불가 방지
-      if (CORRUPT_SKILL[el].kind !== 'thornheal') e.abilityInterval *= 0.5;
-      tintModel(e.view, CORRUPT_TINT_P2);
-      this.scene.vfx.burst(e.pos.x, e.pos.z, 0x4a4e9e, 30, 5, 2);
-      this.scene.vfx.ring(e.pos.x, e.pos.z, 0x8a5fae, 6, 0.8);
-      bus.emit('toast', { text: `🌑 완전 월식 — ${e.def.name}이(가) 폭주한다!`, kind: 'bad' });
-    }
-    e.abilityCd -= dt;
-    if (e.abilityCd > 0) return;
-    e.abilityCd = e.abilityInterval;
-    const skill = CORRUPT_SKILL[el];
-    const scale = this.enemyAtkScale * (e.bossPhase === 2 ? 1.3 : 1);
-    const alive = this.units.filter((m) => m.alive);
-    switch (skill.kind) {
-      case 'firezone': { // 무작위 유닛 주변 폭염
-        const target = alive[Math.floor(Math.random() * alive.length)];
-        if (!target) break;
-        for (const m of alive) {
-          if (Math.hypot(m.pos.x - target.pos.x, m.pos.z - target.pos.z) <= 3) {
-            m.takeDamage(Math.round(skill.power * scale));
-            this.scene.vfx.floatText(m.pos.x, m.pos.z, `-${Math.round(skill.power * scale)}`, '#ff6a6a');
-          }
+        if (!e.dying) {
+          this.onKill(e);
+          const dur = e.beginDeath();
+          if (dur > 0) { e.dying = true; e.deathTimer = Math.min(dur, 1.0); }
+          else { this.despawn(i); continue; }
         }
-        this.scene.vfx.ring(target.pos.x, target.pos.z, ELEMENT_COLOR.fire, 3, 0.5);
-        this.scene.vfx.burst(target.pos.x, target.pos.z, ELEMENT_COLOR.fire, 18);
-        break;
-      }
-      case 'tidalwave': { // 보스 주변 파도 충격
-        for (const m of alive) {
-          if (Math.hypot(m.pos.x - e.pos.x, m.pos.z - e.pos.z) <= 6) {
-            m.takeDamage(Math.round(skill.power * scale));
-            this.scene.vfx.floatText(m.pos.x, m.pos.z, `-${Math.round(skill.power * scale)}`, '#6ad4ff');
-          }
-        }
-        this.scene.vfx.ring(e.pos.x, e.pos.z, ELEMENT_COLOR.water, 6, 0.6);
-        break;
-      }
-      case 'thornheal': { // 자기 회복
-        const amt = Math.round(e.maxHp * skill.power);
-        e.hp = Math.min(e.maxHp, e.hp + amt);
-        this.scene.vfx.floatText(e.pos.x, e.pos.z, `+${amt}`, '#6fae4c');
-        this.scene.vfx.burst(e.pos.x, e.pos.z, ELEMENT_COLOR.grass, 14);
-        break;
-      }
-      case 'darkdrain': { // 가장 강한 유닛 흡수
-        const target = alive.sort((a, b) => b.hp - a.hp)[0];
-        if (!target) break;
-        const dmg = Math.round(skill.power * scale);
-        target.takeDamage(dmg);
-        e.hp = Math.min(e.maxHp, e.hp + dmg * 2);
-        this.scene.vfx.floatText(target.pos.x, target.pos.z, `-${dmg}`, '#b48ae0');
-        this.scene.vfx.burst(e.pos.x, e.pos.z, ELEMENT_COLOR.dark, 14);
-        break;
-      }
-      case 'judgment': { // 전체 신성 피해
-        for (const m of alive) {
-          m.takeDamage(Math.round(skill.power * scale));
-          this.scene.vfx.floatText(m.pos.x, m.pos.z, `-${Math.round(skill.power * scale)}`, '#ffe08a');
-          this.scene.vfx.burst(m.pos.x, m.pos.z, ELEMENT_COLOR.light, 8);
-        }
-        break;
+        e.deathTimer -= dt;
+        const mx = e.view.userData.mixer as THREE.AnimationMixer | undefined;
+        if (mx) mx.update(dt);
+        if (e.deathTimer <= 0) this.despawn(i);
       }
     }
-    bus.emit('toast', { text: `⚠ ${skill.name}!`, kind: 'bad' });
-  }
-
-  /** 적이 사거리 내 가장 가까운 방어자를 타격. 명중 시 true. */
-  private dealEnemyAttack(e: Enemy): boolean {
-    let best: Monster | null = null;
-    let bd: number = ENEMY.engageRange;
-    for (const m of this.units) {
-      if (!m.alive) continue;
-      const d = Math.hypot(m.pos.x - e.pos.x, m.pos.z - e.pos.z);
-      if (d < bd) { bd = d; best = m; }
-    }
-    if (!best) return false;
-    const dmg = Math.max(1, Math.round(e.def.attack * this.enemyAtkScale));
-    best.takeDamage(dmg);
-    this.scene.vfx.floatText(best.pos.x, best.pos.z, `-${dmg}`, '#ff6a6a');
-    return true;
   }
 
   private updateHealers(dt: number): void {
@@ -423,12 +398,9 @@ export class Battle implements SynergyCtx {
     this.healTimer = 1;
     const healers = this.enemies.filter((e) => e.def.healer && e.alive);
     if (!healers.length) return;
-    // 각 적은 사거리 내 힐러가 있으면 1회만 회복(중첩 방지). 힐러/보스는 회복 대상 제외.
     for (const e of this.enemies) {
       if (!e.alive || e.def.healer || e.isBoss) continue;
-      if (healers.some((h) => e.pos.distanceTo(h.pos) < 5)) {
-        e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.04);
-      }
+      if (healers.some((h) => e.pos.distanceTo(h.pos) < 5)) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.04);
     }
   }
 
@@ -436,6 +408,7 @@ export class Battle implements SynergyCtx {
     const amt = e.def.leak === 'boss' ? BASE_LEAK_BOSS : e.def.leak === 'miniboss' ? BASE_LEAK_MINIBOSS : BASE_LEAK_NORMAL;
     this.state.baseHp = Math.max(0, this.state.baseHp - amt);
     bus.emit('base:damage', { amount: amt, hp: this.state.baseHp });
+    this.scene.vfx.floatText(this.scene.base.position.x, this.scene.base.position.z, `-${amt}`, '#ff6a6a');
     this.scene.vfx.ring(this.scene.base.position.x, this.scene.base.position.z, 0xc0392b, 4, 0.4);
   }
 
@@ -443,7 +416,6 @@ export class Battle implements SynergyCtx {
     bus.emit('enemy:killed', { element: e.element, x: e.pos.x, z: e.pos.z, isBoss: e.isBoss });
     this.scene.vfx.burst(e.pos.x, e.pos.z, ELEMENT_COLOR[e.element === 'neutral' ? 'light' : e.element] ?? 0xffffff, 10);
     this.state.gold += e.isBoss ? 100 : e.isMini ? 30 : 3;
-    // 어둠 3단 처치 스택 — 런 내 영구 누적 (§5.4), GameState에 보관
     if (this.hasDarkS3) this.state.darkKillStacks = Math.min(DARK_KILL_STACK_MAX, this.state.darkKillStacks + DARK_KILL_STACK);
   }
 
@@ -452,55 +424,43 @@ export class Battle implements SynergyCtx {
     this.enemies.splice(i, 1);
   }
 
-  // ── 데미지 헬퍼 ───────────────────────────────────
-  /** 표식/협동기 트리거 O. 유닛·카드 공격용. */
-  hitEnemy(e: Enemy, amount: number, element: ElementOrNeutral, stage: number, opts: { ignoreDef?: boolean; darkBonus?: number } = {}): number {
+  hitEnemy(e: Enemy, amount: number, element: ElementOrNeutral, _stage: number, opts: { ignoreDef?: boolean; darkBonus?: number } = {}): number {
     let mult = affinity(element, e.element);
     if (opts.darkBonus && e.element === 'dark') mult *= opts.darkBonus;
     const dealt = e.applyDamage(amount * mult, opts.ignoreDef);
     this.scene.vfx.floatText(e.pos.x, e.pos.z, String(dealt), mult > 1.1 ? '#ffd84f' : '#ffffff');
-    // 무속성은 협동기 반응 없음
-    if (element !== 'neutral') this.synergy.onReaction(e, element, stage, amount, this);
     return dealt;
   }
 
-  /** 표식 도트: 협동기 트리거 X (무한 발동 방지). */
   private damageDot(e: Enemy, amount: number, _element: Element): void {
     e.applyDamage(amount);
   }
 
-  // ── SynergyCtx 구현 ───────────────────────────────
   enemiesInRadius(x: number, z: number, r: number): Enemy[] {
     return this.enemies.filter((e) => e.alive && Math.hypot(e.pos.x - x, e.pos.z - z) <= r);
   }
-  allEnemies(): Enemy[] {
-    return this.enemies.filter((e) => e.alive);
-  }
-  zonesNear(x: number, z: number, r: number): GroundZone[] {
-    return this.zones.filter((z2) => !z2.dead && Math.hypot(z2.center.x - x, z2.center.z - z) <= r + z2.radius);
-  }
-  aoeDamage(x: number, z: number, r: number, amount: number, element: Element, ignoreDef = false): void {
-    for (const e of this.enemiesInRadius(x, z, r)) {
-      const dealt = e.applyDamage(amount * affinity(element, e.element), ignoreDef);
-      this.scene.vfx.floatText(e.pos.x, e.pos.z, String(dealt));
-    }
-  }
-  shieldAllies(pct: number): void {
-    for (const m of this.units) m.addShield(m.maxHp * pct);
-  }
-  vfxRing(x: number, z: number, color: number, r: number, dur: number): void {
-    this.scene.vfx.ring(x, z, color, r, dur);
-  }
-  vfxBurst(x: number, z: number, color: number, n: number): void {
-    this.scene.vfx.burst(x, z, color, n);
-  }
-  banner(id: string, name: string, a: Element, b: Element, x: number, z: number): void {
-    // 반응 도감 (§7.3): 최초 발동이면 도감 등록 + 발견 연출
-    const isNew = this.state.discoverSynergy(id);
-    bus.emit('synergy:fire', { id, name, x, z, a, b, discovered: isNew });
+
+  private repairBase(amount: number, color = 0x6fae4c): void {
+    const before = this.state.baseHp;
+    this.state.heal(amount);
+    const healed = Math.round(this.state.baseHp - before);
+    const base = this.scene.base.position;
+    if (healed > 0) this.scene.vfx.floatText(base.x, base.z, `+${healed}`, '#6fae4c');
+    this.scene.vfx.ring(base.x, base.z, color, 3.5, 0.5);
+    this.scene.setBaseHp(this.state.baseHp / this.state.baseHpMax);
   }
 
-  // ── 타겟팅 ────────────────────────────────────────
+  private nearestEnemy(x: number, z: number): Enemy | null {
+    let best: Enemy | null = null;
+    let bd = Infinity;
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      const d = (e.pos.x - x) ** 2 + (e.pos.z - z) ** 2;
+      if (d < bd) { bd = d; best = e; }
+    }
+    return best;
+  }
+
   private frontTargetInRange(x: number, z: number, range: number, preferCursed = false): Enemy | null {
     let best: Enemy | null = null;
     let bestScore = -Infinity;
@@ -515,18 +475,15 @@ export class Battle implements SynergyCtx {
     return best;
   }
 
-  // ── 성(거점) 방어 ─────────────────────────────────
-  /** 성이 사거리 내 선두 적을 공격 — 경로 끝의 마지막 방어선. */
   private updateCastleAttack(dt: number): void {
     if (this.castleCd > 0) { this.castleCd -= dt; return; }
     const base = this.scene.base.position;
     const inRange = this.enemies.filter((e) => e.alive && Math.hypot(e.pos.x - base.x, e.pos.z - base.z) <= HERO.range);
-    if (inRange.length === 0) return;
+    if (!inRange.length) return;
     this.castleCd = 1 / HERO.attackSpeed;
     const target = inRange.sort((a, b) => b.progress() - a.progress())[0];
     const dealt = target.applyDamage(HERO.attack);
     this.scene.vfx.floatText(target.pos.x, target.pos.z, String(dealt));
-    // 성 평타 탄 — 잘 보이게
     const p = new Projectile(base, target, 0xffe08a, 16, false, (hit) => {
       if (hit) this.scene.vfx.burst(hit.pos.x, hit.pos.z, 0xffe08a, 6, 2, 1);
     });
@@ -535,7 +492,6 @@ export class Battle implements SynergyCtx {
     this.scene.vfx.ring(base.x, base.z, 0xffe08a, 2.4, 0.25);
   }
 
-  /** 가장 앞선(기지 근접) 살아있는 적 위치 — 스마트 타깃용. */
   private frontEnemyPoint(): Vec2 | null {
     let best: Enemy | null = null;
     for (const e of this.enemies) {
@@ -545,7 +501,6 @@ export class Battle implements SynergyCtx {
     return best ? { x: best.pos.x, z: best.pos.z } : null;
   }
 
-  // ── 투사체/장판 ───────────────────────────────────
   private updateProjectiles(dt: number): void {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
@@ -574,27 +529,16 @@ export class Battle implements SynergyCtx {
     this.scene.zones.add(zone.view);
   }
 
-  // ── 카드 사용 ─────────────────────────────────────
-  /**
-   * 카드 시전. point = 전장 드롭 지점(드래그, 정밀). 없으면 지점형 카드는
-   * 최전방 적을 스마트 타깃(더블클릭/숫자키).
-   */
   playCard(id: string, point?: Vec2): boolean {
     const def = CARD_BY_ID[id];
     if (!def) return false;
-    // 긴급 소집(rally): 쓰러진 유닛이 없으면 마나 소모 전에 차단 (헛시전 방지)
-    if (def.effect.kind === 'rally' && this.deadUnits.length === 0) {
-      bus.emit('toast', { text: '소집할 쓰러진 유닛이 없습니다', kind: 'bad' });
-      return false;
-    }
     let pt = point;
-    if ((def.target === 'point' || def.target === 'enemy-area') && !pt) {
-      pt = this.frontEnemyPoint() ?? this.castleXZ();
-    }
+    if ((def.target === 'point' || def.target === 'enemy-area') && !pt) pt = this.frontEnemyPoint() ?? this.castleXZ();
     if (!this.deck.consume(id)) return false;
     this.applyCardEffect(def.effect, def.element, pt);
-    // 응급 처치: 재사용 쿨다운 (스팸 방지, §6.2 "쿨다운 존재")
+    if (this.deck.hand.length === 0) this.deck.refillTo(this.state.battleDeck(), 5);
     if (def.effect.kind === 'baseHeal') this.deck.setCooldown(id, BASE_HEAL_CD);
+    if (def.effect.kind === 'capture') this.deck.setCooldown(id, CAPTURE.cooldown);
     bus.emit('card:played', { id });
     return true;
   }
@@ -607,20 +551,18 @@ export class Battle implements SynergyCtx {
     const p = point ?? this.castleXZ();
     const stage = cardEl === 'normal' ? 1 : this.maxStageOwned(cardEl);
     switch (fx.kind) {
-      case 'damage': {
+      case 'damage':
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
-          this.hitEnemy(e, fx.amount, fx.element, stage, { ignoreDef: false });
+          this.hitEnemy(e, fx.amount, fx.element, stage);
           if (fx.mark) e.marks.add(fx.mark, fx.markStacks ?? 1, stage);
           if (fx.knockback) e.knockback(fx.knockback);
         }
-        this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), fx.radius, 0.4);
+        this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), Math.min(fx.radius, 9), 0.4);
         this.scene.vfx.burst(p.x, p.z, colorOf(fx.element), 14);
         break;
-      }
       case 'chain': {
         const d2 = (e: Enemy) => (e.pos.x - p.x) ** 2 + (e.pos.z - p.z) ** 2;
-        const near = this.enemiesInRadius(p.x, p.z, 8).sort((a, b) => d2(a) - d2(b)).slice(0, fx.targets);
-        for (const e of near) {
+        for (const e of this.enemiesInRadius(p.x, p.z, 8).sort((a, b) => d2(a) - d2(b)).slice(0, fx.targets)) {
           this.hitEnemy(e, fx.amount, fx.element, stage);
           if (fx.mark) e.marks.add(fx.mark, fx.markStacks ?? 1, stage);
           this.scene.vfx.burst(e.pos.x, e.pos.z, colorOf(fx.element), 8);
@@ -632,23 +574,22 @@ export class Battle implements SynergyCtx {
         this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), fx.radius, 0.4);
         break;
       case 'shieldAll':
-        this.shieldAllies(fx.pct);
-        this.units.forEach((m) => this.scene.vfx.burst(m.pos.x, m.pos.z, 0x9fd8ff, 6));
+        this.repairBase(this.state.baseHpMax * fx.pct, 0x9fd8ff);
+        bus.emit('toast', { text: `성 HP +${Math.round(this.state.baseHpMax * fx.pct)}`, kind: 'good' });
         break;
       case 'healAll':
-        this.units.forEach((m) => { m.heal(fx.amount); this.scene.vfx.floatText(m.pos.x, m.pos.z, `+${fx.amount}`, '#6fae4c'); });
+        this.repairBase(fx.amount);
+        bus.emit('toast', { text: `성 HP +${fx.amount}`, kind: 'good' });
         break;
       case 'markArea':
-        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
-          this.synergy.onReaction(e, fx.element, stage, 10, this);
-          e.marks.add(fx.mark, fx.stacks, stage);
-        }
-        this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), fx.radius, 0.4);
+        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) e.marks.add(fx.mark, fx.stacks, stage);
+        this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), Math.min(fx.radius, 9), 0.4);
         break;
       case 'defDown':
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
-          e.defDownPct = fx.pct; e.defDownTimer = fx.duration; e.marks.add('curse', 1, stage);
-          this.synergy.onReaction(e, fx.element, stage, 10, this);
+          e.defDownPct = fx.pct;
+          e.defDownTimer = fx.duration;
+          e.marks.add('curse', 1, stage);
         }
         this.scene.vfx.ring(p.x, p.z, ELEMENT_COLOR.dark, fx.radius, 0.4);
         break;
@@ -658,92 +599,164 @@ export class Battle implements SynergyCtx {
           total += this.hitEnemy(e, fx.amount, fx.element, stage);
           e.marks.add('curse', 1, stage);
         }
-        const heal = total * fx.drainPct;
-        this.units.forEach((m) => m.heal(heal / Math.max(1, this.units.length)));
-        this.scene.vfx.ring(p.x, p.z, ELEMENT_COLOR.dark, fx.radius, 0.4);
+        this.repairBase(total * fx.drainPct, 0x4a4e9e);
+        this.scene.vfx.ring(p.x, p.z, ELEMENT_COLOR.dark, Math.min(fx.radius, 9), 0.4);
         break;
       }
       case 'eclipseVerdict':
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
           const cs = e.marks.stacks('curse');
           if (cs >= 5) { e.applyDamage(cs * 25, true); e.marks.remove('curse'); }
-          // 즉사 처형은 보스/미니보스 제외 (보스는 실제 피해로만 처치)
           if (!e.isBoss && !e.isMini && e.hp / e.maxHp <= fx.executePct) e.applyDamage(e.hp + 1, true);
           this.scene.vfx.burst(e.pos.x, e.pos.z, 0x4a4e9e, 12);
         }
-        this.scene.vfx.ring(p.x, p.z, 0x4a4e9e, fx.radius + 1, 0.6);
+        this.scene.vfx.ring(p.x, p.z, 0x4a4e9e, Math.min(fx.radius, 9), 0.6);
         break;
       case 'blessOne': {
-        const target = this.units.filter((m) => m.alive).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+        const target = this.units.filter((m) => m.alive).sort((a, b) => b.stats.attack - a.stats.attack)[0];
         if (target) target.bless(fx.stacks);
         break;
       }
       case 'cleanseHeal':
-        this.units.forEach((m) => { m.heal(fx.amount); m.cleanse(); this.scene.vfx.floatText(m.pos.x, m.pos.z, `+${fx.amount}`, '#6fae4c'); });
+        this.repairBase(fx.amount);
+        bus.emit('toast', { text: `성 HP +${fx.amount}`, kind: 'good' });
         break;
       case 'judgment':
-        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
-          this.hitEnemy(e, fx.amount, 'light', stage, { darkBonus: fx.darkBonus });
-        }
-        this.scene.vfx.ring(p.x, p.z, 0xf2ce6b, fx.radius, 0.5);
+        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) this.hitEnemy(e, fx.amount, 'light', stage, { darkBonus: fx.darkBonus });
+        this.scene.vfx.ring(p.x, p.z, 0xf2ce6b, Math.min(fx.radius, 9), 0.5);
         this.scene.vfx.burst(p.x, p.z, 0xf2ce6b, 16);
         break;
-      case 'rally': {
-        // 긴급 소집: 쓰러진 유닛 1체를 빈 슬롯에 HP 50%로 재배치 (죽음의 대가는 카드/마나)
-        const u = this.deadUnits.shift();
-        if (u) {
-          const slot = UNIT_SLOTS.findIndex((_, i) => !this.units.some((m) => m.slot === i));
-          if (slot >= 0) {
-            this.placeUnit(u, slot);
-            const m = this.slotOccupant(slot);
-            if (m) { m.hp = m.maxHp * 0.5; this.scene.vfx.ring(m.pos.x, m.pos.z, 0xf2ce6b, 2.5, 0.6); }
-            bus.emit('toast', { text: `긴급 소집! ${displayName(u)} 복귀 (HP 50%)`, kind: 'good' });
-          } else {
-            this.deadUnits.unshift(u); // 슬롯 없음 → 되돌림
-            bus.emit('toast', { text: '빈 슬롯이 없습니다', kind: 'bad' });
-          }
-        }
+      case 'rally':
+        this.deck.refillTo(this.state.battleDeck(), 5);
         break;
-      }
       case 'baseHeal':
-        this.state.heal(fx.amount);
-        this.scene.vfx.ring(this.scene.base.position.x, this.scene.base.position.z, 0x6fae4c, 3.5, 0.5);
+        this.repairBase(fx.amount);
         bus.emit('toast', { text: `성 HP +${fx.amount}`, kind: 'good' });
         break;
       case 'overheat':
         this.units.filter((m) => m.element === 'fire').forEach((m) => { m.overheatMult = fx.mult; m.overheatTimer = fx.duration; });
-        bus.emit('toast', { text: '오버히트! 불 유닛 강화', kind: 'good' });
+        bus.emit('toast', { text: '오버히트! 불 유닛이 강화됩니다.', kind: 'good' });
         break;
       case 'draw': {
-        const uniq = [...new Set(this.state.battleDeck())].filter((c) => !this.deck.hand.includes(c));
-        for (let k = 0; k < fx.n && uniq.length; k++) {
-          const pick = uniq.splice(Math.floor(Math.random() * uniq.length), 1)[0];
-          this.deck.addToHand(pick);
-        }
+        this.deck.drawCards(fx.n);
         break;
       }
       case 'coinflip':
         if (Math.random() < 0.5) { this.state.gold += 20; bus.emit('toast', { text: '동전 앞면! 골드 +20', kind: 'good' }); }
-        else bus.emit('toast', { text: '동전 뒷면… 꽝', kind: 'bad' });
+        else bus.emit('toast', { text: '동전 뒷면. 아무 일도 일어나지 않았습니다.', kind: 'bad' });
         break;
       case 'bind':
-        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) e.applyRoot(fx.duration); // 보스는 반감
+        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) e.applyRoot(fx.duration);
         this.scene.vfx.ring(p.x, p.z, 0xb8a888, fx.radius, 0.5);
         this.scene.vfx.burst(p.x, p.z, 0xb8a888, 12);
         break;
       case 'haste':
         this.units.forEach((m) => { m.applyHaste(fx.mult, fx.duration); this.scene.vfx.burst(m.pos.x, m.pos.z, 0xf2ce6b, 6); });
         break;
+      case 'capture': {
+        const orb = new CaptureOrb(this.castleXZ(), p, CAPTURE.orbDuration, CAPTURE.arcHeight, (land) => this.resolveCapture(land, fx.radius));
+        this.captureOrbs.push(orb);
+        this.scene.entities.add(orb.view);
+        break;
+      }
     }
   }
 
-  /** 스테이지 종료 시 호출 — 정리 */
+  private updateCaptureOrbs(dt: number): void {
+    for (let i = this.captureOrbs.length - 1; i >= 0; i--) {
+      const o = this.captureOrbs[i];
+      o.update(dt);
+      if (o.dead) { o.dispose(this.scene.entities); this.captureOrbs.splice(i, 1); }
+    }
+  }
+
+  captureHint(x: number, z: number): { status: 'catch' | 'bossWait' | 'none'; radius: number; label: string } {
+    let best: Enemy | null = null;
+    let bd = Infinity;
+    for (const e of this.enemies) {
+      if (!e.alive || e.dying) continue;
+      const d = Math.hypot(e.pos.x - x, e.pos.z - z);
+      if (d < bd) { bd = d; best = e; }
+    }
+    if (!best) return { status: 'none', radius: 1.4, label: '대상 없음' };
+    const radius = CAPTURE_RADIUS[best.def.tier] ?? 1.4;
+    const bossy = best.isBoss || best.isMini;
+    if (bd <= radius) {
+      if (bossy && !best.stunned) return { status: 'bossWait', radius, label: `${best.def.name}: 기절 필요` };
+      return { status: 'catch', radius, label: `${best.def.name}: 포획 가능` };
+    }
+    return { status: 'none', radius, label: `${best.def.name}: 범위 밖` };
+  }
+
+  private resolveCapture(p: Vec2, nominalRadius: number): void {
+    let best: Enemy | null = null;
+    let bd = Infinity;
+    for (const e of this.enemies) {
+      if (!e.alive || e.dying) continue;
+      if ((e.isBoss || e.isMini) && !e.stunned) continue;
+      const d = Math.hypot(e.pos.x - p.x, e.pos.z - p.z);
+      if (d < bd) { bd = d; best = e; }
+    }
+    if (!best) { this.captureMiss(p, '대상이 없습니다'); return; }
+    const radius = CAPTURE_RADIUS[best.def.tier] ?? nominalRadius;
+    if (bd <= radius) this.captureEnemy(best);
+    else this.captureMiss(p, '범위 밖입니다');
+  }
+
+  private captureMiss(p: Vec2, why: string): void {
+    this.scene.vfx.ring(p.x, p.z, 0xf2ce6b, 1.0, 0.3);
+    this.scene.vfx.burst(p.x, p.z, 0xd23b3b, 6);
+    bus.emit('toast', { text: `포획 실패: ${why}`, kind: 'bad' });
+  }
+
+  private captureEnemy(e: Enemy): void {
+    const r = this.state.registerCapture(e.def.id);
+    const dex = r.firstTime ? '도감 신규 등록' : `포획 ${r.count}회`;
+    const absorbed = this.state.absorbCapturedEnemy(e.def.id);
+    if (absorbed) {
+      const placed = this.units.find((m) => m.unit.uid === absorbed.unit.uid);
+      placed?.refreshStats();
+      const bondPct = Math.round(absorbed.bondGain * 100);
+      const evolvedText = absorbed.evolved ? ` ${absorbed.from}이(가) ${absorbed.to}(으)로 진화했습니다.` : '';
+      bus.emit('toast', { text: `포획 성공! ${e.def.name}의 힘을 ${displayName(absorbed.unit)}이(가) 흡수했습니다. XP +${absorbed.xp}, 유대 +${bondPct}%. (${dex})${evolvedText}`, kind: 'good' });
+      if (absorbed.evolved || absorbed.gains.length) {
+        bus.emit('unit:grown', {
+          uid: absorbed.unit.uid,
+          from: absorbed.from,
+          to: unitName(absorbed.unit),
+          element: absorbed.unit.element,
+          evolved: absorbed.evolved,
+          gains: absorbed.gains,
+        });
+      }
+      this.scene.vfx.ring(e.pos.x, e.pos.z, 0xf2ce6b, 2.2, 0.5);
+      this.scene.vfx.burst(e.pos.x, e.pos.z, 0xf2ce6b, 20);
+      const idx = this.enemies.indexOf(e);
+      if (idx >= 0) this.despawn(idx);
+      return;
+    }
+    const joined = this.state.giveEnemyUnit(e.def.id, this.state.stageIndex + 1);
+    if (joined) bus.emit('toast', { text: `포획 성공! ${e.def.name}이 원정대에 합류했습니다. (${dex})`, kind: 'good' });
+    else {
+      bus.emit('toast', { text: `포획 성공! ${e.def.name}. 원정대가 가득 찼습니다. (${dex})`, kind: 'good' });
+      bus.emit('capture:full', { species: e.def.id, name: e.def.name });
+    }
+    this.scene.vfx.ring(e.pos.x, e.pos.z, 0xf2ce6b, 2.2, 0.5);
+    this.scene.vfx.burst(e.pos.x, e.pos.z, 0xf2ce6b, 20);
+    const i = this.enemies.indexOf(e);
+    if (i >= 0) this.despawn(i);
+  }
+
   finish(): void {
-    this.deadUnits = [];
     for (const m of [...this.units]) m.dispose(this.scene.entities);
     for (const e of [...this.enemies]) e.dispose(this.scene.entities);
     for (const p of [...this.projectiles]) p.dispose(this.scene.entities);
     for (const z of [...this.zones]) z.dispose(this.scene.zones);
-    this.units = []; this.enemies = []; this.projectiles = []; this.zones = [];
+    for (const o of [...this.captureOrbs]) o.dispose(this.scene.entities);
+    this.units = [];
+    this.enemies = [];
+    this.projectiles = [];
+    this.zones = [];
+    this.captureOrbs = [];
   }
 }

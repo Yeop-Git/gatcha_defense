@@ -161,26 +161,35 @@ export function makeCreature(el: Element, scale = 1, stage = 1, tint?: number): 
   g.add(icon);
   g.userData.baseY = 0;
   // 아군은 제자리 대기 → Idle 클립 우선 (모델에 애니메이션이 있을 때만)
-  attachModel(g, modelFile.creature(el, stage), 1.85 * scale, tint, [/idle/i, /walk/i]);
+  attachModel(g, modelFile.creature(el, stage), 1.85 * scale, tint, [/idle/i, /walk/i], false);
   return g;
 }
 
-/** 적 폴백 (속성색 + 살짝 어둡게 + 각진 형태로 아군과 구분) */
-export function makeEnemy(el: ElementOrNeutral, radius: number, flying?: boolean, model?: string): THREE.Group {
+/**
+ * 적 모델 뷰. animMode로 클립 우선순위 분기:
+ *  - 'walk'(기본): 필드 적 — 경로 이동이라 걷기/뛰기/비행 우선.
+ *  - 'idle': 내가 포획해 쓰는 아군 유닛 — 제자리 대기라 대기/부유 우선(걷기 재생 안 함).
+ */
+export function makeEnemy(el: ElementOrNeutral, radius: number, flying?: boolean, model?: string, animMode: 'walk' | 'idle' = 'walk', modelHeight?: number): THREE.Group {
   const g = new THREE.Group();
   const color = elementColor(el);
+  // 폴백 도형은 정규화 높이에 맞춰 크기 (모델 로드 전 잠깐 보임). 없으면 radius 기준.
+  const geoR = modelHeight !== undefined ? modelHeight / 2.5 : radius;
   const geo = flying
-    ? new THREE.OctahedronGeometry(radius, 0)
-    : new THREE.DodecahedronGeometry(radius, 0);
+    ? new THREE.OctahedronGeometry(geoR, 0)
+    : new THREE.DodecahedronGeometry(geoR, 0);
   const body = new THREE.Mesh(geo, toonMat(color));
-  body.position.y = flying ? radius + 1.2 : radius;
+  body.position.y = flying ? geoR + 1.2 : geoR;
   body.userData.placeholder = true;
   addOutline(body);
   g.add(body);
   g.userData.body = body;
   if (model) {
-    // 적은 경로를 따라 이동 → 걷기/뛰기 클립 우선
-    attachModel(g, modelFile.enemy(model), radius * 2.5, undefined, [/walk/i, /run/i, /fly/i, /move/i, /idle/i]);
+    const prefs = animMode === 'idle'
+      ? [/flying_idle/i, /idle/i, /float/i, /breath/i] // 아군: 대기/부유 우선 (걷기 회피)
+      : [/walk/i, /run/i, /fly/i, /move/i, /idle/i];    // 적: 이동 클립 우선
+    // 정규화: 모든 모델을 지정 높이로 스케일 (티어/진화별 일관 크기)
+    attachModel(g, modelFile.enemy(model), modelHeight ?? radius * 2.5, undefined, prefs, true);
   }
   return g;
 }

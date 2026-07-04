@@ -1,15 +1,9 @@
-import type { CardTarget, Element, ElementOrNeutral, MarkType } from '../core/types';
+﻿import type { CardTarget, Element, ElementOrNeutral, MarkType } from '../core/types';
 import rawCsv from './skills.csv?raw';
 
-/** 카드(스킬) 속성: 5속성 + 무속성(주인공) */
 export type CardElement = Element | 'normal';
-/** 덱을 소유하는 캐릭터 키 */
-export type DeckCharacter = 'hero' | Element;
+export type DeckCharacter = 'hero' | Element | `e_${Element}`;
 
-/**
- * 카드 효과 = 선언적 데이터. Battle이 kind를 해석해 실행. 조합별 하드코딩 없음.
- * (skills.csv에서 파싱되어 생성)
- */
 export type CardEffect =
   | { kind: 'damage'; amount: number; radius: number; element: ElementOrNeutral; mark?: MarkType; markStacks?: number; knockback?: number }
   | { kind: 'chain'; amount: number; targets: number; element: ElementOrNeutral; mark?: MarkType; markStacks?: number }
@@ -29,24 +23,22 @@ export type CardEffect =
   | { kind: 'draw'; n: number }
   | { kind: 'coinflip' }
   | { kind: 'bind'; radius: number; duration: number }
-  | { kind: 'haste'; mult: number; duration: number };
+  | { kind: 'haste'; mult: number; duration: number }
+  | { kind: 'capture'; radius: number };
 
 export interface CardDef {
   id: string;
   character: DeckCharacter;
   name: string;
   element: CardElement;
-  /** 학습 레벨: 이 레벨 이상이면 사용 가능(해금) */
   learnLevel: number;
   cost: number;
   target: CardTarget;
   text: string;
   effect: CardEffect;
-  /** 분기 시그니처 카드 (§5.6): 해당 분기를 선택해야만 해금 */
   branch?: 'A' | 'B';
 }
 
-// ── CSV 파싱 ─────────────────────────────────────────
 type Params = Record<string, string>;
 
 function parseParams(s: string): Params {
@@ -64,12 +56,12 @@ const opt = (p: Params, k: string): number | undefined => (p[k] !== undefined ? 
 
 function buildEffect(kind: string, p: Params, cardEl: CardElement): CardEffect {
   const el: ElementOrNeutral = cardEl === 'normal' ? 'neutral' : cardEl;
-  const realEl = (cardEl === 'normal' ? 'fire' : cardEl) as Element; // zone/markArea 등은 실제 속성만 사용
+  const realEl = (cardEl === 'normal' ? 'fire' : cardEl) as Element;
   const mark = p.mark as MarkType | undefined;
   switch (kind) {
     case 'damage': return { kind, amount: num(p, 'amount'), radius: num(p, 'radius', 1), element: el, mark, markStacks: opt(p, 'markStacks'), knockback: opt(p, 'knockback') };
     case 'chain': return { kind, amount: num(p, 'amount'), targets: num(p, 'targets', 3), element: el, mark, markStacks: opt(p, 'markStacks') };
-    case 'zone': return { kind, zone: (p.zone as 'slow' | 'fire' | 'thorn' | 'overgrowth'), radius: num(p, 'radius', 2), duration: num(p, 'duration', 5), element: realEl, slow: opt(p, 'slow'), dps: opt(p, 'dps'), root: opt(p, 'root') };
+    case 'zone': return { kind, zone: p.zone as 'slow' | 'fire' | 'thorn' | 'overgrowth', radius: num(p, 'radius', 2), duration: num(p, 'duration', 5), element: realEl, slow: opt(p, 'slow'), dps: opt(p, 'dps'), root: opt(p, 'root') };
     case 'shieldAll': return { kind, pct: num(p, 'pct', 0.1) };
     case 'healAll': return { kind, amount: num(p, 'amount') };
     case 'markArea': return { kind, mark: mark ?? 'curse', stacks: num(p, 'stacks', 1), radius: num(p, 'radius', 2), element: realEl };
@@ -86,6 +78,7 @@ function buildEffect(kind: string, p: Params, cardEl: CardElement): CardEffect {
     case 'coinflip': return { kind };
     case 'bind': return { kind, radius: num(p, 'radius', 2.6), duration: num(p, 'duration', 2.5) };
     case 'haste': return { kind, mult: num(p, 'mult', 1.3), duration: num(p, 'duration', 6) };
+    case 'capture': return { kind, radius: num(p, 'radius', 1.4) };
     default: return { kind: 'damage', amount: 10, radius: 1, element: el };
   }
 }
@@ -94,9 +87,9 @@ function parseCsv(csv: string): CardDef[] {
   const lines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0);
   const out: CardDef[] = [];
   for (let i = 1; i < lines.length; i++) {
-    const c = lines[i].split(',');
+    const c = lines[i].split(',').map((part) => part.trim());
     const [id, character, name, element, learn, cost, target, kind, params, branch, ...textParts] = c;
-    const text = textParts.join(',');
+    const text = textParts.join(',').trim();
     out.push({
       id,
       character: character as DeckCharacter,
@@ -116,73 +109,82 @@ function parseCsv(csv: string): CardDef[] {
 export const CARDS: CardDef[] = parseCsv(rawCsv);
 export const CARD_BY_ID: Record<string, CardDef> = Object.fromEntries(CARDS.map((c) => [c.id, c]));
 
-/** 캐릭터의 전체 스킬 */
 export function cardsOfCharacter(character: DeckCharacter): CardDef[] {
   return CARDS.filter((c) => c.character === character).sort((a, b) => a.learnLevel - b.learnLevel);
 }
 
-const ELEM_FALLBACK: Record<CardElement, string> = {
-  fire: '🔥', water: '💧', grass: '🌿', light: '✨', dark: '🌑', normal: '⚪',
+const ELEMENT_BADGE: Record<CardElement, string> = {
+  fire: '불',
+  water: '물',
+  grass: '풀',
+  light: '빛',
+  dark: '암',
+  normal: '공용',
 };
 
-/**
- * 카드별 가장 적절한 이모지 아이콘. 우선순위: 상징(전설) → 효과 종류 → 공격 속성/이름 키워드.
- * 데이터 추가 없이 이름/효과에서 유도(모든 카드 커버, 누락 없음).
- */
 export function cardIcon(def: CardDef): string {
-  const n = def.name;
-
-  // 1) 상징(전설/궁극) 이름
-  if (/구미염|여우/.test(n)) return '🦊';
-  if (/수호록|사슴/.test(n)) return '🦌';
-  if (/해룡|해신/.test(n)) return '🐉';
-  if (/불사조/.test(n)) return '🦅';
-  if (/세라핌/.test(n)) return '👼';
-  if (/이클립사/.test(n)) return '🌘';
-
-  // 2) 효과 종류 (가장 안정적)
   switch (def.effect.kind) {
-    case 'healAll': return '💚';
-    case 'shieldAll': return '🛡️';
-    case 'cleanseHeal': return '🙏';
-    case 'blessOne': return '😇';
-    case 'judgment': return '⚖️';
-    case 'rally': return '🚩';
-    case 'baseHeal': return '⛑️';
-    case 'draw': return '🃏';
-    case 'coinflip': return '🪙';
-    case 'bind': return '🕸️';
-    case 'haste': return '💨';
-    case 'overheat': return '♨️';
-    case 'drain': return '🩸';
-    case 'defDown': return '💢';
-    case 'markArea': return def.element === 'dark' ? '💀' : '❄️';
-    case 'eclipseVerdict': return '🌘';
+    case 'healAll':
+    case 'cleanseHeal':
+    case 'baseHeal': return '수리';
+    case 'shieldAll': return '방벽';
+    case 'blessOne': return '축복';
+    case 'judgment': return '빛';
+    case 'rally': return '정비';
+    case 'draw': return '드로우';
+    case 'coinflip': return '골드';
+    case 'bind': return '속박';
+    case 'capture': return '포획';
+    case 'haste': return '가속';
+    case 'overheat': return '과열';
+    case 'drain': return '흡수';
+    case 'defDown': return '약화';
+    case 'markArea': return '표식';
+    case 'eclipseVerdict': return '일식';
+    case 'zone': return '장판';
+    case 'chain': return '연쇄';
+    case 'damage': return ELEMENT_BADGE[def.element];
+    default: return ELEMENT_BADGE[def.element] ?? '카드';
   }
+}
 
-  // 3) 공격(damage/chain/zone) — 특수 플레이버 → 속성/이름
-  if (/운석|혜성/.test(n)) return '☄️';
-  if (/화산|분화구/.test(n)) return '🌋';
-  switch (def.element) {
-    case 'fire': return '🔥';
-    case 'water':
-      if (/해일|파도|쓰나미|물결/.test(n)) return '🌊';
-      if (/서리|냉기|얼음|심해|소용돌이|늪|웅덩이|장판|지대/.test(n)) return '❄️';
-      return '💦';
-    case 'grass':
-      if (/씨앗|새싹/.test(n)) return '🌱';
-      if (/포자/.test(n)) return '🍄';
-      if (/가시|덤불|넝쿨/.test(n)) return '🌵';
-      if (/숲|원시림|세계수/.test(n)) return '🌳';
-      if (/덩굴|뿌리|속박/.test(n)) return '🌿';
-      return '🍃';
-    case 'dark':
-      return /밤|장막/.test(n) ? '🌌' : '🌑';
-    case 'light':
-      return '✨';
+export function cardRole(def: CardDef): string {
+  switch (def.effect.kind) {
+    case 'damage':
+    case 'chain':
+    case 'judgment':
+    case 'eclipseVerdict': return '공격';
+    case 'zone':
+    case 'markArea':
+    case 'defDown':
+    case 'bind': return '제어';
+    case 'healAll':
+    case 'cleanseHeal':
+    case 'shieldAll':
+    case 'baseHeal':
+    case 'blessOne':
+    case 'haste':
+    case 'overheat': return '지원';
+    case 'draw':
+    case 'coinflip':
+    case 'rally': return '운영';
+    case 'capture': return '포획';
+    case 'drain': return '흡수';
+    default: return '기술';
   }
+}
 
-  // 4) 무속성 물리(베기/강타 등)
-  if (/베기|참격|일격|가르기|강타|관통|사격/.test(n)) return '⚔️';
-  return ELEM_FALLBACK[def.element] ?? '⚪';
+export function cardTargetLabel(def: CardDef): string {
+  switch (def.target) {
+    case 'point': return '지점';
+    case 'enemy-area': return '범위';
+    case 'ally-all': return '전체';
+    case 'ally-one': return '단일';
+    case 'self': return '자신';
+    default: return '대상';
+  }
+}
+
+export function cardMeta(def: CardDef): string {
+  return `${cardRole(def)} · ${cardTargetLabel(def)} · Lv${def.learnLevel}`;
 }

@@ -1,9 +1,8 @@
 import * as THREE from 'three';
-import type { Element, ElementOrNeutral } from '../core/types';
+import type { ElementOrNeutral } from '../core/types';
 import type { EnemyDef } from '../data/enemies';
-import { FIELD, CURSE_DMG_PER_STACK, WET_SLOW, FLOAT, isFloating } from '../data/constants';
-import { CORRUPT_TINT, CORRUPT_SKILL } from '../data/corrupted';
-import { makeEnemy, makeCreature, makeLabelSprite, disposeCreatureView } from '../render/fallback';
+import { FIELD, CURSE_DMG_PER_STACK, WET_SLOW, FLOAT, isFloating, CAPTURE, ENEMY_HEIGHT } from '../data/constants';
+import { makeEnemy, disposeCreatureView } from '../render/fallback';
 import { Marks } from './Marks';
 
 const PATH = FIELD.path;
@@ -44,15 +43,6 @@ export class Enemy {
   isBoss: boolean;
   isMini: boolean;
 
-  /**
-   * 타락체 보스 (§9): 버려진 수호 몬스터의 속성. 설정 시 원본 3단 모델 + 어둠 팔레트 스왑으로
-   * 렌더되고 Battle이 시그니처 스킬 AI를 돌린다.
-   */
-  corruptEl: Element | null = null;
-  /** 타락체 시그니처 스킬 시전 주기/쿨다운 (P2에서 절반) */
-  abilityInterval = 7;
-  abilityCd = 3; // 첫 시전은 등장 후 잠깐 뒤
-
   // 상태
   private seg = 0;
   private segT = 0;
@@ -66,9 +56,17 @@ export class Enemy {
   atkCd = 0; // 적 반격 쿨다운 (근처 방어자 타격)
 
   private bar: THREE.Sprite;
-  bossPhase = 1;
 
-  constructor(def: EnemyDef, hpScale: number, corruptEl: Element | null = null) {
+  /** 사망 애니메이션 재생 중(디스폰 지연). */
+  dying = false;
+  deathTimer = 0;
+
+  /** 보스/미니보스 기절(HP0) 상태 — 이 창에서만 포획 가능. 1회성. */
+  stunned = false;
+  stunTimer = 0;
+  private stunUsed = false;
+
+  constructor(def: EnemyDef, hpScale: number) {
     this.def = def;
     this.element = def.element;
     this.maxHp = Math.round(def.hp * hpScale);
@@ -76,35 +74,21 @@ export class Enemy {
     this.speed = def.speed;
     this.isBoss = def.leak === 'boss';
     this.isMini = def.leak === 'miniboss';
-    this.corruptEl = corruptEl;
 
-    if (corruptEl) {
-      // 타락체 = 플레이어블 3단 모델의 팔레트 스왑 (새 3D 에셋 0개, §9)
-      this.view = makeCreature(corruptEl, def.radius * 1.3, 3, CORRUPT_TINT);
-      this.abilityInterval = CORRUPT_SKILL[corruptEl].interval;
-    } else {
-      this.view = makeEnemy(this.element, def.radius, def.flying, def.model);
-    }
+    // 정규화 높이(티어별, 보스는 크게). 바/표식도 이 높이에 맞춘다.
+    const V = ENEMY_HEIGHT[def.tier];
+    this.view = makeEnemy(this.element, def.radius, def.flying, def.model, 'walk', V);
     const start = PATH[0];
     this.pos.set(start.x, 0, start.z);
     this.view.position.copy(this.pos);
 
-    // 시각 높이(바/표식 배치 기준): 타락체는 정규화된 크리처 높이, 그 외는 폴백 반경 기준.
-    const visH = corruptEl ? 1.6 * def.radius * 1.3 : (def.flying ? def.radius + 1.2 : def.radius) * 2;
-    const topY = visH + 0.4;
+    const topY = V + (def.flying ? 1.2 : 0) + 0.4;
     this.marks = new Marks(this.view, topY);
     this.bar = makeBar();
     this.bar.position.y = topY + 0.5;
     if (this.isBoss || this.isMini) this.bar.scale.set(2.6, 0.36, 1);
     this.view.add(this.bar);
     drawBar(this.bar, 1);
-
-    if (corruptEl) {
-      // 타락체 이름표 — "내가 버린 그 아이"가 보이도록
-      const lv = makeLabelSprite(def.name, { color: '#b48ae0', worldHeight: 0.6 });
-      lv.position.y = topY + 1.15;
-      this.view.add(lv);
-    }
   }
 
   /** 상태이상(CC) 저항 배율 — 보스/미니보스는 넉백·속박·감속 효과 반감. */
@@ -134,7 +118,8 @@ export class Enemy {
 
   /** 피해 적용 (affinity/치명 등은 호출측에서 미리 배율 반영). 실제 입힌 피해 반환. */
   applyDamage(amount: number, ignoreDef = false): number {
-    if (!this.alive) return 0;
+    // 기절 중(보스 포획 창)에는 무적 — 3초 창이 평타에 잘려 사라지지 않게.
+    if (!this.alive || this.stunned) return 0;
     let dmg = amount;
     // 저주: 받는 피해 +5%/중첩
     dmg *= 1 + this.marks.stacks('curse') * CURSE_DMG_PER_STACK;
@@ -142,13 +127,30 @@ export class Enemy {
     if (!ignoreDef && this.defDownTimer > 0) dmg *= 1 + this.defDownPct;
     dmg = Math.round(dmg);
     this.hp -= dmg;
-    if (this.hp <= 0) this.alive = false;
+    if (this.hp <= 0) {
+      if ((this.isBoss || this.isMini) && !this.stunUsed) {
+        // HP0 → 즉사 대신 3초 기절(포획 창). 놓치면 update가 사망 처리.
+        this.stunned = true;
+        this.stunUsed = true;
+        this.stunTimer = CAPTURE.bossStun;
+        this.hp = 0;
+      } else {
+        this.alive = false;
+      }
+    }
     drawBar(this.bar, this.hp / this.maxHp);
     return dmg;
   }
 
   update(dt: number, t: number): void {
     if (!this.alive) return;
+    if (this.stunned) {
+      // 기절(포획 창): 제자리 흔들림, 창 만료 시 사망 처리(Battle이 디스폰).
+      this.stunTimer -= dt;
+      this.view.rotation.y += dt * 7;
+      if (this.stunTimer <= 0) { this.stunned = false; this.alive = false; }
+      return;
+    }
     if (this.rootTimer > 0) this.rootTimer -= dt;
     if (this.slowTimer > 0) { this.slowTimer -= dt; if (this.slowTimer <= 0) this.slowPct = 0; }
     if (this.defDownTimer > 0) this.defDownTimer -= dt;
@@ -196,6 +198,21 @@ export class Enemy {
       const body = this.view.userData.body as THREE.Mesh | undefined;
       if (body && !this.def.flying) body.position.y = this.def.radius + Math.abs(Math.sin(t * 6 + this.seg)) * 0.15;
     }
+  }
+
+  /** 내장 애니메이션 컨트롤러 (모델 로드 성공 시에만 존재). */
+  private get anim(): import('../render/ModelLoader').AnimController | undefined {
+    return this.view.userData.anim as import('../render/ModelLoader').AnimController | undefined;
+  }
+
+  /** 공격 순간 1회성 공격 클립 재생 (Punch/Bite/Headbutt). */
+  playAttackAnim(): void {
+    this.anim?.playOnce('attack');
+  }
+
+  /** 사망 클립 재생 시작. 반환: 클립 길이(초), 없으면 0. */
+  beginDeath(): number {
+    return this.anim?.playDeath() ?? 0;
   }
 
   /** 경로 진행 비율 0~1 (선두 판정용) */

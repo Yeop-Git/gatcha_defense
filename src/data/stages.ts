@@ -2,7 +2,7 @@ export type Theme = 'grassland' | 'forest' | 'cave' | 'volcano' | 'temple';
 
 /** 한 웨이브의 스폰 구성 */
 export interface SpawnGroup {
-  enemy: string; // ENEMIES key 또는 corrupt_mid/corrupt_final (동적 타락체, §9)
+  enemy: string; // ENEMIES key
   count: number;
   interval: number; // 스폰 간격(초)
 }
@@ -85,21 +85,21 @@ export const STAGES: StageDef[] = [
     ],
   },
   {
-    // §9 가지 않은 길: 중간보스 = 버린 종 1의 타락체 (Battle이 corrupt_mid를 동적 치환)
-    id: 9, theme: 'temple', label: '신전 · 타락한 옛 동료', difficultyJump: true, boss: 'mini',
+    // 스테이지 보스 = 해골 군주(무진화 단독 개체). HP 0 시 3초 기절 창에서만 포획 가능.
+    id: 9, theme: 'temple', label: '신전 · 해골 군주', difficultyJump: true, boss: 'mini',
     waves: [
       [{ enemy: 'tribal', count: 4, interval: 1.1 }, { enemy: 'wizard', count: 2, interval: 1.5 }, { enemy: 'cat', count: 4, interval: 0.9 }],
-      [{ enemy: 'ninja', count: 3, interval: 1.2 }, { enemy: 'queenbee', count: 3, interval: 1.1 }, { enemy: 'orcskull', count: 3, interval: 1.2 }],
-      [{ enemy: 'corrupt_mid', count: 1, interval: 1 }, { enemy: 'alien', count: 2, interval: 1.6 }, { enemy: 'alpaking', count: 2, interval: 1.4 }],
+      [{ enemy: 'ninja', count: 2, interval: 1.3 }, { enemy: 'queenbee', count: 3, interval: 1.2 }, { enemy: 'orcskull', count: 2, interval: 1.3 }],
+      [{ enemy: 'warlord', count: 1, interval: 1 }, { enemy: 'alien', count: 1, interval: 1.8 }, { enemy: 'alpaking', count: 2, interval: 1.5 }],
     ],
   },
   {
-    // §9 최종보스 = 버린 종 2의 타락체, 2페이즈 (P1 타락 → P2 완전 월식 폭주)
-    id: 10, theme: 'temple', label: '신전 심층 · 월식의 끝', difficultyJump: false, boss: 'final',
+    // 최종보스 = 폭룡 티라노(무진화 단독 개체). 클리어 = 런 승리.
+    id: 10, theme: 'temple', label: '신전 심층 · 폭룡의 둥지', difficultyJump: false, boss: 'final',
     waves: [
       [{ enemy: 'tribal', count: 5, interval: 0.9 }, { enemy: 'ninja', count: 3, interval: 1.2 }, { enemy: 'wizard', count: 2, interval: 1.5 }],
       [{ enemy: 'alien', count: 3, interval: 1.3 }, { enemy: 'drake', count: 3, interval: 1.2 }, { enemy: 'spirit', count: 2, interval: 1.6 }],
-      [{ enemy: 'corrupt_final', count: 1, interval: 1 }],
+      [{ enemy: 'tyrant', count: 1, interval: 1 }],
     ],
   },
 ];
@@ -113,8 +113,7 @@ export interface BuffOption {
 
 export const BUFF_NODES: BuffOption[] = [
   { id: 'atk', label: '전 유닛 공격 +10%', apply: 'atk10' },
-  { id: 'basehp', label: '기지 HP +20', apply: 'basehp20' },
-  { id: 'syncd', label: '협동기 쿨다운 -0.5초', apply: 'syncd' },
+  { id: 'basehp', label: '성 HP +20', apply: 'basehp20' },
   { id: 'mana', label: '마나 재생 +20%', apply: 'mana20' },
 ];
 
@@ -123,5 +122,5 @@ export const EVENT_NODES = [
   { id: 'merchant', label: '수상한 상인', desc: '희귀한 물건을 헐값에 넘긴다. 골드 +40.' },
   { id: 'hotspring', label: '몬스터 온천', desc: '모든 유닛이 경험치를 얻는다.' },
   { id: 'egg', label: '운명의 알', desc: '50% 금화 잭팟 / 50% 꽝.' },
-  { id: 'altar', label: '저주받은 제단', desc: '기지 HP -15을 바치고 골드 +50.' },
+  { id: 'altar', label: '저주받은 제단', desc: '성 HP 15를 바치고 골드 +50.' },
 ] as const;

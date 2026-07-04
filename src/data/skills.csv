@@ -1,36 +1,96 @@
-id,character,name,element,learn,cost,target,kind,params,branch,text
-n_draw,hero,재정비,normal,1,2,self,draw,n=2,,카드 2장을 뽑는다
-n_muster,hero,긴급 소집,normal,1,3,self,rally,,,쓰러진 유닛 1체를 HP 50%로 재배치
-n_coin,hero,동전 던지기,normal,1,1,self,coinflip,,,50% 확률로 골드 2배 아니면 꽝
-n_bind,hero,속박,normal,1,2,point,bind,radius=2.6;duration=2.5,,범위 2.6 적을 2.5초 묶는다
-n_heal,hero,응급 처치,normal,1,3,self,baseHeal,amount=25,,성(거점) HP를 25 회복한다
-water_cannon,water,물대포,water,1,2,point,damage,amount=20;radius=1.3;mark=wet;markStacks=1;knockback=1.5,,적 1마리에 20 피해 · 1.5 밀치기 · 젖음 1
-water_pool,water,감속 웅덩이,water,1,2,point,zone,zone=slow;radius=3;duration=6;slow=0.4,,웅덩이 생성 · 이동속도 -40% · 6초
-water_tide,water,해일,water,3,3,point,damage,amount=26;radius=3;mark=wet;knockback=4,,직선 범위에 26 피해 · 4 밀치기 · 젖음
-water_guard,water,수호의 물결,water,4,3,ally-all,shieldAll,pct=0.15,,모든 유닛에 최대체력 15% 보호막
-water_iron,water,강철 등껍질,water,6,3,ally-all,shieldAll,pct=0.24,A,[철갑형 전용] 모든 유닛에 최대체력 24% 보호막
-water_whirl,water,소용돌이,water,6,4,point,zone,zone=slow;radius=3;duration=6;slow=0.6;root=1,B,[해일형 전용] 소용돌이 · 이동 -60% · 짧게 속박 · 6초
-fire_spark,fire,불씨탄,fire,1,1,point,damage,amount=16;radius=1.2;mark=burn;markStacks=1,,적에게 16 피해 · 화상 1
-fire_ball,fire,파이어볼,fire,1,2,point,damage,amount=24;radius=2.2;mark=burn;markStacks=2,,범위 2.2에 24 피해 · 화상 2
-fire_chain,fire,연쇄 불씨,fire,3,2,point,chain,amount=14;targets=3;mark=burn;markStacks=1,,가까운 적 3마리에 14 피해 · 화상 1
-fire_zone,fire,폭염 지대,fire,4,3,point,zone,zone=fire;radius=3;duration=5;dps=12,,화염 지대 · 초당 12 피해 · 5초
-fire_overheat,fire,오버히트,fire,6,4,self,overheat,mult=2;duration=8,A,[연사형 전용] 불 유닛 공격력 2배 · 8초
-fire_nova,fire,초신성,fire,6,4,point,damage,amount=45;radius=3.4;mark=burn;markStacks=3,B,[폭발형 전용] 범위 3.4에 45 피해 · 화상 3
-grass_seed,grass,씨앗탄,grass,1,1,point,zone,zone=overgrowth;radius=2.4;duration=6;slow=0.4;dps=4,,풀 장판 · 이동 -40% · 초당 4 피해 · 6초
-grass_thorn,grass,가시 한줌,grass,1,1,point,damage,amount=16;radius=1.6;mark=overgrowth,,적에게 16 피해 · 덩굴 표식
-grass_vine,grass,덩굴 감옥,grass,3,2,point,zone,zone=overgrowth;radius=2.6;duration=3;root=3;slow=0.4,,범위 적을 3초 묶는다
-grass_bush,grass,가시덤불,grass,4,3,point,zone,zone=thorn;radius=3;duration=6;slow=0.3;dps=8,,가시밭 · 이동 -30% · 초당 8 피해 · 6초
-grass_spore,grass,포자 폭발,grass,6,3,point,damage,amount=26;radius=2.8;mark=overgrowth,A,[덩굴형 전용] 범위 2.8에 26 피해 · 덩굴 표식
-grass_bloom,grass,만개,grass,6,3,ally-all,cleanseHeal,amount=35,B,[개화형 전용] 모든 유닛 35 회복 + 정화
-dark_bolt,dark,그림자탄,dark,1,1,point,damage,amount=12;radius=1.2;mark=curse;markStacks=1,,적에게 12 피해 · 저주 1
-dark_mark,dark,저주 표식,dark,1,1,enemy-area,markArea,mark=curse;stacks=2;radius=2.6,,범위 적에게 저주 2
-dark_weaken,dark,약화의 저주,dark,3,2,enemy-area,defDown,pct=0.4;duration=8;radius=2.6,,범위 적 방어 -40% · 8초
-dark_burst,dark,어둠 폭발,dark,4,3,point,damage,amount=28;radius=2.6;mark=curse;markStacks=2,,범위 2.6에 28 피해 · 저주 2
-dark_verdict,dark,월식 선고,dark,9,4,point,eclipseVerdict,radius=3;executePct=0.2,A,[저주형 전용] 저주 5 적 표식 폭발 · 체력 20% 이하 즉사 · 보스 제외
-dark_thirst,dark,심연의 갈증,dark,9,3,point,drain,amount=30;radius=3;drainPct=1.0,B,[흡수형 전용] 범위 30 피해 · 피해량 100% 아군 회복
-light_bolt,light,빛탄,light,1,1,point,judgment,amount=14;radius=1.4;darkBonus=1.5,,적에게 14 신성 피해 · 어둠 적 1.5배
-light_bless,light,축복,light,1,2,ally-one,blessOne,stacks=2,,유닛 1마리 공격과 방어 +20%
-light_shield,light,빛의 방패,light,3,2,ally-all,shieldAll,pct=0.12,,모든 유닛에 최대체력 12% 보호막
-light_smite,light,심판의 빛,light,4,3,enemy-area,judgment,amount=24;radius=2.8;darkBonus=1.5,,범위 2.8에 24 신성 피해 · 어둠 적 1.5배
-light_ward,light,천상의 방벽,light,9,4,ally-all,shieldAll,pct=0.26,A,[수호형 전용] 모든 유닛에 최대체력 26% 보호막
-light_sunfire,light,태양의 심판,light,9,4,enemy-area,judgment,amount=40;radius=3;darkBonus=2,B,[심판형 전용] 범위 3에 40 신성 피해 · 어둠 적 2배
+﻿id,character,name,element,learn,cost,target,kind,params,branch,text
+n_draw,hero,재정비,normal,1,2,self,draw,n=2,,카드 2장을 뽑습니다.
+n_muster,hero,긴급 배치,normal,1,3,self,draw,n=1,,카드 1장을 뽑고 손패를 정리합니다.
+n_capture,hero,포획구,normal,1,3,point,capture,radius=1.4,,지정한 위치에 포획구를 던집니다. 보스는 기절 중일 때만 포획할 수 있습니다.
+n_bind,hero,구속 덫,normal,1,2,point,bind,radius=2.6;duration=2.5,,범위 안의 적을 2.5초 동안 묶습니다.
+n_heal,hero,응급 수리,normal,1,3,self,baseHeal,amount=25,,성 HP를 25 회복합니다.
+water_cannon,water,물대포,water,1,2,point,damage,amount=20;radius=1.3;mark=wet;markStacks=1;knockback=1.5,,적에게 20 피해를 주고 밀쳐내며 젖음 표식을 남깁니다.
+water_pool,water,감속 웅덩이,water,1,2,point,zone,zone=slow;radius=3;duration=6;slow=0.4,,6초 동안 적을 40% 느리게 하는 웅덩이를 만듭니다.
+water_tide,water,밀물,water,3,3,point,damage,amount=26;radius=3;mark=wet;knockback=4,,넓은 범위에 26 피해를 주고 강하게 밀쳐냅니다.
+water_guard,water,수호의 물결,water,4,3,ally-all,shieldAll,pct=0.15,,성 HP를 최대치의 15%만큼 회복합니다.
+water_iron,water,강철 등껍질,water,6,3,ally-all,shieldAll,pct=0.24,A,성 HP를 최대치의 24%만큼 회복합니다.
+water_whirl,water,소용돌이,water,6,4,point,zone,zone=slow;radius=3;duration=6;slow=0.6;root=1,B,6초 동안 적을 크게 느리게 하고 짧게 묶는 소용돌이를 만듭니다.
+fire_spark,fire,불씨,fire,1,1,point,damage,amount=16;radius=1.2;mark=burn;markStacks=1,,적에게 16 피해를 주고 화상 1중첩을 남깁니다.
+fire_ball,fire,화염구,fire,1,2,point,damage,amount=24;radius=2.2;mark=burn;markStacks=2,,범위 안의 적에게 24 피해를 주고 화상 2중첩을 남깁니다.
+fire_chain,fire,연쇄 불씨,fire,3,2,point,chain,amount=14;targets=3;mark=burn;markStacks=1,,가까운 적 3마리에게 연쇄 피해를 주고 화상을 남깁니다.
+fire_zone,fire,화염 지대,fire,4,3,point,zone,zone=fire;radius=3;duration=5;dps=12,,5초 동안 초당 12 피해를 주는 불길을 남깁니다.
+fire_overheat,fire,오버히트,fire,6,4,self,overheat,mult=2;duration=8,A,8초 동안 불 유닛의 공격력이 2배가 됩니다.
+fire_nova,fire,초신성,fire,6,4,point,damage,amount=45;radius=3.4;mark=burn;markStacks=3,B,넓은 범위에 45 피해를 주고 화상 3중첩을 남깁니다.
+grass_seed,grass,씨앗탄,grass,1,1,point,zone,zone=overgrowth;radius=2.4;duration=6;slow=0.4;dps=4,,6초 동안 적을 느리게 하고 피해를 주는 덩굴 지대를 만듭니다.
+grass_thorn,grass,가시 찌르기,grass,1,1,point,damage,amount=16;radius=1.6;mark=overgrowth,,적에게 16 피해를 주고 덩굴 표식을 남깁니다.
+grass_vine,grass,덩굴 감옥,grass,3,2,point,zone,zone=overgrowth;radius=2.6;duration=3;root=3;slow=0.4,,범위 안의 적을 3초 동안 묶습니다.
+grass_bush,grass,가시덤불,grass,4,3,point,zone,zone=thorn;radius=3;duration=6;slow=0.3;dps=8,,6초 동안 적을 느리게 하고 초당 8 피해를 주는 덤불을 만듭니다.
+grass_spore,grass,포자 폭발,grass,6,3,point,damage,amount=26;radius=2.8;mark=overgrowth,A,범위 안의 적에게 26 피해를 주고 덩굴 표식을 남깁니다.
+grass_bloom,grass,만개,grass,6,3,ally-all,cleanseHeal,amount=35,B,성 HP를 35 회복하고 전장을 정화합니다.
+dark_bolt,dark,그림자탄,dark,1,1,point,damage,amount=12;radius=1.2;mark=curse;markStacks=1,,적에게 12 피해를 주고 저주 1중첩을 남깁니다.
+dark_mark,dark,저주 표식,dark,1,1,enemy-area,markArea,mark=curse;stacks=2;radius=2.6,,범위 안의 적에게 저주 2중첩을 남깁니다.
+dark_weaken,dark,약화의 저주,dark,3,2,enemy-area,defDown,pct=0.4;duration=8;radius=2.6,,8초 동안 범위 안의 적이 받는 피해를 40% 늘립니다.
+dark_burst,dark,어둠 폭발,dark,4,3,point,damage,amount=28;radius=2.6;mark=curse;markStacks=2,,범위 안의 적에게 28 피해를 주고 저주 2중첩을 남깁니다.
+dark_verdict,dark,일식 선고,dark,9,6,enemy-area,eclipseVerdict,radius=99;executePct=0.2,A,맵 전체의 저주가 깊은 적에게 큰 피해를 주고 약한 일반 적을 처형합니다.
+dark_thirst,dark,사냥의 갈증,dark,9,3,point,drain,amount=30;radius=3;drainPct=1.0,B,범위 안의 적에게 30 피해를 주고 준 피해만큼 성을 수리합니다.
+light_bolt,light,빛탄,light,1,1,point,judgment,amount=14;radius=1.4;darkBonus=1.5,,적에게 14 빛 피해를 줍니다. 어둠 적에게 더 강합니다.
+light_bless,light,축복,light,1,2,ally-one,blessOne,stacks=2,,가장 앞선 유닛에게 축복을 부여해 공격력을 높입니다.
+light_shield,light,빛의 방패,light,3,2,ally-all,shieldAll,pct=0.12,,성 HP를 최대치의 12%만큼 회복합니다.
+light_smite,light,심판의 빛,light,4,3,enemy-area,judgment,amount=24;radius=2.8;darkBonus=1.5,,범위 안의 적에게 24 빛 피해를 줍니다.
+light_ward,light,천상의 방벽,light,9,4,ally-all,shieldAll,pct=0.26,A,성 HP를 최대치의 26%만큼 회복합니다.
+light_sunfire,light,태양의 심판,light,9,6,enemy-area,judgment,amount=34;radius=99;darkBonus=2,B,맵 전체의 적에게 34 빛 피해를 줍니다. 어둠 적에게 매우 강합니다.
+fire_ember,fire,불꽃,fire,1,1,point,damage,amount=12;radius=1.2;mark=burn;markStacks=1,,12 피해와 화상 1중첩.
+fire_lash,fire,불채찍,fire,2,2,point,chain,amount=14;targets=2;mark=burn;markStacks=1,,적 2마리에게 연쇄 피해와 화상을 줍니다.
+fire_wall,fire,불의 벽,fire,5,3,point,zone,zone=fire;radius=3;duration=6;dps=12,,6초 동안 초당 12 피해를 주는 불길을 남깁니다.
+fire_meteor,fire,운석 폭우,fire,7,6,enemy-area,damage,amount=34;radius=99;mark=burn;markStacks=2,,맵 전체의 적에게 34 피해를 주고 화상 2중첩을 남깁니다.
+water_splash,water,물살,water,1,1,point,damage,amount=12;radius=1.2;mark=wet;markStacks=1,,12 피해와 젖음 표식.
+water_bubble,water,물방울 장벽,water,2,2,ally-all,shieldAll,pct=0.1,,성 HP를 최대치의 10%만큼 회복합니다.
+water_frost,water,서리,water,5,3,point,zone,zone=slow;radius=3;duration=6;slow=0.5,,6초 동안 적을 50% 느리게 합니다.
+water_torrent,water,격류,water,7,4,point,damage,amount=40;radius=2.8;knockback=3.5,,범위 안의 적에게 40 피해를 주고 강하게 밀쳐냅니다.
+grass_sprout,grass,새싹,grass,1,1,point,damage,amount=12;radius=1.4;mark=overgrowth,,12 피해와 덩굴 표식.
+grass_snare,grass,덩굴 올가미,grass,2,2,point,zone,zone=overgrowth;radius=2.4;duration=2;root=2;slow=0.3,,범위 안의 적을 2초 동안 묶습니다.
+grass_mend,grass,치유의 잎,grass,5,3,ally-all,healAll,amount=30,,성 HP를 30 회복합니다.
+grass_forest,grass,가시숲,grass,7,4,point,zone,zone=thorn;radius=3.4;duration=6;slow=0.4;dps=10,,6초 동안 적을 느리게 하고 초당 10 피해를 줍니다.
+light_ray,light,빛무리,light,1,1,point,judgment,amount=12;radius=1.3;darkBonus=1.5,,12 빛 피해. 어둠 적에게 더 강합니다.
+light_mend,light,치유의 빛,light,2,3,ally-all,healAll,amount=22,,성 HP를 22 회복합니다.
+light_aegis,light,성역,light,6,3,ally-all,shieldAll,pct=0.18,,성 HP를 최대치의 18%만큼 회복합니다.
+light_dawn,light,새벽빛,light,7,4,enemy-area,judgment,amount=34;radius=3;darkBonus=1.8,,범위 안의 적에게 34 빛 피해를 줍니다.
+dark_wisp,dark,망령불,dark,1,1,point,damage,amount=11;radius=1.2;mark=curse;markStacks=1,,11 피해와 저주 1중첩.
+dark_hex,dark,저주진,dark,2,1,enemy-area,markArea,mark=curse;stacks=2;radius=2.4,,범위 안의 적에게 저주 2중첩을 남깁니다.
+dark_leech,dark,생명 흡수,dark,6,3,point,drain,amount=26;radius=2.4;drainPct=0.6,,범위 안의 적에게 26 피해를 주고 일부 피해만큼 성을 수리합니다.
+dark_night,dark,밤의 칼날,dark,7,3,point,damage,amount=30;radius=2.8;mark=curse;markStacks=2,,범위 안의 적에게 30 피해와 저주 2중첩.
+e_fire_1,e_fire,불뿜기,fire,1,1,point,damage,amount=13;radius=1.2;mark=burn;markStacks=1,,13 피해와 화상 1중첩.
+e_fire_2,e_fire,불티,fire,1,1,point,damage,amount=11;radius=1.6;mark=burn;markStacks=1,,범위 안의 적에게 11 피해와 화상.
+e_fire_3,e_fire,화상 표식,fire,1,1,enemy-area,markArea,mark=burn;stacks=2;radius=2.2,,범위 안의 적에게 화상 2중첩.
+e_fire_4,e_fire,화염구,fire,2,2,point,damage,amount=20;radius=2;mark=burn;markStacks=2,,범위 안의 적에게 20 피해와 화상 2중첩.
+e_fire_5,e_fire,불의 고리,fire,3,3,point,zone,zone=fire;radius=2.6;duration=4;dps=10,,4초 동안 초당 10 피해를 주는 불길을 남깁니다.
+e_fire_6,e_fire,화염탄,fire,4,3,point,damage,amount=26;radius=2.2;mark=burn;markStacks=2,,범위 안의 적에게 26 피해와 화상 2중첩.
+e_fire_7,e_fire,연쇄 불꽃,fire,5,2,point,chain,amount=16;targets=3;mark=burn;markStacks=1,,적 3마리에게 연쇄 피해와 화상을 줍니다.
+e_fire_8,e_fire,대폭발,fire,6,5,enemy-area,damage,amount=28;radius=99;mark=burn;markStacks=2,,맵 전체의 적에게 28 피해와 화상 2중첩을 남깁니다.
+e_water_1,e_water,물방울,water,1,1,point,damage,amount=12;radius=1.2;mark=wet;markStacks=1;knockback=0.8,,12 피해와 젖음. 약하게 밀쳐냅니다.
+e_water_2,e_water,물줄기,water,1,2,point,damage,amount=11;radius=1.8;mark=wet,,범위 안의 적에게 11 피해와 젖음.
+e_water_3,e_water,물보라,water,1,1,enemy-area,markArea,mark=wet;stacks=1;radius=2.4,,범위 안의 적에게 젖음 표식을 남깁니다.
+e_water_4,e_water,물대포,water,2,2,point,damage,amount=20;radius=1.6;mark=wet;knockback=1.5,,20 피해와 젖음. 적을 밀쳐냅니다.
+e_water_5,e_water,진창,water,3,2,point,zone,zone=slow;radius=2.8;duration=5;slow=0.4,,5초 동안 적을 40% 느리게 합니다.
+e_water_6,e_water,난류,water,4,3,point,damage,amount=26;radius=2;knockback=2.5,,범위 안의 적에게 26 피해를 주고 밀쳐냅니다.
+e_water_7,e_water,소용돌이,water,5,3,point,zone,zone=slow;radius=2.6;duration=5;slow=0.55;root=1,,5초 동안 적을 크게 느리게 하고 짧게 묶습니다.
+e_water_8,e_water,대해일,water,6,5,enemy-area,damage,amount=26;radius=99;mark=wet;knockback=1.2,,맵 전체의 적에게 26 피해와 젖음 표식을 남기고 조금 밀쳐냅니다.
+e_grass_1,e_grass,가시,grass,1,1,point,damage,amount=12;radius=1.4;mark=overgrowth,,12 피해와 덩굴 표식.
+e_grass_2,e_grass,씨앗,grass,1,1,point,zone,zone=overgrowth;radius=2.2;duration=5;slow=0.35;dps=4,,5초 동안 적을 느리게 하고 피해를 줍니다.
+e_grass_3,e_grass,포자 표식,grass,1,1,enemy-area,markArea,mark=overgrowth;stacks=1;radius=2.2,,범위 안의 적에게 덩굴 표식을 남깁니다.
+e_grass_4,e_grass,뿌리감옥,grass,2,2,point,zone,zone=overgrowth;radius=2.4;duration=2.5;root=2.5;slow=0.3,,범위 안의 적을 2.5초 동안 묶습니다.
+e_grass_5,e_grass,가시덤불,grass,3,3,point,zone,zone=thorn;radius=2.6;duration=5;slow=0.3;dps=7,,5초 동안 적을 느리게 하고 초당 7 피해를 줍니다.
+e_grass_6,e_grass,회복 포자,grass,4,3,ally-all,healAll,amount=26,,성 HP를 26 회복합니다.
+e_grass_7,e_grass,포자탄,grass,5,3,point,damage,amount=26;radius=2.6;mark=overgrowth,,범위 안의 적에게 26 피해와 덩굴 표식.
+e_grass_8,e_grass,대지의 분노,grass,6,5,enemy-area,damage,amount=26;radius=99;mark=overgrowth,,맵 전체의 적에게 26 피해와 덩굴 표식을 남깁니다.
+e_light_1,e_light,빛살,light,1,1,point,judgment,amount=12;radius=1.3;darkBonus=1.5,,12 빛 피해. 어둠 적에게 더 강합니다.
+e_light_2,e_light,가호,light,1,2,ally-one,blessOne,stacks=2,,가장 앞선 유닛의 공격력을 높입니다.
+e_light_3,e_light,빛막,light,1,2,ally-all,shieldAll,pct=0.1,,성 HP를 최대치의 10%만큼 회복합니다.
+e_light_4,e_light,치유,light,2,3,ally-all,healAll,amount=24,,성 HP를 24 회복합니다.
+e_light_5,e_light,정화,light,3,3,ally-all,cleanseHeal,amount=24,,성 HP를 24 회복하고 전장을 정화합니다.
+e_light_6,e_light,심판,light,4,3,enemy-area,judgment,amount=24;radius=2.6;darkBonus=1.5,,범위 안의 적에게 24 빛 피해를 줍니다.
+e_light_7,e_light,수호,light,5,3,ally-all,shieldAll,pct=0.2,,성 HP를 최대치의 20%만큼 회복합니다.
+e_light_8,e_light,하늘섬광,light,6,5,enemy-area,judgment,amount=26;radius=99;darkBonus=1.8,,맵 전체의 적에게 26 빛 피해를 줍니다.
+e_dark_1,e_dark,그림자,dark,1,1,point,damage,amount=11;radius=1.2;mark=curse;markStacks=1,,11 피해와 저주 1중첩.
+e_dark_2,e_dark,저주 표식,dark,1,1,enemy-area,markArea,mark=curse;stacks=2;radius=2.4,,범위 안의 적에게 저주 2중첩을 남깁니다.
+e_dark_3,e_dark,약화,dark,1,2,enemy-area,defDown,pct=0.3;duration=6;radius=2.2,,6초 동안 범위 안의 적이 받는 피해를 30% 늘립니다.
+e_dark_4,e_dark,어둠탄,dark,2,2,point,damage,amount=20;radius=1.8;mark=curse;markStacks=1,,범위 안의 적에게 20 피해와 저주를 줍니다.
+e_dark_5,e_dark,방패의 저주,dark,3,2,enemy-area,defDown,pct=0.4;duration=8;radius=2.4,,8초 동안 범위 안의 적이 받는 피해를 40% 늘립니다.
+e_dark_6,e_dark,흡수,dark,4,3,point,drain,amount=24;radius=2.4;drainPct=0.6,,범위 안의 적에게 24 피해를 주고 일부 피해만큼 성을 수리합니다.
+e_dark_7,e_dark,저주 폭발,dark,5,3,point,damage,amount=26;radius=2.4;mark=curse;markStacks=2,,범위 안의 적에게 26 피해와 저주 2중첩.
+e_dark_8,e_dark,밤사냥,dark,6,5,enemy-area,drain,amount=24;radius=99;drainPct=0.5,,맵 전체의 적에게 24 피해를 주고 일부 피해만큼 성을 수리합니다.

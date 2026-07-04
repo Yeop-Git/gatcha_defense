@@ -36,9 +36,11 @@ export interface GameEvents {
   'base:destroyed': {};
   'enemy:killed': { element: ElementOrNeutral; x: number; z: number; isBoss: boolean };
   'card:played': { id: string };
-  'synergy:fire': { id: string; name: string; x: number; z: number; a: Element; b: Element; discovered: boolean };
   'mana:change': { mana: number; max: number };
   'toast': { text: string; kind?: 'good' | 'bad' | 'info' };
   'run:win': {};
   'run:lose': {};
+  /** 포획했으나 로스터가 가득 → 상위(Game)가 '오래된 2 + 신규' 버리기 모달을 띄운다. */
+  'capture:full': { species: string; name: string };
+  'unit:grown': { uid: string; from: string; to: string; element: Element; evolved: boolean; gains: { uid: string; cardId: string }[] };
 }

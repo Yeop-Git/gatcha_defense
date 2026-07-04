@@ -1,10 +1,16 @@
-import type { Element } from './types';
-import { MONSTERS, type BranchDef } from '../data/monsters';
+import type { Element, ElementOrNeutral } from './types';
+import { MONSTERS } from '../data/monsters';
+import { ENEMIES } from '../data/enemies';
 import { CARD_BY_ID, cardsOfCharacter, type DeckCharacter } from '../data/cards';
 import {
-  BASE_HP, BOND_CAP, BOND_PER_STAGE, ELEMENTS, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
+  BASE_HP, BOND_CAP, BOND_PER_STAGE, CAPTURE, ELEMENTS, ENEMY_EVOLVE_LEVEL, ENEMY_PLAY, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
   MANA_MAX, MANA_REGEN, MAX_MONSTERS, UNIT_BASE,
 } from '../data/constants';
+
+/** 무속성 적을 플레이어블 유닛으로 쓸 때의 대체 속성 (마크/색 판정용). */
+export function asElement(el: ElementOrNeutral): Element {
+  return el === 'neutral' ? 'grass' : el;
+}
 
 let _uid = 1;
 const nextUid = () => `u${_uid++}`;
@@ -20,17 +26,20 @@ export function bumpUidAbove(uids: string[]): void {
 /** 덱에 장착 가능한 카드 수 (포켓몬식: 배운 것 중 5개만 들고 감) */
 export const EQUIP_CAP = 5;
 
-/** 보유 유닛 — 런 동안 유지되는 육성 모델. 획득은 드래프트뿐(§3). */
+/** 보유 유닛 — 런 동안 유지되는 육성 모델. creature=드래프트, enemy=포획. */
 export interface OwnedUnit {
   uid: string;
+  /** 출처: creature(드래프트, 3단 진화) 또는 enemy(포획, 2단/무진화). */
+  kind: 'creature' | 'enemy';
+  /** enemy일 때 적 도감 species id (ENEMIES). creature는 undefined. */
+  species?: string;
+  /** 속성 (creature=고유, enemy=플레이 속성; 무속성 적은 asElement로 대체). */
   element: Element;
   level: number;
   stage: 1 | 2 | 3;
   xp: number;
   /** 사용자 지정 이름 (뷰어에서 편집). 없으면 단계 기본 이름. */
   nickname?: string;
-  /** 분기 진화 형태 (§5.6). 3단 도달 시 2택1, 선택 전에는 null. */
-  branch: 'A' | 'B' | null;
   /** 덱에 장착한 카드 id (최대 EQUIP_CAP, 앞쪽 = 오래된 순) */
   equipped: string[];
   /** 카드 교체에서 버린 카드 id — 이 런에서는 다시 쓸 수 없음 */
@@ -67,8 +76,24 @@ function stageForLevel(element: Element, level: number): 1 | 2 | 3 {
   return 1;
 }
 
+/** 포획 enemy 유닛 파생 스탯 — 도감 스탯 × 플레이 배율 × 레벨/유대 성장. */
+function deriveEnemyStats(unit: OwnedUnit): DerivedStats {
+  const def = ENEMIES[unit.species ?? ''] ?? ENEMIES.slime;
+  const lv = 1 + (unit.level - 1) * 0.06;
+  const bond = Math.min(BOND_CAP, unit.bond ?? 0);
+  const growth = lv * (1 + bond);
+  return {
+    hp: Math.round(def.hp * ENEMY_PLAY.hpMult * growth),
+    attack: Math.round(def.attack * ENEMY_PLAY.atkMult * growth),
+    range: UNIT_BASE.range + (def.flying ? 0.6 : 0) + (unit.stage - 1) * 0.4,
+    attackSpeed: UNIT_BASE.attackSpeed,
+    bond,
+  };
+}
+
 /** 유닛 파생 스탯 (§14). 대기만성 보정 반영. */
 export function deriveStats(unit: OwnedUnit): DerivedStats {
+  if (unit.kind === 'enemy') return deriveEnemyStats(unit);
   const def = MONSTERS[unit.element];
   const mult = Math.pow(EVOLVE_MULT, unit.stage - 1);
   let hp = UNIT_BASE.hp * mult;
@@ -96,23 +121,13 @@ export function deriveStats(unit: OwnedUnit): DerivedStats {
 }
 
 export function unitName(unit: OwnedUnit): string {
+  if (unit.kind === 'enemy') return ENEMIES[unit.species ?? '']?.name ?? '???';
   return MONSTERS[unit.element].stages[unit.stage - 1].name;
 }
 
 /** 표기 이름: 사용자 지정 닉네임 우선, 없으면 단계 기본 이름. */
 export function displayName(unit: OwnedUnit): string {
   return unit.nickname?.trim() ? unit.nickname.trim() : unitName(unit);
-}
-
-/** 선택한 분기 정의 (§5.6). 미선택/3단 미만이면 null. */
-export function unitBranch(unit: OwnedUnit): BranchDef | null {
-  if (unit.stage < 3 || !unit.branch) return null;
-  return MONSTERS[unit.element].branches.find((b) => b.key === unit.branch) ?? null;
-}
-
-/** 렌더 팔레트 스왑 틴트 — 분기 선택 시 그 색 (색이 곧 빌드, §5.6). */
-export function unitTint(unit: OwnedUnit): number | undefined {
-  return unitBranch(unit)?.tint;
 }
 
 /**
@@ -130,8 +145,8 @@ export class GameState {
   /** 성(공용) 장착 카드 = 무색 5장 (최대 EQUIP_CAP) */
   heroEquipped: string[] = [];
 
-  // 배치
-  placementCap = 3;
+  // 배치 (creature + 포획 enemy 합쳐 최대 MAX_MONSTERS)
+  placementCap = 6;
 
   // 마나 상한 (런타임 마나는 DeckSystem이 스테이지 단위로 관리)
   manaMax = MANA_MAX;
@@ -139,33 +154,30 @@ export class GameState {
   // 스탯 수정자 (갈림길 버프)
   unitAtkMult = 1;
   manaRegenMult = 1;
-  /** 협동기 내부 쿨다운 감소(초) — 갈림길 버프 (§10) */
-  synergyCdCut = 0;
   /** 어둠 3단 처치 스택 (§5.4) — 런 내 영구 누적, 공격력 +비율 (상한 DARK_KILL_STACK_MAX) */
   darkKillStacks = 0;
 
-  /** 반응 도감 (§7.3): 발견한 협동기 id */
-  discovered: string[] = [];
+  /** 포획 도감/카운트: 적 species id → 누적 포획 수 (중복 포획 = XP 가속 재료). */
+  captured: Record<string, number> = {};
 
   reset(): void {
     Object.assign(this, new GameState());
-    this.heroEquipped = this.defaultEquip('hero', 1, null);
+    this.heroEquipped = this.defaultEquip('hero', 1);
   }
 
   // ── 덱(학습/장착) 모델 ─────────────────────────────
   /**
-   * 캐릭터가 해당 레벨에서 사용 가능한(학습한) 카드 id 목록.
-   * 분기 시그니처 카드는 그 분기를 선택했을 때만 해금(§5.6). 버린 카드는 제외.
+   * 캐릭터가 해당 레벨에서 사용 가능한(학습한) 카드 id 목록. 버린 카드는 제외.
    */
-  learnedIdsFor(character: DeckCharacter, level: number, branch: 'A' | 'B' | null, discarded: string[] = []): string[] {
+  learnedIdsFor(character: DeckCharacter, level: number, discarded: string[] = []): string[] {
     return cardsOfCharacter(character)
-      .filter((c) => c.learnLevel <= level && (!c.branch || c.branch === branch) && !discarded.includes(c.id))
+      .filter((c) => c.learnLevel <= level && !discarded.includes(c.id))
       .map((c) => c.id);
   }
 
   /** 기본 장착: 학습한 것 중 **가장 최신(고레벨) EQUIP_CAP개** — 강한 카드가 실제로 장착되도록. */
-  private defaultEquip(character: DeckCharacter, level: number, branch: 'A' | 'B' | null): string[] {
-    return this.learnedIdsFor(character, level, branch).slice(-EQUIP_CAP);
+  private defaultEquip(character: DeckCharacter, level: number): string[] {
+    return this.learnedIdsFor(character, level).slice(-EQUIP_CAP);
   }
 
   /** 전투 덱 = 성(무색) + 로스터 각자의 장착 카드 (총 최대 4×5=20장, §6) */
@@ -175,13 +187,14 @@ export class GameState {
 
   // 캐릭터 관리(holder = 'hero' | uid)
   holderCharacter(id: string): DeckCharacter {
-    return id === 'hero' ? 'hero' : (this.roster.find((u) => u.uid === id)?.element ?? 'hero');
+    if (id === 'hero') return 'hero';
+    const u = this.roster.find((x) => x.uid === id);
+    if (!u) return 'hero';
+    // 포획 적은 속성별 공용 풀(e_속성), 크리처는 고유 속성 풀.
+    return u.kind === 'enemy' ? (`e_${u.element}` as DeckCharacter) : u.element;
   }
   holderLevel(id: string): number {
     return id === 'hero' ? 1 : (this.roster.find((u) => u.uid === id)?.level ?? 1);
-  }
-  holderBranch(id: string): 'A' | 'B' | null {
-    return id === 'hero' ? null : (this.roster.find((u) => u.uid === id)?.branch ?? null);
   }
   equippedOf(id: string): string[] {
     return id === 'hero' ? this.heroEquipped : (this.roster.find((u) => u.uid === id)?.equipped ?? []);
@@ -190,7 +203,7 @@ export class GameState {
     return id === 'hero' ? [] : (this.roster.find((u) => u.uid === id)?.discarded ?? []);
   }
   setEquipped(id: string, ids: string[]): void {
-    const learned = this.learnedIdsFor(this.holderCharacter(id), this.holderLevel(id), this.holderBranch(id), this.holderDiscarded(id));
+    const learned = this.learnedIdsFor(this.holderCharacter(id), this.holderLevel(id), this.holderDiscarded(id));
     const valid = ids.filter((x) => learned.includes(x)).slice(0, EQUIP_CAP);
     if (id === 'hero') this.heroEquipped = valid;
     else { const u = this.roster.find((x) => x.uid === id); if (u) u.equipped = valid; }
@@ -208,10 +221,55 @@ export class GameState {
   /** 로스터 합류 (드래프트 전용, §3). 항상 1단부터 시작 → 육성으로 진화. */
   giveUnit(element: Element, level = 1): OwnedUnit | null {
     if (this.hasElement(element) || this.monstersFull) return null;
-    const unit: OwnedUnit = { uid: nextUid(), element, level, stage: 1, xp: 0, branch: null, equipped: [], discarded: [], bond: 0 };
-    unit.equipped = this.defaultEquip(element, level, null);
+    const unit: OwnedUnit = { uid: nextUid(), kind: 'creature', element, level, stage: 1, xp: 0, equipped: [], discarded: [], bond: 0 };
+    unit.equipped = this.defaultEquip(element, level);
     this.roster.push(unit);
     return unit;
+  }
+
+  /**
+   * 포획 enemy를 로스터에 편입 (배치·전투 가능). 가득이면 null(도감만 등록).
+   * enemy 유닛은 아직 스킬 카드가 없고 자동 공격만 한다(스킬 풀은 후속). 항상 1단·레벨1 시작.
+   */
+  giveEnemyUnit(speciesId: string, startLevel = 1): OwnedUnit | null {
+    const def = ENEMIES[speciesId];
+    if (!def || this.monstersFull) return null;
+    // 진행도에 맞춰 시작 레벨 부여 → 즉전력. 진화 레벨 이상이면 진화형으로 합류.
+    let sp = speciesId;
+    let stage: 1 | 2 | 3 = 1;
+    if (def.evolvesTo && startLevel >= ENEMY_EVOLVE_LEVEL && ENEMIES[def.evolvesTo]) { sp = def.evolvesTo; stage = 2; }
+    const el = asElement(ENEMIES[sp].element);
+    const unit: OwnedUnit = {
+      uid: nextUid(), kind: 'enemy', species: sp, element: el,
+      level: startLevel, stage, xp: 0, equipped: [], discarded: [], bond: 0,
+    };
+    unit.equipped = this.defaultEquip(`e_${el}` as DeckCharacter, startLevel);
+    this.roster.push(unit);
+    return unit;
+  }
+
+  absorbCapturedEnemy(speciesId: string): { unit: OwnedUnit; from: string; to: string; evolved: boolean; gains: CardGain[]; xp: number; bondGain: number } | null {
+    const captured = ENEMIES[speciesId];
+    if (!captured) return null;
+    const unit = this.roster.find((u) => {
+      if (u.kind !== 'enemy' || !u.species) return false;
+      const owned = ENEMIES[u.species];
+      return u.species === speciesId || captured.evolvesTo === u.species || owned?.evolvesTo === speciesId;
+    });
+    if (!unit) return null;
+    const from = unitName(unit);
+    const beforeBond = unit.bond ?? 0;
+    unit.bond = Math.min(BOND_CAP, beforeBond + CAPTURE.duplicateBond);
+    const result = this.addUnitXp(unit, CAPTURE.duplicateXp);
+    return {
+      unit,
+      from,
+      to: unitName(unit),
+      evolved: result.evolved,
+      gains: result.gains,
+      xp: CAPTURE.duplicateXp,
+      bondGain: unit.bond - beforeBond,
+    };
   }
 
   /** 스테이지 클리어 시 보유 유닛의 유대 누적(상한 BOND_CAP). 뚝심 육성 보상(§14). */
@@ -219,10 +277,28 @@ export class GameState {
     for (const u of this.roster) u.bond = Math.min(BOND_CAP, (u.bond ?? 0) + BOND_PER_STAGE);
   }
 
-  // ── 드래프트(v3): 스테이지 1·2·3 시작 시 3택1 ─────────
-  /** 이번 스테이지 시작에 드래프트가 필요한가 (1·2·3, 아직 그 스테이지분을 안 뽑음). */
+  /** 진화 각성 시 배우는 핵심 스킬 (진화 단계별 시그니처). [2단, 3단]. */
+  private static readonly CREATURE_KEY: Record<Element, [string, string]> = {
+    water: ['water_tide', 'water_iron'],
+    fire: ['fire_zone', 'fire_nova'],
+    grass: ['grass_bush', 'grass_spore'],
+    dark: ['dark_burst', 'dark_verdict'],
+    light: ['light_smite', 'light_sunfire'],
+  };
+  private static readonly ENEMY_KEY: Record<Element, string> = {
+    fire: 'e_fire_8', water: 'e_water_8', grass: 'e_grass_8', light: 'e_light_8', dark: 'e_dark_8',
+  };
+  /** 방금 진화한 유닛이 각성으로 배울 핵심 스킬 id. 없으면 null. */
+  evolveKeySkill(unit: OwnedUnit): string | null {
+    if (unit.kind === 'enemy') return unit.stage === 2 ? GameState.ENEMY_KEY[unit.element] : null;
+    const pair = GameState.CREATURE_KEY[unit.element];
+    return unit.stage >= 3 ? pair[1] : unit.stage === 2 ? pair[0] : null;
+  }
+
+  // ── 드래프트(v4): 스테이지 1 시작 시 1회 3택1 (이후 캐릭터는 포획으로만) ──
+  /** 스테이지 1 시작 시 아직 스타터를 안 뽑았으면 드래프트. */
   get needsDraft(): boolean {
-    return this.stageIndex <= 2 && this.roster.length <= this.stageIndex;
+    return this.stageIndex === 0 && this.roster.length === 0;
   }
 
   /** 드래프트 후보: 미보유 5속성 중 최대 3종(무작위). */
@@ -237,30 +313,11 @@ export class GameState {
     this.giveUnit(element, 1);
   }
 
-  /** 드래프트에서 버려진(미보유) 속성 — §9 타락체 보스용. */
-  unpickedElements(): Element[] {
-    const owned = new Set(this.roster.map((u) => u.element));
-    return ELEMENTS.filter((e) => !owned.has(e));
-  }
-
-  /**
-   * 가지 않은 길 (§9): 버린 2종 → 9 중간보스(mid) / 10 최종보스(final) 배정.
-   * 최종보스 우선순위: 빛/어둠이 버려졌으면 그쪽(어둠 우선) — 대기만성 = 후반 위협 테마.
-   */
-  corruptedBosses(): { mid: Element; final: Element } {
-    const un = this.unpickedElements();
-    if (un.length === 0) return { mid: 'dark', final: 'light' }; // 방어적 폴백 (정상 플레이 불가 케이스)
-    const final = un.includes('dark') ? 'dark' : un.includes('light') ? 'light' : un[un.length - 1];
-    const mid = un.find((e) => e !== final) ?? final;
-    return { mid, final };
-  }
-
   /**
    * 유닛 경험치 지급 → 레벨업/진화/스킬 학습.
-   * 3단 도달 시 분기 미선택이면 needsBranch — 상위(Game)가 2택1 UI를 띄운다.
    * 새로 배운 카드는 자동 장착하지 않고 gains로 반환 — Game이 획득 연출/교체 선택 큐로 처리.
    */
-  addUnitXp(unit: OwnedUnit, amount: number): { leveled: boolean; evolved: boolean; needsBranch: boolean; gains: CardGain[] } {
+  addUnitXp(unit: OwnedUnit, amount: number): { leveled: boolean; evolved: boolean; gains: CardGain[] } {
     unit.xp += amount;
     let leveled = false;
     let evolved = false;
@@ -269,24 +326,32 @@ export class GameState {
       unit.xp -= xpForLevel(unit.level);
       unit.level++;
       leveled = true;
+      // enemy: 쌍 라인은 2단 진화(모델·스탯·속성 교체), 단독/보스체는 무진화.
+      if (unit.kind === 'enemy') {
+        const edef = ENEMIES[unit.species ?? ''];
+        if (edef?.evolvesTo && unit.stage < 2 && unit.level >= ENEMY_EVOLVE_LEVEL) {
+          const evo = ENEMIES[edef.evolvesTo];
+          if (evo) {
+            unit.species = edef.evolvesTo;
+            unit.stage = 2;
+            unit.element = asElement(evo.element);
+            evolved = true;
+          }
+        }
+        // 속성별 공용 풀에서 이번 레벨 스킬 학습
+        for (const c of cardsOfCharacter(`e_${unit.element}` as DeckCharacter)) {
+          if (c.learnLevel === unit.level) gains.push({ uid: unit.uid, cardId: c.id });
+        }
+        continue;
+      }
       const newStage = stageForLevel(unit.element, unit.level);
       if (newStage > unit.stage) { unit.stage = newStage; evolved = true; }
-      // 이번 레벨에서 새로 학습하는 스킬 (분기 시그니처는 분기 선택 시 별도 획득)
+      // 이번 레벨에서 새로 학습하는 스킬
       for (const c of cardsOfCharacter(unit.element)) {
-        if (c.learnLevel === unit.level && !c.branch) gains.push({ uid: unit.uid, cardId: c.id });
+        if (c.learnLevel === unit.level) gains.push({ uid: unit.uid, cardId: c.id });
       }
     }
-    const needsBranch = unit.stage >= 3 && !unit.branch;
-    return { leveled, evolved, needsBranch, gains };
-  }
-
-  /** 분기 선택 (§5.6). 반환: 시그니처 카드 획득 이벤트 (Game이 획득/교체 큐로 처리). */
-  chooseBranch(uid: string, key: 'A' | 'B'): CardGain | null {
-    const u = this.roster.find((x) => x.uid === uid);
-    if (!u || u.stage < 3 || u.branch) return null;
-    u.branch = key;
-    const br = MONSTERS[u.element].branches.find((b) => b.key === key)!;
-    return { uid, cardId: br.signatureCardId };
+    return { leveled, evolved, gains };
   }
 
   /**
@@ -325,18 +390,22 @@ export class GameState {
     u.nickname = clean.length ? clean : undefined;
   }
 
-  /** 반응 도감 등록 (§7.3). 처음 본 협동기면 true. */
-  discoverSynergy(id: string): boolean {
-    if (this.discovered.includes(id)) return false;
-    this.discovered.push(id);
-    return true;
+  /** 포획 등록 (도감 + 중복 카운트). 반환: 처음 잡은 종이면 firstTime, 누적 count. */
+  registerCapture(speciesId: string): { firstTime: boolean; count: number } {
+    const prev = this.captured[speciesId] ?? 0;
+    this.captured[speciesId] = prev + 1;
+    return { firstTime: prev === 0, count: prev + 1 };
+  }
+
+  /** 포획한 고유 종 수 (도감 진척). */
+  get capturedCount(): number {
+    return Object.keys(this.captured).length;
   }
 
   applyBuff(apply: string): void {
     switch (apply) {
       case 'atk10': this.unitAtkMult *= 1.1; break;
       case 'basehp20': this.baseHpMax += 20; this.baseHp += 20; break;
-      case 'syncd': this.synergyCdCut += 0.5; break;
       case 'mana20': this.manaRegenMult *= 1.2; break;
     }
   }

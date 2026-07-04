@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { unitTint, type OwnedUnit } from '../core/GameState';
-import { makeCreature, disposeCreatureView } from './fallback';
+import { type OwnedUnit } from '../core/GameState';
+import { ENEMIES } from '../data/enemies';
+import { CAPTURED_BOSS_SCALE, unitHeight } from '../data/constants';
+import { makeCreature, makeEnemy, disposeCreatureView } from './fallback';
 
 /**
  * "내 몬스터" 3D 뷰어. OrbitControls 360° 회전/줌. 대기 연출은 코드(바운스/부유/회전).
@@ -60,9 +62,16 @@ export class MonsterViewer {
       this.scene.remove(this.model);
       disposeCreatureView(this.model);
     }
-    const scale = 1.4 + unit.stage * 0.35;
-    // 분기 진화 팔레트 스왑 반영 (§5.6)
-    this.model = makeCreature(unit.element, scale, unit.stage, unitTint(unit));
+    // 뷰어는 정규화 높이를 크게 확대해 전시 (보스체는 더 크게)
+    if (unit.kind === 'enemy') {
+      const def = ENEMIES[unit.species ?? ''] ?? ENEMIES.slime;
+      const bossy = def.tier === 'boss' || def.tier === 'miniboss';
+      const h = unitHeight(unit.stage) * (bossy ? CAPTURED_BOSS_SCALE : 1) * 1.6;
+      this.model = makeEnemy(def.element, def.radius, def.flying, def.model, 'idle', h);
+    } else {
+      const scale = (unitHeight(unit.stage) / 1.85) * 1.6;
+      this.model = makeCreature(unit.element, scale, unit.stage);
+    }
     this.model.position.y = 0.4;
     this.scene.add(this.model);
   }

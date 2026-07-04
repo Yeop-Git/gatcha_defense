@@ -150,16 +150,49 @@ async function loadRaw(file: string): Promise<LoadedModel> {
   return { scene: skeletonClone(loaded.scene) as THREE.Group, animations: loaded.animations };
 }
 
-/** 목표 높이에 맞춰 정규화 (발바닥 y=0) */
+/**
+ * 실제 (애니메이션 포즈 반영) 바운딩 박스. THREE.Box3.setFromObject는 스킨드 메시의
+ * 본 변형을 반영하지 못해, 바인드 포즈가 붕괴된 모델(Unreal 익스포트 등)에서 크기가 틀린다.
+ * → 스킨된 정점을 직접 변환해 진짜 외형 바운드를 구한다.
+ */
+function posedBox(root: THREE.Object3D): THREE.Box3 {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3();
+  let any = false;
+  root.traverse((o) => {
+    const sm = o as THREE.SkinnedMesh;
+    if (sm.isSkinnedMesh) {
+      sm.skeleton.update();
+      const pos = sm.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i);
+        sm.applyBoneTransform(i, v);
+        v.applyMatrix4(sm.matrixWorld);
+        box.expandByPoint(v);
+      }
+      any = true;
+    } else if ((o as THREE.Mesh).isMesh) {
+      const m = o as THREE.Mesh;
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      box.union(m.geometry.boundingBox!.clone().applyMatrix4(m.matrixWorld));
+      any = true;
+    }
+  });
+  if (!any) box.setFromObject(root);
+  return box;
+}
+
+/** 목표 높이에 맞춰 정규화 (발바닥 y=0). 애니메이션 포즈가 반영된 실제 외형 기준. */
 function normalize(model: THREE.Group, targetHeight: number): void {
-  const box = new THREE.Box3().setFromObject(model);
+  const box = posedBox(model);
   const size = new THREE.Vector3();
   box.getSize(size);
   const h = size.y || 1;
   const s = targetHeight / h;
   model.scale.setScalar(s);
-  const box2 = new THREE.Box3().setFromObject(model);
-  model.position.y -= box2.min.y; // 발바닥을 y=0으로
+  // 원점 기준 균등 스케일 → 발바닥(min.y)도 s배. 재측정 없이 y 보정.
+  model.position.y -= box.min.y * s;
 }
 
 /**
@@ -197,6 +230,57 @@ function pickClip(clips: THREE.AnimationClip[], prefs: RegExp[]): THREE.Animatio
   return clips[0] ?? null;
 }
 
+/** 엔티티 애니메이션 원샷 재생기 — 이동(loco) 루프 위에 공격/사망 클립을 얹는다. */
+export interface AnimController {
+  /** 공격/피격 등 1회성 클립 재생 후 이동 클립으로 복귀. */
+  playOnce(role: 'attack' | 'hit'): void;
+  /** 사망 클립 재생(복귀 없음, 마지막 프레임 고정). 클립 길이(초) 반환, 없으면 0. */
+  playDeath(): number;
+}
+
+/** 역할별 클립 이름 매칭 (Kenney 몬스터팩 명명: Bite_Front/Punch/Headbutt/Death/HitRecieve 등). */
+const ANIM_ROLE: Record<'attack' | 'hit' | 'death', RegExp[]> = {
+  attack: [/bite_front/i, /punch/i, /headbutt/i, /attack/i, /bite/i, /slash/i],
+  hit: [/hitre/i, /hit/i],
+  death: [/death/i, /\bdie\b/i],
+};
+
+interface FinishEvent { action: THREE.AnimationAction }
+
+function makeAnimController(mixer: THREE.AnimationMixer, clips: THREE.AnimationClip[], loco: THREE.AnimationAction): AnimController {
+  const locoClip = loco.getClip();
+  return {
+    playOnce(role) {
+      const clip = pickClip(clips, ANIM_ROLE[role]);
+      if (!clip || clip === locoClip) return;
+      const act = mixer.clipAction(clip);
+      act.reset();
+      act.setLoop(THREE.LoopOnce, 1);
+      act.clampWhenFinished = false;
+      act.play();
+      loco.crossFadeTo(act, 0.1, false);
+      const onFin = (e: FinishEvent): void => {
+        if (e.action !== act) return;
+        mixer.removeEventListener('finished', onFin as unknown as never);
+        loco.reset().play();
+        act.crossFadeTo(loco, 0.15, false);
+      };
+      mixer.addEventListener('finished', onFin as unknown as never);
+    },
+    playDeath() {
+      const clip = pickClip(clips, ANIM_ROLE.death);
+      if (!clip) return 0;
+      mixer.stopAllAction();
+      const act = mixer.clipAction(clip);
+      act.reset();
+      act.setLoop(THREE.LoopOnce, 1);
+      act.clampWhenFinished = true;
+      act.play();
+      return clip.duration;
+    },
+  };
+}
+
 /**
  * group에 GLB 모델을 비동기로 붙인다. 성공 시 폴백(placeholder) 메시를 제거.
  * 파일이 없거나 로드 실패하면 조용히 폴백 유지(파일당 최초 1회만 요청 — 캐시).
@@ -204,9 +288,31 @@ function pickClip(clips: THREE.AnimationClip[], prefs: RegExp[]): THREE.Animatio
  * 애니메이션 클립이 있으면 AnimationMixer를 group.userData.mixer에 부착 —
  * 소유 엔티티(Enemy/Monster/뷰어)가 매 프레임 mixer.update(dt)를 호출한다.
  */
-export function attachModel(group: THREE.Group, file: string, targetHeight: number, tint?: number, animPrefs?: RegExp[]): void {
+export function attachModel(
+  group: THREE.Group,
+  file: string,
+  targetHeight: number,
+  tint?: number,
+  animPrefs?: RegExp[],
+  playAnimation = true,
+): void {
   loadRaw(file)
     .then(({ scene: model, animations }) => {
+      // 내장 애니메이션: 이동 클립 루프 + 공격/사망 원샷 컨트롤러.
+      // ★ 정규화 전에 믹서를 만들어 첫 프레임을 포즈시킨다 — 바인드 포즈가 붕괴된 모델도
+      //   실제 애니메이션 외형 기준으로 올바르게 스케일되도록.
+      let mixer: THREE.AnimationMixer | undefined;
+      if (playAnimation && animations.length) {
+        const locoClip = pickClip(animations, animPrefs ?? [/walk/i, /run/i, /move/i, /idle/i]);
+        if (locoClip) {
+          mixer = new THREE.AnimationMixer(model);
+          const loco = mixer.clipAction(locoClip);
+          loco.play();
+          mixer.update(0); // 첫 프레임 포즈 반영
+          group.userData.mixer = mixer;
+          group.userData.anim = makeAnimController(mixer, animations, loco);
+        }
+      }
       normalize(model, targetHeight);
       if (tint !== undefined) tintModel(model, tint);
       // 폴백 placeholder 제거
@@ -214,15 +320,6 @@ export function attachModel(group: THREE.Group, file: string, targetHeight: numb
         if (child.userData.placeholder) group.remove(child);
       }
       group.add(model);
-      // 내장 애니메이션 재생 (걷기/대기 등)
-      if (animations.length) {
-        const clip = pickClip(animations, animPrefs ?? [/walk/i, /run/i, /move/i, /idle/i]);
-        if (clip) {
-          const mixer = new THREE.AnimationMixer(model);
-          mixer.clipAction(clip).play();
-          group.userData.mixer = mixer;
-        }
-      }
     })
     .catch(() => {
       /* 파일 없음/로드 실패 → 폴백 캡슐 유지 (조용히 무시) */

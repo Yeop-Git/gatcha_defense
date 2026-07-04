@@ -1,17 +1,18 @@
-import { bus } from '../core/events';
+﻿import { bus } from '../core/events';
 import { ELEMENT_ICON, ELEMENT_NAME_KO, MAX_MONSTERS } from '../data/constants';
 import type { Element } from '../core/types';
 import type { OwnedUnit } from '../core/GameState';
-import { unitName, displayName, unitBranch, deriveStats } from '../core/GameState';
+import { unitName, displayName, deriveStats } from '../core/GameState';
 import { MONSTERS } from '../data/monsters';
-import { SYNERGIES } from '../data/synergies';
-import { CARD_BY_ID, cardIcon } from '../data/cards';
+import { ENEMIES } from '../data/enemies';
+import { CARD_BY_ID, cardIcon, cardMeta, cardRole } from '../data/cards';
 import { getPortrait } from '../render/Portraits';
 
 export interface HudInfo {
   stageLabel: string;
   baseHp: number; baseHpMax: number;
   mana: number; manaMax: number;
+  deckDraw: number; deckDiscard: number;
   wave: number; totalWaves: number;
   gold: number;
   enemiesLeft: number;
@@ -22,10 +23,16 @@ export interface HudInfo {
 export interface HandCard {
   id: string;
   playable: boolean;
-  /** 재사용 쿨다운 진행률 0~1 (오버레이) */
   cdFrac?: number;
-  /** 사용 불가 사유 (비활성 카드 탭 시 안내) */
   reason?: string;
+}
+
+export interface UnitCard {
+  id: string;
+  name: string;
+  element: string;
+  placed: boolean;
+  dead?: boolean;
 }
 
 const el = (tag: string, cls?: string, html?: string): HTMLElement => {
@@ -35,30 +42,48 @@ const el = (tag: string, cls?: string, html?: string): HTMLElement => {
   return e;
 };
 
-/** 카드/캐릭터 속성 아이콘 (무속성 포함) */
 function cardElemIcon(e: string): string {
-  if (e === 'normal' || e === 'neutral') return '⚪';
-  return (ELEMENT_ICON as Record<string, string>)[e] ?? '⚪';
+  if (e === 'normal') return '공용';
+  if (e === 'neutral') return '성';
+  return (ELEMENT_ICON as Record<string, string>)[e] ?? '?';
 }
 
-/** 모든 DOM 오버레이 UI 관리. Three.js 안에 UI를 그리지 않는다 (CLAUDE.md 원칙 2). */
+function capturedTraitLabel(tier?: string): string {
+  if (tier === 'swarm') return '무리 본능';
+  if (tier === 'flyer') return '공중 추격';
+  if (tier === 'tank') return '육중한 타격';
+  if (tier === 'healer') return '수호 정령';
+  if (tier === 'elite') return '정예 본능';
+  if (tier === 'miniboss') return '거대 개체';
+  if (tier === 'boss') return '보스의 잔재';
+  return '';
+}
+
+function capturedTraitDesc(tier?: string): string {
+  if (tier === 'swarm') return '공격 속도가 빠르고, 가끔 같은 대상에게 추가타를 넣습니다.';
+  if (tier === 'flyer') return '공격 속도가 빠르고, 명중 시 가까운 적 하나를 함께 추격합니다.';
+  if (tier === 'tank') return '공격 속도는 느리지만 명중한 적을 밀어내고 잠시 붙잡습니다.';
+  if (tier === 'healer') return '공격할 때마다 성을 조금 수리하고, 가끔 자신에게 축복을 부여합니다.';
+  if (tier === 'elite') return '기본 공격력이 높고, 명중 지점 주변에 작은 폭발 피해를 줍니다.';
+  if (tier === 'miniboss') return '강한 공격력과 넓은 폭발 피해를 지닌 거대 포획체입니다.';
+  if (tier === 'boss') return '매우 강한 공격력과 넓은 폭발 피해를 지닌 특별한 포획체입니다.';
+  return '';
+}
+
 export class UI {
-  // 콜백 (Game이 할당)
   onStart = () => {};
   onContinue = () => {};
   onBeginWave = () => {};
-  /** 카드 포인터다운 → Game이 더블탭(스마트)/드래그(정밀) 판정 */
   onCardGrab = (_id: string, _ev: PointerEvent) => {};
-  /** 비활성 카드 탭 → 사유 안내 */
   onCardBlocked = (_reason: string) => {};
   onOpenViewer = () => {};
   onCloseViewer = () => {};
   onViewerSelect = (_uid: string) => {};
   onRename = (_uid: string, _name: string) => {};
-  onBranchPick = (_uid: string, _key: string) => {};
   onCardGainAck = () => {};
+  onEvolveAck = () => {};
   onCardReplacePick = (_discardId: string) => {};
-  onOpenCodex = () => {};
+  onCaptureDiscardPick = (_id: string) => {};
   onNode = (_kind: string) => {};
   onBuffPick = (_id: string) => {};
   onDraftPick = (_element: string) => {};
@@ -66,17 +91,17 @@ export class UI {
   onNext = () => {};
   onRestart = () => {};
   onPlacementToggle = (_id: string) => {};
+  onUnitCardGrab = (_id: string, _ev: PointerEvent) => {};
+  onSpeedChange = (_speed: 1 | 2 | 3) => {};
   onEnterBattle = () => {};
   onManage = () => {};
   onManageClose = () => {};
   onManageSelectHolder = (_id: string) => {};
   onManageToggle = (_holderId: string, _cardId: string) => {};
 
-  private root: HTMLElement;
   private hudTop!: HTMLElement;
   private actions!: HTMLElement;
   private shelf!: HTMLElement;
-  private bannerLayer!: HTMLElement;
   private toastLayer!: HTMLElement;
   private modalHost!: HTMLElement;
   private title!: HTMLElement;
@@ -86,47 +111,48 @@ export class UI {
   private placementBar!: HTMLElement;
   private lobbyUI!: HTMLElement;
   private manageUI!: HTMLElement;
-
-  // HUD 참조
+  private manaBar!: HTMLElement;
   private refs: Record<string, HTMLElement> = {};
+  private handIds: string[] = [];
+  private cardEls = new Map<string, HTMLElement>();
 
-  constructor(root: HTMLElement) {
-    this.root = root;
+  constructor(private root: HTMLElement) {
     this.buildTitle();
     this.buildHUD();
     this.buildShelf();
-    this.placementBar = el('div'); this.placementBar.id = 'placement-bar'; this.placementBar.style.display = 'none';
+    this.placementBar = el('div');
+    this.placementBar.id = 'placement-bar';
+    this.placementBar.style.display = 'none';
     root.appendChild(this.placementBar);
-    this.bannerLayer = el('div'); this.bannerLayer.id = 'banner-layer'; root.appendChild(this.bannerLayer);
-    this.toastLayer = el('div'); this.toastLayer.id = 'toast-layer'; root.appendChild(this.toastLayer);
-    this.modalHost = el('div'); root.appendChild(this.modalHost);
+    this.toastLayer = el('div');
+    this.toastLayer.id = 'toast-layer';
+    root.appendChild(this.toastLayer);
+    this.modalHost = el('div');
+    root.appendChild(this.modalHost);
     this.buildViewer();
     this.buildLobby();
     this.buildManage();
-
-    // 반응형 이벤트
     bus.on('base:damage', () => this.pulseHp());
-    bus.on('synergy:fire', ({ name, a, b, discovered }) => this.banner(name, a, b, discovered));
     bus.on('toast', ({ text, kind }) => this.toast(text, kind));
     this.setGameplayVisible(false);
   }
 
-  // ── 타이틀 ──
   private buildTitle(): void {
-    this.title = el('div'); this.title.id = 'title-screen';
+    this.title = el('div');
+    this.title.id = 'title-screen';
     this.title.innerHTML = `
       <div class="logo">Monster Keepers</div>
-      <div class="sub">수호 몬스터 셋을 드래프트해 키우는 탑뷰 디펜스 로그라이크 — 버린 둘은 타락체 보스로 돌아온다</div>
+      <div class="sub">몬스터를 뽑고, 배치하고, 몰려오는 적으로부터 성을 지키세요.</div>
       <div class="title-btns">
         <button class="btn primary" id="start-btn">새 모험</button>
         <button class="btn" id="continue-btn" style="display:none">이어하기</button>
       </div>
-      <div class="tip">스테이지 1·2·3 시작마다 <b>수호 몬스터 3택1 드래프트</b> — 3마리를 뽑아 키운다 (안 뽑은 2종은 후반 타락체 보스로 회귀!)<br/>
-      웨이브 사이 <b>몬스터를 슬롯에 배치</b>(자동 공격) · 카드는 <b>전장으로 드래그</b>하거나 <b>더블탭</b>해 스킬·버프 사용 · 성(거점)이 근처 적을 자동 방어</div>`;
+      <div class="tip">웨이브 전에는 유닛 카드를 드래그해 배치합니다. 웨이브가 시작되면 스킬 카드가 손패에 들어옵니다.<br/>적이 성에 닿을 때마다 성 HP가 줄고, 성 HP가 0이 되면 패배합니다.</div>`;
     this.root.appendChild(this.title);
     (this.title.querySelector('#start-btn') as HTMLButtonElement).onclick = () => this.onStart();
     (this.title.querySelector('#continue-btn') as HTMLButtonElement).onclick = () => this.onContinue();
   }
+
   showTitle(canContinue = false): void {
     this.title.classList.remove('hidden');
     (this.title.querySelector('#continue-btn') as HTMLButtonElement).style.display = canContinue ? '' : 'none';
@@ -138,57 +164,70 @@ export class UI {
     this.hudTop.style.display = on ? 'flex' : 'none';
     this.actions.style.display = on ? 'flex' : 'none';
     this.shelf.style.display = on ? 'flex' : 'none';
-    if (this.manaBar) this.manaBar.style.display = on ? 'flex' : 'none';
+    this.manaBar.style.display = on ? 'flex' : 'none';
     if (!on) {
       this.placementBar.style.display = 'none';
-      if (this.beginCta) this.beginCta.style.display = 'none';
-      if (this.dropZone) this.dropZone.className = '';
+      this.beginCta.style.display = 'none';
+      this.dropZone.className = '';
     }
   }
 
-  // ── HUD ──
   private buildHUD(): void {
-    this.hudTop = el('div'); this.hudTop.id = 'hud-top';
+    this.hudTop = el('div');
+    this.hudTop.id = 'hud-top';
     this.hudTop.innerHTML = `
-      <div class="gauge panel big" style="padding:8px 14px" title="성(거점) HP — 0이 되면 패배">
-        <span class="icon">🏰</span>
+      <div class="gauge panel big" style="padding:8px 14px" title="성 HP가 0이 되면 패배합니다.">
+        <span class="icon">성</span>
         <div class="bar-wrap"><div class="bar hp" id="hp-bar" style="width:100%"></div></div>
-        <span class="val" id="hp-val">160</span>
+        <span class="val" id="hp-val">0</span>
       </div>
-      <div class="chip">🌊 <span id="wave-val">웨이브 -</span></div>
-      <div class="chip" title="남은 적">👹 <span id="enemy-val">0</span></div>
-      <div class="chip">🪙 <span id="gold-val">0</span></div>
+      <div class="chip">웨이브 <span id="wave-val">-</span></div>
+      <div class="chip" title="드로우 더미 / 버린 더미">덱 <span id="deck-val">0/0</span></div>
+      <div class="chip" title="남은 적">적 <span id="enemy-val">0</span></div>
+      <div class="chip">골드 <span id="gold-val">0</span></div>
       <div class="chip stage-label"><span id="stage-val">스테이지</span></div>`;
     this.root.appendChild(this.hudTop);
-    ['hp-bar','hp-val','wave-val','enemy-val','gold-val','stage-val'].forEach((id) => {
+    ['hp-bar','hp-val','wave-val','deck-val','enemy-val','gold-val','stage-val'].forEach((id) => {
       this.refs[id] = this.hudTop.querySelector('#' + id) as HTMLElement;
     });
     this.buildManaBar();
 
-    this.actions = el('div'); this.actions.id = 'hud-actions';
-    const viewerBtn = el('button', 'btn', '📖 내 몬스터') as HTMLButtonElement;
+    this.actions = el('div');
+    this.actions.id = 'hud-actions';
+    const viewerBtn = el('button', 'btn', '몬스터 보기') as HTMLButtonElement;
     viewerBtn.onclick = () => this.onOpenViewer();
     this.actions.append(viewerBtn);
+    const speedWrap = el('div', 'speed-toggle');
+    for (const speed of [1, 2, 3] as const) {
+      const b = el('button', `speed-btn${speed === 1 ? ' on' : ''}`, `${speed}x`) as HTMLButtonElement;
+      b.onclick = () => {
+        speedWrap.querySelectorAll('.speed-btn').forEach((x) => x.classList.remove('on'));
+        b.classList.add('on');
+        this.onSpeedChange(speed);
+      };
+      speedWrap.appendChild(b);
+    }
+    this.actions.append(speedWrap);
     this.root.appendChild(this.actions);
-    // 하단 중앙 주 CTA (배치 중에만 노출 — 시선이 있는 곳)
-    this.beginCta = el('button', 'btn primary', '▶ 웨이브 시작') as HTMLButtonElement;
+
+    this.beginCta = el('button', 'btn primary', '웨이브 시작') as HTMLButtonElement;
     this.beginCta.id = 'begin-cta';
     this.beginCta.onclick = () => this.onBeginWave();
     this.beginCta.style.display = 'none';
     this.root.appendChild(this.beginCta);
-    // 드래그 드롭 존 오버레이 (놓기/취소 안내)
-    this.dropZone = el('div'); this.dropZone.id = 'drop-zone';
+
+    this.dropZone = el('div');
+    this.dropZone.id = 'drop-zone';
     this.root.appendChild(this.dropZone);
   }
 
-  private manaBar!: HTMLElement;
-  /** 큰 세로형 마나 바 (하스스톤처럼 왼쪽에 길게). */
   private buildManaBar(): void {
-    this.manaBar = el('div'); this.manaBar.id = 'mana-vert';
+    this.manaBar = el('div');
+    this.manaBar.id = 'mana-vert';
     this.manaBar.innerHTML = `
-      <div class="mv-crystal">🔷</div>
+      <div class="mv-crystal">마나</div>
       <div class="mv-track"><div class="mv-fill" id="mana-fill"></div></div>
-      <div class="mv-val"><span id="mana-val">10</span>/<span id="mana-max">10</span></div>`;
+      <div class="mv-val"><span id="mana-val">0</span>/<span id="mana-max">0</span></div>`;
     this.root.appendChild(this.manaBar);
     this.refs['mana-fill'] = this.manaBar.querySelector('#mana-fill') as HTMLElement;
     this.refs['mana-val'] = this.manaBar.querySelector('#mana-val') as HTMLElement;
@@ -202,7 +241,8 @@ export class UI {
     this.refs['mana-fill'].style.height = `${(info.mana / info.manaMax) * 100}%`;
     this.refs['mana-val'].textContent = `${Math.floor(info.mana)}`;
     this.refs['mana-max'].textContent = `${info.manaMax}`;
-    this.refs['wave-val'].textContent = `웨이브 ${info.wave}/${info.totalWaves}`;
+    this.refs['wave-val'].textContent = `${info.wave}/${info.totalWaves}`;
+    this.refs['deck-val'].textContent = `${info.deckDraw}/${info.deckDiscard}`;
     this.refs['enemy-val'].textContent = `${info.enemiesLeft}`;
     this.refs['gold-val'].textContent = `${info.gold}`;
     this.refs['stage-val'].textContent = info.stageLabel;
@@ -210,28 +250,23 @@ export class UI {
   }
 
   private pulseHp(): void {
-    const b = this.refs['hp-bar'];
-    b.animate([{ filter: 'brightness(2)' }, { filter: 'brightness(1)' }], { duration: 300 });
+    this.refs['hp-bar'].animate([{ filter: 'brightness(2)' }, { filter: 'brightness(1)' }], { duration: 300 });
   }
 
-  // ── 카드 패 ──
   private buildShelf(): void {
-    this.shelf = el('div'); this.shelf.id = 'card-shelf';
+    this.shelf = el('div');
+    this.shelf.id = 'card-shelf';
     this.root.appendChild(this.shelf);
   }
 
-  private handIds: string[] = [];
-  private cardEls = new Map<string, HTMLElement>();
-
-  /**
-   * 손패 갱신. 카드 구성이 그대로면 **DOM 요소를 유지한 채 상태만 제자리 갱신**한다
-   * (매 프레임 리빌드 시 더블클릭이 두 클릭 사이에서 끊기는 문제 방지). 구성이 바뀔 때만 재생성.
-   */
   refreshHand(cards: HandCard[]): void {
     const ids = cards.map((c) => c.id);
     const same = ids.length === this.handIds.length && ids.every((id, i) => id === this.handIds[i]);
     if (same && cards.length > 0) {
-      for (const c of cards) { const elm = this.cardEls.get(c.id); if (elm) this.updateCardEl(elm, c); }
+      for (const c of cards) {
+        const elm = this.cardEls.get(c.id);
+        if (elm) this.updateCardEl(elm, c);
+      }
       return;
     }
     const prev = new Set(this.handIds);
@@ -241,7 +276,6 @@ export class UI {
     for (const c of cards) {
       const card = this.buildCardEl(c);
       if (!card) continue;
-      // 새로 드로우된 카드는 딜-인 애니메이션 (재정비 등 드로우 체감)
       if (!prev.has(c.id)) {
         card.classList.add('dealing');
         card.style.animationDelay = `${dealIdx * 0.07}s`;
@@ -251,33 +285,38 @@ export class UI {
       this.cardEls.set(c.id, card);
     }
     this.handIds = ids;
-    if (cards.length === 0) {
-      this.shelf.appendChild(el('div', 'chip', '장착한 카드가 없습니다 (캐릭터 관리에서 편성)'));
+    if (cards.length === 0) this.shelf.appendChild(el('div', 'chip', '사용할 카드가 없습니다.'));
+  }
+
+  showUnitShelf(items: UnitCard[]): void {
+    this.handIds = items.map((c) => c.id);
+    this.cardEls.clear();
+    this.shelf.innerHTML = '';
+    for (const it of items) {
+      const icon = cardElemIcon(it.element);
+      const stateLabel = it.placed ? '배치됨' : '대기';
+      const card = el('div', `unit-card el-${it.element}${it.placed ? ' placed' : ''}`, `
+        <div class="unit-state">${stateLabel}</div>
+        <div class="unit-art">${icon}</div>
+        <div class="unit-name">${it.name}</div>`);
+      card.addEventListener('pointerdown', (e) => this.onUnitCardGrab(it.id, e as PointerEvent));
+      this.shelf.appendChild(card);
     }
+    if (items.length === 0) this.shelf.appendChild(el('div', 'chip', '배치할 유닛이 없습니다.'));
   }
 
-  /** 드래그 중 원본 카드를 흐리게(하스스톤식). */
-  setCardDragging(id: string, on: boolean): void {
-    this.cardEls.get(id)?.classList.toggle('dragging', on);
-  }
+  setCardDragging(id: string, on: boolean): void { this.cardEls.get(id)?.classList.toggle('dragging', on); }
+  setCardSelected(id: string | null): void { this.cardEls.forEach((elm, cid) => elm.classList.toggle('selected', cid === id)); }
+  setTargeting(on: boolean): void { document.body.classList.toggle('targeting', on); }
 
-  /** 단일 탭한 카드 강조 (한 번 더 탭/드래그 안내). null이면 전부 해제. */
-  setCardSelected(id: string | null): void {
-    this.cardEls.forEach((elm, cid) => elm.classList.toggle('selected', cid === id));
-  }
-
-  /** 드래그 중 드롭 존 표시: 'field'(놓기) / 'shelf'(취소) / 'off'. */
   setDropZone(state: 'field' | 'shelf' | 'off'): void {
     this.dropZone.className = state === 'off' ? '' : `on ${state}`;
-    this.dropZone.textContent = state === 'field' ? '여기에 놓아 사용' : state === 'shelf' ? '놓으면 취소' : '';
+    this.dropZone.textContent = state === 'field' ? '여기에 놓아 사용' : state === 'shelf' ? '손패로 돌아가려면 놓기' : '';
   }
 
-  /** 카드 요소 1개 생성. 리스너는 요소에 항상 고정하고, 사용 가능 여부는 dataset로 판정. */
   private buildCardEl(c: HandCard): HTMLElement | null {
     if (!CARD_BY_ID[c.id]) return null;
     const card = el('div', 'card');
-    // 사용: 더블탭(스마트) 또는 전장으로 드래그(정밀). Game이 pointer 흐름에서 둘 다 판정.
-    // 비활성 카드는 사유 안내. 요소 identity를 유지하므로 리스너는 1회만 부착.
     card.addEventListener('pointerdown', (e) => {
       if (card.dataset.playable === '1') this.onCardGrab(c.id, e as PointerEvent);
       else if (card.dataset.reason) this.onCardBlocked(card.dataset.reason);
@@ -286,10 +325,8 @@ export class UI {
     return card;
   }
 
-  /** 카드 요소 상태를 제자리 갱신 (요소 identity 유지 → 더블클릭 안정). */
   private updateCardEl(card: HTMLElement, c: HandCard): void {
     const def = CARD_BY_ID[c.id];
-    // 제자리 갱신이 잦으므로 진행 중인 딜-인/드래그/선택 연출 클래스는 보존
     const keep = `${card.classList.contains('dealing') ? ' dealing' : ''}${card.classList.contains('dragging') ? ' dragging' : ''}${card.classList.contains('selected') ? ' selected' : ''}`;
     card.className = `card el-${def.element}${c.playable ? '' : ' disabled'}${keep}`;
     card.dataset.playable = c.playable ? '1' : '0';
@@ -303,31 +340,20 @@ export class UI {
       ${c.cdFrac && c.cdFrac > 0 ? `<div class="cd-overlay" style="height:${Math.round(c.cdFrac * 100)}%"></div>` : ''}`;
   }
 
-  setTargeting(on: boolean): void {
-    document.body.classList.toggle('targeting', on);
-  }
-
-  // ── 배치 바 (웨이브 사이에만 표시) ──
   showPlacement(items: { id: string; name: string; element: string; placed: boolean; dead?: boolean }[]): void {
     this.placementBar.style.display = 'flex';
-    this.placementBar.innerHTML = `<div class="place-hint">🪵 배치: 몬스터를 눌러 슬롯에 놓거나 회수 (성은 거점에서 자동 방어)</div>`;
+    this.placementBar.innerHTML = '<div class="place-hint">유닛 카드를 전장으로 드래그해 배치하세요. 배치된 유닛을 드래그하면 위치를 바꿀 수 있습니다.</div>';
     const row = el('div', 'place-row');
     for (const it of items) {
-      const icon = it.element === 'neutral' ? '🧑' : (ELEMENT_ICON as Record<string, string>)[it.element] ?? '❓';
-      const stateLabel = it.dead ? '쓰러짐' : it.placed ? '배치됨' : '대기';
-      const chip = el('div', `place-chip${it.placed ? ' placed' : ''}${it.dead ? ' dead' : ''}`,
-        `<span class="pc-ico">${icon}</span><span class="pc-name">${it.name}</span><span class="pc-state">${stateLabel}</span>`);
+      const stateLabel = it.placed ? '배치됨' : '대기';
+      const chip = el('div', `place-chip${it.placed ? ' placed' : ''}`, `<span class="pc-ico">${cardElemIcon(it.element)}</span><span class="pc-name">${it.name}</span><span class="pc-state">${stateLabel}</span>`);
       chip.onclick = () => this.onPlacementToggle(it.id);
       row.appendChild(chip);
     }
     this.placementBar.appendChild(row);
   }
+  hidePlacement(): void { this.placementBar.style.display = 'none'; }
 
-  hidePlacement(): void {
-    this.placementBar.style.display = 'none';
-  }
-
-  // ── 모달 ──
   private modal(html: string): HTMLElement {
     this.clearModal();
     const overlay = el('div', 'overlay-center');
@@ -338,120 +364,65 @@ export class UI {
   }
   clearModal(): void { this.modalHost.innerHTML = ''; }
 
-  /** 드래프트: 미보유 3종을 세로 카드로 제시. 3택1. */
   showDraft(elements: Element[]): void {
-    const scroll = this.modal(`<h1>수호 몬스터 선택</h1>
-      <p>함께 싸울 몬스터를 하나 고르세요.</p>
-      <div class="choice-row draft-row"></div>`);
+    const scroll = this.modal('<h1>첫 동료 선택</h1><p>함께 성을 지킬 몬스터를 고르세요.</p><div class="choice-row draft-row"></div>');
     const row = scroll.querySelector('.choice-row')!;
     for (const elm of elements) {
-      const def = MONSTERS[elm];
-      const s1 = def.stages[0];
-      const card = el('div', `choice draft-card el-${elm}`,
-        `<div class="dc-el">${ELEMENT_ICON[elm]} ${ELEMENT_NAME_KO[elm]}</div>
-         <div class="dc-ico">${ELEMENT_ICON[elm]}</div>
-         <div class="ct">${s1.name}</div>
-         <div class="cd">${s1.role}</div>`);
+      const s1 = MONSTERS[elm].stages[0];
+      const card = el('div', `choice draft-card el-${elm}`, `<div class="dc-el">${ELEMENT_NAME_KO[elm]}</div><div class="dc-ico">${ELEMENT_ICON[elm]}</div><div class="ct">${s1.name}</div><div class="cd">${s1.role}</div>`);
       applyPortrait(card.querySelector('.dc-ico') as HTMLElement, elm, 1);
       card.onclick = () => { this.clearModal(); this.onDraftPick(elm); };
       row.appendChild(card);
     }
   }
 
-  /**
-   * 분기 진화 2택1 (§5.6): 3단 도달 시 두 형태 중 하나 선택.
-   * 색이 곧 빌드 — 카드에 분기 틴트색을 크게 노출.
-   */
-  showBranchChoice(data: {
-    uid: string; name: string; element: Element;
-    branches: { key: string; name: string; role: string; tint: number; signature: string }[];
-  }): void {
-    const scroll = this.modal(`<h1>분기 진화</h1>
-      <p><b>${data.name}</b>이(가) 진화의 기로에 섰습니다. 형태를 선택하세요 — <b>색이 곧 빌드</b>입니다.</p>
-      <div class="choice-row branch-row"></div>`);
-    const row = scroll.querySelector('.choice-row')!;
-    for (const b of data.branches) {
-      const hex = `#${b.tint.toString(16).padStart(6, '0')}`;
-      const c = el('div', `choice branch-card el-${data.element}`,
-        `<div class="bc-swatch" style="background:${hex}"></div>
-         <div class="ct">${ELEMENT_ICON[data.element]} ${b.name}</div>
-         <div class="cd">${b.role}</div>
-         <div class="bc-sig">🃏 시그니처: ${b.signature}</div>`);
-      c.onclick = () => { this.clearModal(); this.onBranchPick(data.uid, b.key); };
-      row.appendChild(c);
-    }
-  }
-
-  /** 카드 1장의 큰 미리보기 HTML (획득/교체 모달용) */
   private bigCardHtml(cardId: string, extraCls = ''): string {
     const def = CARD_BY_ID[cardId];
     if (!def) return '';
-    return `<div class="big-card el-${def.element} ${extraCls}" data-card="${cardId}">
-      <div class="cost">${def.cost}</div>
-      <div class="card-elem">${cardElemIcon(def.element)}</div>
-      <div class="art">${cardIcon(def)}</div>
-      <div class="name">${def.name}</div>
-      <div class="desc">${def.text}</div>
-    </div>`;
+    return `<div class="big-card el-${def.element} ${extraCls}" data-card="${cardId}"><div class="cost">${def.cost}</div><div class="card-elem">${cardElemIcon(def.element)}</div><div class="art">${cardIcon(def)}</div><div class="name">${def.name}</div><div class="meta">${cardMeta(def)}</div><div class="desc">${def.text}</div></div>`;
   }
 
-  /** 새 카드 획득 연출 — 카드가 빛나며 등장. */
+  showEvolve(data: { uid: string; from: string; to: string; element: Element }): void {
+    const scroll = this.modal(`<div class="evolve-stage el-${data.element}"><div class="evo-burst"></div><div class="evo-ring"></div><div class="evo-ico">${ELEMENT_ICON[data.element]}</div><div class="evo-title">진화</div><div class="evo-names"><span class="evo-from">${data.from}</span><span class="evo-arrow">→</span><span class="evo-to">${data.to}</span></div><p class="evo-sub">새로운 핵심 스킬을 배웠습니다.</p></div><div class="choice-row"><button class="btn primary" id="evo-ok">확인</button></div>`);
+    applyPortrait(scroll.querySelector('.evo-ico') as HTMLElement, data.element, 3);
+    (scroll.querySelector('#evo-ok') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onEvolveAck(); };
+  }
+
   showCardGain(unitLabel: string, cardId: string): void {
-    const scroll = this.modal(`<h1>새 카드 획득!</h1>
-      <p><b>${unitLabel}</b>이(가) 새로운 스킬을 배웠다!</p>
-      <div class="gain-stage">${this.bigCardHtml(cardId, 'gain-anim')}</div>
-      <div class="choice-row"><button class="btn primary" id="gain-ok">획득!</button></div>`);
+    const scroll = this.modal(`<h1>새 카드 획득</h1><p><b>${unitLabel}</b>이(가) 새 스킬을 배웠습니다.</p><div class="gain-stage">${this.bigCardHtml(cardId, 'gain-anim')}</div><div class="choice-row"><button class="btn primary" id="gain-ok">확인</button></div>`);
     (scroll.querySelector('#gain-ok') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onCardGainAck(); };
   }
 
-  /**
-   * 카드 교체 선택 — 캐릭터당 카드는 항상 5장.
-   * 후보 = 오래된 3장 + 신규 카드. 클릭한 카드를 버린다.
-   */
   showCardReplace(unitLabel: string, newId: string, options: string[]): void {
-    const scroll = this.modal(`<h1>카드가 가득!</h1>
-      <p><b>${unitLabel}</b>의 카드는 5장까지. <b>버릴 카드</b>를 하나 고르세요.<br/>
-      <span style="opacity:0.75;font-size:13px">(오래된 카드 3장 + 새 카드 중 선택 — 버린 카드는 이 모험에서 사라집니다)</span></p>
-      <div class="replace-row"></div>`);
+    const scroll = this.modal(`<h1>카드가 가득 찼습니다</h1><p><b>${unitLabel}</b>은 카드 5장까지만 장착할 수 있습니다. 버릴 카드를 하나 고르세요.</p><div class="replace-row"></div>`);
     const row = scroll.querySelector('.replace-row')!;
     for (const id of options) {
       const isNew = id === newId;
-      const wrap = el('div', 'replace-slot');
-      wrap.innerHTML = `${isNew ? '<div class="rs-tag new">NEW</div>' : '<div class="rs-tag old">보유</div>'}${this.bigCardHtml(id, isNew ? 'gain-anim' : '')}`;
+      const wrap = el('div', 'replace-slot', `${isNew ? '<div class="rs-tag new">새 카드</div>' : '<div class="rs-tag old">보유 중</div>'}${this.bigCardHtml(id, isNew ? 'gain-anim' : '')}`);
       wrap.onclick = () => { this.clearModal(); this.onCardReplacePick(id); };
       row.appendChild(wrap);
     }
   }
 
-  /** 반응 도감 (§7.3): 발견한 협동기는 이름/설명, 미발견은 ??? + 속성 힌트. */
-  showCodex(discovered: string[]): void {
-    const scroll = this.modal(`<h1>반응 도감</h1>
-      <p>표식 위에 다른 속성이 닿으면 협동기가 터진다. 조합을 실험해 도감을 채우자! (${discovered.length}/${SYNERGIES.length})</p>
-      <div class="codex-list"></div>
-      <div class="choice-row"><button class="btn primary" id="codex-close">닫기</button></div>`);
-    const list = scroll.querySelector('.codex-list')!;
-    for (const s of SYNERGIES) {
-      const found = discovered.includes(s.id);
-      const item = el('div', `codex-item${found ? ' found' : ''}`,
-        found
-          ? `<span class="cx-els">${ELEMENT_ICON[s.a]}✦${ELEMENT_ICON[s.b]}</span><span class="cx-name">${s.name}</span><span class="cx-desc">${s.desc}</span>`
-          : `<span class="cx-els">${ELEMENT_ICON[s.a]}✦${ELEMENT_ICON[s.b]}</span><span class="cx-name">???</span><span class="cx-desc">${ELEMENT_NAME_KO[s.a]}과(와) ${ELEMENT_NAME_KO[s.b]}의 조합…</span>`);
-      list.appendChild(item);
-    }
-    (scroll.querySelector('#codex-close') as HTMLButtonElement).onclick = () => this.clearModal();
+  showCaptureDiscard(data: { newName: string; newElement: string; options: { id: string; name: string; sub: string; element: string }[] }): void {
+    const scroll = this.modal(`<h1>원정대가 가득 찼습니다</h1><p>최대 ${MAX_MONSTERS}마리까지 함께할 수 있습니다. 보낼 동료를 고르거나 새 포획체를 놓아주세요.</p><div class="replace-row"></div>`);
+    const row = scroll.querySelector('.replace-row')!;
+    const mk = (id: string, name: string, sub: string, element: string, isNew: boolean): void => {
+      const wrap = el('div', 'replace-slot', `${isNew ? '<div class="rs-tag new">새 포획체</div>' : '<div class="rs-tag old">동료</div>'}<div class="big-card el-${element}"><div class="card-elem">${cardElemIcon(element)}</div><div class="art">${cardElemIcon(element)}</div><div class="name">${name}</div><div class="desc">${sub}</div></div>`);
+      wrap.onclick = () => { this.clearModal(); this.onCaptureDiscardPick(id); };
+      row.appendChild(wrap);
+    };
+    for (const o of data.options) mk(o.id, o.name, o.sub, o.element, false);
+    mk('__new__', data.newName, '방금 포획한 개체', data.newElement, true);
   }
 
   showStageClear(stageLabel: string, rewards: string[]): void {
-    const scroll = this.modal(`
-      <h1>스테이지 클리어!</h1>
-      <h2>${stageLabel}</h2>
-      <p>${rewards.join('<br/>')}</p>
-      <div class="choice-row"><button class="btn primary" id="next-btn">다음으로 →</button></div>`);
+    const scroll = this.modal(`<h1>스테이지 클리어</h1><h2>${stageLabel}</h2><p>${rewards.join('<br/>')}</p><div class="choice-row"><button class="btn primary" id="next-btn">다음으로</button></div>`);
     (scroll.querySelector('#next-btn') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onNext(); };
   }
 
   showNodeChoice(nodes: { kind: string; label: string; desc: string }[]): void {
-    const scroll = this.modal(`<h1>갈림길</h1><p>다음 목적지를 선택하세요.</p><div class="choice-row"></div>`);
+    const scroll = this.modal('<h1>다음 길</h1><p>다음 목적지를 선택하세요.</p><div class="choice-row"></div>');
     const row = scroll.querySelector('.choice-row')!;
     for (const n of nodes) {
       const c = el('div', 'choice', `<div class="ct">${n.label}</div><div class="cd">${n.desc}</div>`);
@@ -461,7 +432,7 @@ export class UI {
   }
 
   showBuffChoice(options: { id: string; label: string }[]): void {
-    const scroll = this.modal(`<h1>버프 노드</h1><p>하나를 선택하세요.</p><div class="choice-row"></div>`);
+    const scroll = this.modal('<h1>강화 선택</h1><p>하나를 선택하세요.</p><div class="choice-row"></div>');
     const row = scroll.querySelector('.choice-row')!;
     for (const o of options) {
       const c = el('div', 'choice', `<div class="ct">${o.label}</div>`);
@@ -471,30 +442,18 @@ export class UI {
   }
 
   showEvent(node: { id: string; label: string; desc: string }): void {
-    const scroll = this.modal(`<h1>${node.label}</h1><p>${node.desc}</p>
-      <div class="choice-row"><button class="btn primary" id="ev-ok">받아들인다</button></div>`);
+    const scroll = this.modal(`<h1>${node.label}</h1><p>${node.desc}</p><div class="choice-row"><button class="btn primary" id="ev-ok">선택</button></div>`);
     (scroll.querySelector('#ev-ok') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onEventPick(node.id); };
   }
 
   showWin(finalBossName: string): void {
-    const scroll = this.modal(`<h1>런 승리! 🎉</h1><p>타락한 ${finalBossName}을(를) 월식에서 해방했습니다.<br/>당신은 진정한 몬스터 키퍼입니다.</p>
-      <div class="choice-row"><button class="btn primary" id="again">새 모험</button></div>`);
+    const scroll = this.modal(`<h1>승리!</h1><p>최종 보스 ${finalBossName}을(를) 쓰러뜨리고 성을 지켜냈습니다.</p><div class="choice-row"><button class="btn primary" id="again">새 모험</button></div>`);
     (scroll.querySelector('#again') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onRestart(); };
   }
 
   showLose(reason: string): void {
-    const scroll = this.modal(`<h1>런 종료…</h1><p>${reason}</p><p>함께한 몬스터와 카드는 초기화됩니다.</p>
-      <div class="choice-row"><button class="btn primary" id="again">다시 도전</button></div>`);
+    const scroll = this.modal(`<h1>패배</h1><p>${reason}</p><p>성은 무너졌지만, 다음 원정은 더 나아질 겁니다.</p><div class="choice-row"><button class="btn primary" id="again">다시 도전</button></div>`);
     (scroll.querySelector('#again') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onRestart(); };
-  }
-
-  // ── 협동기 배너 / 토스트 ──
-  /** 협동기 발동 배너. 최초 발견이면 도감 등록 연출(NEW). */
-  banner(name: string, a: Element, b: Element, discovered = false): void {
-    const b1 = el('div', `synergy-banner${discovered ? ' discovered' : ''}`,
-      `<span class="els">${ELEMENT_ICON[a]}✦${ELEMENT_ICON[b]}</span><span>${name}</span>${discovered ? '<span class="new-tag">NEW! 도감 등록</span>' : ''}`);
-    this.bannerLayer.appendChild(b1);
-    setTimeout(() => b1.remove(), discovered ? 2200 : 1400);
   }
 
   toast(text: string, kind: 'good' | 'bad' | 'info' = 'info'): void {
@@ -503,13 +462,10 @@ export class UI {
     setTimeout(() => t.remove(), 2500);
   }
 
-  // ── 몬스터 뷰어 ──
   private buildViewer(): void {
-    this.viewerUI = el('div'); this.viewerUI.id = 'viewer-ui';
-    this.viewerUI.innerHTML = `
-      <div id="viewer-list" class="panel"><h2>내 몬스터</h2><div id="roster-items"></div></div>
-      <div id="viewer-info" class="panel"><div id="info-body">유닛을 선택하세요</div></div>
-      <button class="btn primary" id="viewer-close">✕ 닫기</button>`;
+    this.viewerUI = el('div');
+    this.viewerUI.id = 'viewer-ui';
+    this.viewerUI.innerHTML = `<div id="viewer-list" class="panel"><h2>몬스터</h2><div id="roster-items"></div></div><div id="viewer-info" class="panel"><div id="info-body">몬스터를 선택하세요.</div></div><button class="btn primary" id="viewer-close">닫기</button>`;
     this.root.appendChild(this.viewerUI);
     (this.viewerUI.querySelector('#viewer-close') as HTMLButtonElement).onclick = () => this.onCloseViewer();
   }
@@ -519,12 +475,7 @@ export class UI {
     const list = this.viewerUI.querySelector('#roster-items')!;
     list.innerHTML = '';
     roster.forEach((u, i) => {
-      const item = el('div', 'roster-item' + (i === 0 ? ' sel' : ''),
-        `<div class="ri-pic">${ELEMENT_ICON[u.element]}</div>
-         <div class="ri-text">
-           <div class="ri-name">${displayName(u)}</div>
-           <div class="ri-sub">${ELEMENT_NAME_KO[u.element]} · Lv${u.level} · ${u.stage}단</div>
-         </div>`);
+      const item = el('div', 'roster-item' + (i === 0 ? ' sel' : ''), `<div class="ri-pic">${ELEMENT_ICON[u.element]}</div><div class="ri-text"><div class="ri-name">${displayName(u)}</div><div class="ri-sub">${ELEMENT_NAME_KO[u.element]} · Lv${u.level} · ${u.stage}단</div></div>`);
       applyPortrait(item.querySelector('.ri-pic') as HTMLElement, u.element, u.stage);
       item.onclick = () => {
         list.querySelectorAll('.roster-item').forEach((x) => x.classList.remove('sel'));
@@ -536,156 +487,89 @@ export class UI {
     });
     if (roster[0]) { this.onViewerSelect(roster[0].uid); this.showUnitInfo(roster[0]); }
   }
-
   closeViewer(): void { this.viewerUI.classList.remove('on'); }
 
-  // ── 로비 (독립 허브 화면 — 여기서 전투/관리/뷰어/도감으로 이동) ──
   private buildLobby(): void {
-    this.lobbyUI = el('div'); this.lobbyUI.id = 'lobby'; this.lobbyUI.style.display = 'none';
-    this.lobbyUI.innerHTML = `
-      <div class="lobby-head">
-        <h1>🏰 모험가 길드</h1>
-        <div id="lobby-stage" class="lobby-stage"></div>
-      </div>
-      <div class="lobby-body">
-        <div class="lobby-left panel">
-          <h2>내 원정대</h2>
-          <div id="lobby-roster" class="lobby-roster"></div>
-        </div>
-        <div class="lobby-menu">
-          <div class="menu-card primary" id="lobby-battle">
-            <div class="mc-ico">⚔️</div><div class="mc-title">전투 출정</div><div class="mc-sub" id="lobby-next-stage"></div>
-          </div>
-          <div class="menu-card" id="lobby-manage">
-            <div class="mc-ico">🃏</div><div class="mc-title">캐릭터 관리</div><div class="mc-sub">스킬 카드 편성</div>
-          </div>
-          <div class="menu-card" id="lobby-viewer">
-            <div class="mc-ico">📖</div><div class="mc-title">내 몬스터</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div>
-          </div>
-          <div class="menu-card" id="lobby-codex">
-            <div class="mc-ico">📜</div><div class="mc-title">반응 도감</div><div class="mc-sub" id="lobby-codex-sub"></div>
-          </div>
-        </div>
-      </div>`;
+    this.lobbyUI = el('div');
+    this.lobbyUI.id = 'lobby';
+    this.lobbyUI.style.display = 'none';
+    this.lobbyUI.innerHTML = `<div class="lobby-head"><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card primary" id="lobby-battle"><div class="mc-ico">전투</div><div class="mc-title">출정</div><div class="mc-sub" id="lobby-next-stage"></div></div><div class="menu-card" id="lobby-manage"><div class="mc-ico">카드</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">보기</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div></div></div>`;
     this.root.appendChild(this.lobbyUI);
     (this.lobbyUI.querySelector('#lobby-battle') as HTMLElement).onclick = () => this.onEnterBattle();
     (this.lobbyUI.querySelector('#lobby-manage') as HTMLElement).onclick = () => this.onManage();
     (this.lobbyUI.querySelector('#lobby-viewer') as HTMLElement).onclick = () => this.onOpenViewer();
-    (this.lobbyUI.querySelector('#lobby-codex') as HTMLElement).onclick = () => this.onOpenCodex();
   }
 
-  showLobby(info: { stageNo: number; stageLabel: string; gold: number; roster: OwnedUnit[]; discoveredCount: number }): void {
+  showLobby(info: { stageNo: number; stageLabel: string; gold: number; roster: OwnedUnit[]; capturedCount: number }): void {
     this.setGameplayVisible(false);
     this.hideManage();
     this.lobbyUI.style.display = 'flex';
-    (this.lobbyUI.querySelector('#lobby-stage') as HTMLElement).innerHTML =
-      `🪙 ${info.gold} · 원정대 ${info.roster.length}/${MAX_MONSTERS} · 📜 도감 ${info.discoveredCount}/${SYNERGIES.length}`;
-    (this.lobbyUI.querySelector('#lobby-next-stage') as HTMLElement).textContent = `스테이지 ${info.stageNo} — ${info.stageLabel}`;
-    (this.lobbyUI.querySelector('#lobby-codex-sub') as HTMLElement).textContent = `발견 ${info.discoveredCount}/${SYNERGIES.length}`;
+    (this.lobbyUI.querySelector('#lobby-stage') as HTMLElement).innerHTML = `골드 ${info.gold} · 원정대 ${info.roster.length}/${MAX_MONSTERS} · 포획 도감 ${info.capturedCount}`;
+    (this.lobbyUI.querySelector('#lobby-next-stage') as HTMLElement).textContent = `스테이지 ${info.stageNo} · ${info.stageLabel}`;
     const r = this.lobbyUI.querySelector('#lobby-roster') as HTMLElement;
     r.innerHTML = '';
-    const heroChip = el('div', 'lobby-mon', `<div class="lm-ico">🏰</div><div class="lm-name">성 (거점)</div><div class="lm-sub">무색 카드 5장</div>`);
-    r.appendChild(heroChip);
+    r.appendChild(el('div', 'lobby-mon', '<div class="lm-ico">성</div><div class="lm-name">성</div><div class="lm-sub">공용 카드 5장</div>'));
     for (const u of info.roster) {
-      const br = unitBranch(u);
-      const chip = el('div', 'lobby-mon', `<div class="lm-ico">${cardElemIcon(u.element)}</div><div class="lm-name">${displayName(u)}${br ? `·${br.name}` : ''}</div><div class="lm-sub">Lv${u.level} · ${u.stage}단</div>`);
+      const chip = el('div', 'lobby-mon', `<div class="lm-ico">${cardElemIcon(u.element)}</div><div class="lm-name">${displayName(u)}</div><div class="lm-sub">Lv${u.level} · ${u.stage}단</div>`);
       applyPortrait(chip.querySelector('.lm-ico') as HTMLElement, u.element, u.stage);
       r.appendChild(chip);
     }
-    if (info.roster.length === 0) r.appendChild(el('div', 'lobby-empty', '아직 동료가 없다.<br/>전투 출정에서 첫 드래프트!'));
+    if (info.roster.length === 0) r.appendChild(el('div', 'lobby-empty', '아직 동료가 없습니다.<br/>출정해서 첫 동료를 선택하세요.'));
   }
-
   hideLobby(): void { this.lobbyUI.style.display = 'none'; }
 
-  // ── 캐릭터 관리 (덱 편성) ──
   private buildManage(): void {
-    this.manageUI = el('div'); this.manageUI.id = 'manage'; this.manageUI.style.display = 'none';
-    this.manageUI.innerHTML = `
-      <div class="manage-head">
-        <h1>캐릭터 관리 · 덱 편성</h1>
-        <button class="btn" id="manage-close">✕ 로비로</button>
-      </div>
-      <div class="manage-body">
-        <div id="manage-holders" class="manage-holders panel"></div>
-        <div id="manage-cards" class="manage-cards panel"></div>
-      </div>`;
+    this.manageUI = el('div');
+    this.manageUI.id = 'manage';
+    this.manageUI.style.display = 'none';
+    this.manageUI.innerHTML = `<div class="manage-head"><h1>카드 관리</h1><button class="btn" id="manage-close">로비로</button></div><div class="manage-body"><div id="manage-holders" class="manage-holders panel"></div><div id="manage-cards" class="manage-cards panel"></div></div>`;
     this.root.appendChild(this.manageUI);
     (this.manageUI.querySelector('#manage-close') as HTMLButtonElement).onclick = () => this.onManageClose();
   }
 
-  showManage(data: {
-    holders: { id: string; name: string; element: string; level: number }[];
-    selected: string; level: number; equippedCount: number; cap: number;
-    cards: { id: string; name: string; element: string; cost: number; text: string; learnLevel: number; learned: boolean; equipped: boolean; branchLocked?: boolean }[];
-  }): void {
+  showManage(data: { holders: { id: string; name: string; element: string; level: number }[]; selected: string; level: number; equippedCount: number; cap: number; avgCost: number; deckSummary: string; cards: { id: string; name: string; element: string; cost: number; text: string; learnLevel: number; learned: boolean; equipped: boolean }[] }): void {
     this.setGameplayVisible(false);
     this.hideLobby();
     this.manageUI.style.display = 'flex';
     const h = this.manageUI.querySelector('#manage-holders') as HTMLElement;
-    h.innerHTML = '<h2>캐릭터</h2>';
+    h.innerHTML = '<h2>대상</h2>';
     for (const ho of data.holders) {
-      const item = el('div', 'holder-item' + (ho.id === data.selected ? ' sel' : ''),
-        `<span class="hi-ico">${cardElemIcon(ho.element)}</span><span class="hi-name">${ho.name}</span><span class="hi-lv">Lv${ho.level}</span>`);
+      const item = el('div', 'holder-item' + (ho.id === data.selected ? ' sel' : ''), `<span class="hi-ico">${cardElemIcon(ho.element)}</span><span class="hi-name">${ho.name}</span><span class="hi-lv">Lv${ho.level}</span>`);
       item.onclick = () => this.onManageSelectHolder(ho.id);
       h.appendChild(item);
     }
     const cc = this.manageUI.querySelector('#manage-cards') as HTMLElement;
-    cc.innerHTML = `<h2>스킬 · 장착 ${data.equippedCount}/${data.cap} (레벨업마다 +2 학습)</h2><div class="mc-grid"></div>`;
+    cc.innerHTML = `<h2>장착 카드 ${data.equippedCount}/${data.cap}</h2><div class="deck-summary">평균 비용 ${data.avgCost.toFixed(1)} · ${data.deckSummary}</div><div class="mc-grid"></div>`;
     const grid = cc.querySelector('.mc-grid') as HTMLElement;
     for (const c of data.cards) {
       const cls = `mcard el-${c.element}${c.equipped ? ' equipped' : ''}${c.learned ? '' : ' locked'}`;
-      const skillIcon = CARD_BY_ID[c.id] ? cardIcon(CARD_BY_ID[c.id]) : cardElemIcon(c.element);
-      const foot = c.learned
-        ? (c.equipped ? '★ 장착됨' : '＋ 장착')
-        : c.branchLocked ? '🔒 분기 진화 선택 시' : `🔒 Lv${c.learnLevel}`;
-      const card = el('div', cls, `
-        <div class="cost">${c.cost}</div>
-        <div class="card-elem">${cardElemIcon(c.element)}</div>
-        <div class="mc-name">${skillIcon} ${c.name}</div>
-        <div class="mc-desc">${c.text}</div>
-        <div class="mc-foot">${foot}</div>`);
+      const foot = c.learned ? (c.equipped ? '장착 중' : '장착하기') : `Lv${c.learnLevel} 필요`;
+      const def = CARD_BY_ID[c.id];
+      const role = def ? cardRole(def) : '기술';
+      const meta = def ? cardMeta(def) : `Lv${c.learnLevel}`;
+      const card = el('div', cls, `<div class="cost">${c.cost}</div><div class="card-elem">${cardElemIcon(c.element)}</div><div class="mc-role">${role}</div><div class="mc-name">${def ? cardIcon(def) : cardElemIcon(c.element)} ${c.name}</div><div class="mc-meta">${meta}</div><div class="mc-desc">${c.text}</div><div class="mc-foot">${foot}</div>`);
       if (c.learned) card.onclick = () => this.onManageToggle(data.selected, c.id);
       grid.appendChild(card);
     }
   }
-
   hideManage(): void { this.manageUI.style.display = 'none'; }
 
   private showUnitInfo(u: OwnedUnit): void {
     const s = deriveStats(u);
-    const def = MONSTERS[u.element];
-    const br = unitBranch(u);
+    const isEnemy = u.kind === 'enemy';
+    const edef = isEnemy ? ENEMIES[u.species ?? ''] : null;
+    const roleText = isEnemy ? (edef?.desc ?? '') : MONSTERS[u.element].stages[u.stage - 1].role;
+    const traitLabel = isEnemy ? capturedTraitLabel(edef?.tier) : '';
+    const traitDesc = isEnemy ? capturedTraitDesc(edef?.tier) : '';
+    const stageRow = isEnemy ? `<div class="row"><span>구분</span><span>포획 개체 · ${u.stage}단</span></div>` : `<div class="row"><span>진화 단계</span><span>${u.stage}단 / 3</span></div><div class="row"><span>진화 레벨</span><span>${MONSTERS[u.element].evolveLevels.join(' / ')}</span></div>`;
     const body = this.viewerUI.querySelector('#info-body')!;
-    body.innerHTML = `
-      <div class="info-pic">${ELEMENT_ICON[u.element]}</div>
-      <h2>${displayName(u)} <button class="rename-btn" id="rename-btn" title="이름 짓기">✏️</button></h2>
-      ${u.nickname ? `<div class="row"><span>종족</span><span>${unitName(u)}</span></div>` : ''}
-      <div class="row"><span>속성</span><span>${ELEMENT_ICON[u.element]} ${ELEMENT_NAME_KO[u.element]}</span></div>
-      <div class="row"><span>레벨</span><span>Lv ${u.level}</span></div>
-      <div class="row"><span>진화 단계</span><span>${u.stage}단 / 3</span></div>
-      <div class="row"><span>진화 레벨</span><span>${def.evolveLevels.join(' / ')}</span></div>
-      ${br ? `<div class="row"><span>분기 형태</span><span style="color:#${br.tint.toString(16).padStart(6, '0')}">■</span> ${br.name}</div>` : ''}
-      <div class="row"><span>HP</span><span>${s.hp}</span></div>
-      <div class="row"><span>공격력</span><span>${s.attack}</span></div>
-      <div class="row"><span>사거리</span><span>${s.range.toFixed(1)}</span></div>
-      <div class="row"><span>공속</span><span>${s.attackSpeed.toFixed(2)}</span></div>
-      <div class="row"><span>유대 보너스</span><span>+${Math.round(s.bond * 100)}% <span style="opacity:0.6">(HP·공격)</span></span></div>
-      <p style="margin-top:10px;font-size:12.5px;opacity:0.9">${br ? br.role : def.stages[u.stage - 1].role}</p>`;
+    body.innerHTML = `<div class="info-pic">${ELEMENT_ICON[u.element]}</div><h2>${displayName(u)} <button class="rename-btn" id="rename-btn" title="이름 짓기">수정</button></h2><div class="row"><span>종족</span><span>${unitName(u)}</span></div><div class="row"><span>속성</span><span>${ELEMENT_NAME_KO[u.element]}</span></div><div class="row"><span>레벨</span><span>Lv ${u.level}</span></div>${stageRow}${traitLabel ? `<div class="row"><span>포획 특성</span><span>${traitLabel}</span></div>` : ''}<div class="row"><span>공격력</span><span>${s.attack}</span></div><div class="row"><span>사거리</span><span>${s.range.toFixed(1)}</span></div><div class="row"><span>공속</span><span>${s.attackSpeed.toFixed(2)}</span></div><div class="row"><span>유대 보너스</span><span>+${Math.round(s.bond * 100)}%</span></div><p style="margin-top:10px;font-size:12.5px;opacity:0.9">${traitDesc || roleText}</p>`;
     applyPortrait(body.querySelector('.info-pic') as HTMLElement, u.element, u.stage);
     (body.querySelector('#rename-btn') as HTMLButtonElement).onclick = () => this.showRenameDialog(u);
   }
 
-  /** 이름 짓기 다이얼로그 (최대 8자, 비우면 기본 이름 복귀). */
   private showRenameDialog(u: OwnedUnit): void {
-    const scroll = this.modal(`<h1>이름 짓기</h1>
-      <p><b>${unitName(u)}</b>에게 새 이름을 지어주세요. (최대 8자, 비우면 기본 이름)</p>
-      <div class="rename-row">
-        <input id="rename-input" maxlength="8" placeholder="${unitName(u)}" value="${u.nickname ?? ''}" />
-      </div>
-      <div class="choice-row">
-        <button class="btn primary" id="rename-ok">확정</button>
-        <button class="btn" id="rename-cancel">취소</button>
-      </div>`);
+    const scroll = this.modal(`<h1>이름 짓기</h1><p><b>${unitName(u)}</b>에게 별명을 지어주세요. 비워두면 기본 이름을 사용합니다.</p><div class="rename-row"><input id="rename-input" maxlength="8" placeholder="${unitName(u)}" value="${u.nickname ?? ''}" /></div><div class="choice-row"><button class="btn primary" id="rename-ok">확인</button><button class="btn" id="rename-cancel">취소</button></div>`);
     const input = scroll.querySelector('#rename-input') as HTMLInputElement;
     input.focus();
     const confirm = () => { this.clearModal(); this.onRename(u.uid, input.value); };
@@ -695,11 +579,10 @@ export class UI {
   }
 }
 
-/** 정규화 포트레이트를 배경으로 적용. 파일 없으면 이모지 폴백 유지. */
 function applyPortrait(elm: HTMLElement | null, element: Element, stage: number): void {
   if (!elm) return;
   getPortrait(element, stage).then((url) => {
-    if (!url) return; // 폴백(이모지) 그대로
+    if (!url) return;
     elm.textContent = '';
     elm.style.backgroundImage = `url("${url}")`;
     elm.classList.add('has-img');

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { FIELD, UNIT_SLOTS, COLORS } from '../data/constants';
 import type { Theme } from '../data/stages';
 import type { Vec2 } from '../core/types';
-import { makeBase } from './fallback';
+import { makeBase, makeLabelSprite } from './fallback';
 import { VFX } from './VFX';
 
 const THEME_GROUND: Record<Theme, number> = {
@@ -39,6 +39,10 @@ export class Scene {
   private grassSideMat!: THREE.MeshBasicMaterial;
   private raycaster = new THREE.Raycaster();
   private slotMeshes: THREE.Mesh[] = [];
+  private capRing!: THREE.Mesh;
+  private capLabel!: THREE.Sprite;
+  private capLabelText = '';
+  private rangeRing!: THREE.Mesh;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -71,6 +75,8 @@ export class Scene {
     this.grassSideMat = new THREE.MeshBasicMaterial({ color: darken(THEME_GROUND.grassland, SIDE_SHADE) });
     this.buildGrid();
     this.buildSlots();
+    this.buildCapturePreview();
+    this.buildRangePreview();
 
     this.base = makeBase();
     const last = FIELD.path[FIELD.path.length - 1];
@@ -128,6 +134,69 @@ export class Scene {
   setSlotHighlight(index: number, on: boolean): void {
     const mat = this.slotMeshes[index]?.material as THREE.MeshBasicMaterial;
     if (mat) mat.opacity = on ? 0.95 : 0.5;
+  }
+
+  /** 포획 조준 미리보기 링 (드래그 중 착지 지점의 포획 판정 반경 표시). */
+  private buildCapturePreview(): void {
+    this.capRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.86, 1.0, 40),
+      new THREE.MeshBasicMaterial({ color: 0x54e0c8, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    this.capRing.rotation.x = -Math.PI / 2;
+    this.capRing.position.y = 0.12;
+    this.capRing.renderOrder = 10;
+    this.scene.add(this.capRing);
+    this.capLabel = makeLabelSprite('', { worldHeight: 0.42 });
+    this.capLabel.visible = false;
+    this.capLabel.renderOrder = 11;
+    this.scene.add(this.capLabel);
+  }
+
+  private static readonly CAP_COLOR = { catch: 0x5fe08a, bossWait: 0xf2b03b, none: 0xd23b3b } as const;
+  /** 포획 조준 링 갱신: 지점·반경·상태(잡힘/보스대기/빗나감). */
+  setCapturePreview(x: number, z: number, radius: number, status: 'catch' | 'bossWait' | 'none', label = ''): void {
+    this.capRing.position.set(x, 0.12, z);
+    this.capRing.scale.setScalar(Math.max(0.4, radius));
+    const mat = this.capRing.material as THREE.MeshBasicMaterial;
+    mat.color.setHex(Scene.CAP_COLOR[status]);
+    mat.opacity = status === 'none' ? 0.4 : 0.75;
+    const text = label || (status === 'catch' ? '포획 가능' : status === 'bossWait' ? '기절 필요' : '범위 밖');
+    if (text !== this.capLabelText) {
+      this.scene.remove(this.capLabel);
+      (this.capLabel.material as THREE.SpriteMaterial).map?.dispose();
+      this.capLabel.material.dispose();
+      this.capLabel = makeLabelSprite(text, { worldHeight: 0.42 });
+      this.capLabelText = text;
+      this.capLabel.renderOrder = 11;
+      this.scene.add(this.capLabel);
+    }
+    this.capLabel.position.set(x, 1.25, z);
+    this.capLabel.visible = true;
+  }
+  hideCapturePreview(): void {
+    (this.capRing.material as THREE.MeshBasicMaterial).opacity = 0;
+    this.capLabel.visible = false;
+  }
+
+  private buildRangePreview(): void {
+    this.rangeRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.97, 1.0, 80),
+      new THREE.MeshBasicMaterial({ color: 0xf2ce6b, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    this.rangeRing.rotation.x = -Math.PI / 2;
+    this.rangeRing.position.y = 0.14;
+    this.rangeRing.renderOrder = 9;
+    this.scene.add(this.rangeRing);
+  }
+
+  showRangePreview(x: number, z: number, radius: number): void {
+    this.rangeRing.position.set(x, 0.14, z);
+    this.rangeRing.scale.setScalar(Math.max(0.4, radius));
+    (this.rangeRing.material as THREE.MeshBasicMaterial).opacity = 0.72;
+  }
+
+  hideRangePreview(): void {
+    (this.rangeRing.material as THREE.MeshBasicMaterial).opacity = 0;
   }
 
   setTheme(theme: Theme): void {

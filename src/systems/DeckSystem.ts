@@ -2,15 +2,27 @@ import { CARD_BY_ID, type CardDef } from '../data/cards';
 import { HAND_SIZE } from '../data/constants';
 import { bus } from '../core/events';
 
-/** 카드 패 + 마나 관리. 카드 효과 실행은 Battle이 담당(전장 접근 필요). */
+const shuffle = <T>(items: T[]): T[] => {
+  const arr = items.slice();
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};
+
+/**
+ * 카드 손패, 드로우 더미, 버린 더미, 마나를 관리한다.
+ * 전투 로직은 Battle이 담당하고, 이 클래스는 덱 순환 규칙만 책임진다.
+ */
 export class DeckSystem {
   hand: string[] = [];
   mana: number;
   manaMax: number;
   private regen: number;
-  /** 추가 마나 재생 (풀 유닛 마나 펌핑 등) — Battle이 매 프레임 세팅 */
+  private drawPile: string[] = [];
+  private discardPile: string[] = [];
   bonusRegen = 0;
-  /** 카드별 재사용 쿨다운 (응급 처치 등) */
   private cooldowns = new Map<string, { remain: number; max: number }>();
 
   constructor(manaMax: number, regen: number) {
@@ -23,7 +35,6 @@ export class DeckSystem {
     this.cooldowns.set(id, { remain: sec, max: sec });
   }
 
-  /** 카드 쿨다운 진행률 0~1 (오버레이 표시용) */
   cdFrac(id: string): number {
     const cd = this.cooldowns.get(id);
     return cd ? cd.remain / cd.max : 0;
@@ -34,22 +45,28 @@ export class DeckSystem {
       cd.remain -= dt;
       if (cd.remain <= 0) {
         this.cooldowns.delete(id);
-        bus.emit('mana:change', { mana: this.mana, max: this.manaMax }); // 손패 재렌더
+        bus.emit('mana:change', { mana: this.mana, max: this.manaMax });
       }
     }
   }
 
-  /** 스테이지 시작: 카드풀에서 랜덤 N장 (중복 허용 안 함, 부족하면 있는 만큼) */
   drawHand(pool: string[], size = HAND_SIZE): void {
-    const uniq = [...new Set(pool)];
-    // 풀이 손패보다 크면 셔플 후 상위 N, 작으면 전체
-    const shuffled = uniq.slice().sort(() => Math.random() - 0.5);
-    this.hand = shuffled.slice(0, size);
-    bus.emit('mana:change', { mana: this.mana, max: this.manaMax });
+    this.hand = [];
+    this.discardPile = [];
+    this.drawPile = shuffle(this.uniqueDeck(pool));
+    this.drawCards(size);
   }
 
   def(id: string): CardDef {
     return CARD_BY_ID[id];
+  }
+
+  get drawCount(): number {
+    return this.drawPile.length;
+  }
+
+  get discardCount(): number {
+    return this.discardPile.length;
   }
 
   canPlay(id: string): boolean {
@@ -57,29 +74,33 @@ export class DeckSystem {
     return !!d && this.mana >= d.cost && this.hand.includes(id) && this.cdFrac(id) <= 0;
   }
 
-  /** 사용 성공 시 손패에서 제거 + 마나 차감 */
   consume(id: string): boolean {
     if (!this.canPlay(id)) return false;
     const d = CARD_BY_ID[id];
     this.mana -= d.cost;
     const i = this.hand.indexOf(id);
     if (i >= 0) this.hand.splice(i, 1);
+    this.discardPile.push(id);
     bus.emit('mana:change', { mana: this.mana, max: this.manaMax });
     return true;
   }
 
-  addToHand(id: string): void {
-    this.hand.push(id);
+  drawCards(count: number): void {
+    for (let k = 0; k < count; k++) {
+      const next = this.drawOne();
+      if (!next) break;
+      if (!this.hand.includes(next)) this.hand.push(next);
+    }
+    bus.emit('mana:change', { mana: this.mana, max: this.manaMax });
   }
 
-  /** 손패를 size까지 보충 (덱풀에서, 손패에 없는 카드로). 웨이브 사이 카드 고갈 방지. */
   refillTo(pool: string[], size: number): void {
-    const uniq = [...new Set(pool)].filter((c) => !this.hand.includes(c));
-    while (this.hand.length < size && uniq.length) {
-      const pick = uniq.splice(Math.floor(Math.random() * uniq.length), 1)[0];
-      this.hand.push(pick);
+    this.syncDeck(pool);
+    while (this.hand.length < size) {
+      const before = this.hand.length;
+      this.drawCards(1);
+      if (this.hand.length === before) break;
     }
-    bus.emit('mana:change', { mana: this.mana, max: this.manaMax }); // 손패 재렌더 트리거
   }
 
   regenMana(dt: number): void {
@@ -88,5 +109,31 @@ export class DeckSystem {
     if (Math.floor(before) !== Math.floor(this.mana)) {
       bus.emit('mana:change', { mana: this.mana, max: this.manaMax });
     }
+  }
+
+  private drawOne(): string | null {
+    if (this.drawPile.length === 0) this.reshuffleDiscard();
+    return this.drawPile.pop() ?? null;
+  }
+
+  private reshuffleDiscard(): void {
+    if (this.discardPile.length === 0) return;
+    this.drawPile = shuffle(this.discardPile);
+    this.discardPile = [];
+    bus.emit('toast', { text: '덱을 다시 섞었습니다.', kind: 'info' });
+  }
+
+  private syncDeck(pool: string[]): void {
+    const allowed = new Set(this.uniqueDeck(pool));
+    this.hand = this.hand.filter((id) => allowed.has(id));
+    this.drawPile = this.drawPile.filter((id) => allowed.has(id) && !this.hand.includes(id));
+    this.discardPile = this.discardPile.filter((id) => allowed.has(id) && !this.hand.includes(id));
+    const known = new Set([...this.hand, ...this.drawPile, ...this.discardPile]);
+    const missing = [...allowed].filter((id) => !known.has(id));
+    this.drawPile.push(...shuffle(missing));
+  }
+
+  private uniqueDeck(pool: string[]): string[] {
+    return [...new Set(pool)].filter((id) => !!CARD_BY_ID[id]);
   }
 }
