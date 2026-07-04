@@ -4,7 +4,7 @@ import { ENEMIES, type EnemyTier } from '../data/enemies';
 import { CARD_BY_ID, cardsOfCharacter, type CardDef, type DeckCharacter } from '../data/cards';
 import {
   BASE_HP, BOND_CAP, BOND_PER_STAGE, CAPTURE, ELEMENTS, ENEMY_EVOLVE_LEVEL, ENEMY_PLAY, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
-  MANA_MAX, MANA_REGEN, MAX_MONSTERS, UNIT_BASE,
+  LEVEL_GROWTH_PER, MANA_MAX, MANA_REGEN, MAX_LEVEL, MAX_MONSTERS, UNIT_BASE,
 } from '../data/constants';
 
 /** 무속성 적을 플레이어블 유닛으로 쓸 때의 대체 속성 (마크/색 판정용). */
@@ -63,9 +63,9 @@ export interface DerivedStats {
   bond: number;
 }
 
-/** XP 곡선: 레벨 n → n+1 필요량 */
+/** XP 곡선: 레벨 n → n+1 필요량. 만렙 30 확장 + 레벨업 완화(기존 20+12n에서 상향). */
 export function xpForLevel(level: number): number {
-  return 20 + level * 12;
+  return 30 + level * 15;
 }
 
 /** 유닛 진화 단계 계산 (레벨 기준) */
@@ -79,7 +79,7 @@ function stageForLevel(element: Element, level: number): 1 | 2 | 3 {
 /** 포획 enemy 유닛 파생 스탯 — 도감 스탯 × 플레이 배율 × 레벨/유대 성장. */
 function deriveEnemyStats(unit: OwnedUnit): DerivedStats {
   const def = ENEMIES[unit.species ?? ''] ?? ENEMIES.slime;
-  const lv = 1 + (unit.level - 1) * 0.06;
+  const lv = 1 + (unit.level - 1) * LEVEL_GROWTH_PER;
   const bond = Math.min(BOND_CAP, unit.bond ?? 0);
   const growth = lv * (1 + bond);
   return {
@@ -108,7 +108,7 @@ export function deriveStats(unit: OwnedUnit): DerivedStats {
     }
   }
   // 레벨당 성장(진화 사이 레벨도 체감되도록) + 유대 보너스(상한 BOND_CAP)
-  const lv = 1 + (unit.level - 1) * 0.06;
+  const lv = 1 + (unit.level - 1) * LEVEL_GROWTH_PER;
   const bond = Math.min(BOND_CAP, unit.bond ?? 0);
   const growth = lv * (1 + bond);
   return {
@@ -354,7 +354,7 @@ export class GameState {
     let leveled = false;
     let evolved = false;
     const gains: CardGain[] = [];
-    while (unit.xp >= xpForLevel(unit.level)) {
+    while (unit.level < MAX_LEVEL && unit.xp >= xpForLevel(unit.level)) {
       unit.xp -= xpForLevel(unit.level);
       unit.level++;
       leveled = true;
@@ -383,6 +383,7 @@ export class GameState {
         if (c.learnLevel === unit.level) gains.push({ uid: unit.uid, cardId: c.id });
       }
     }
+    if (unit.level >= MAX_LEVEL) unit.xp = 0; // 만렙: XP 바 오버플로 방지
     return { leveled, evolved, gains };
   }
 

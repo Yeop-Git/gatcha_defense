@@ -1,4 +1,5 @@
 import type { Element, ElementOrNeutral } from '../core/types';
+import { MONSTERS } from './monsters';
 
 /** 도감/설계용 역할 분류 (스탯 프리셋 & 베스티어리 라벨) */
 export type EnemyTier =
@@ -32,6 +33,8 @@ export interface EnemyDef {
   desc: string;
   /** 포획 후 진화 대상 species id (쌍 라인). 없으면 무진화(단독/보스 개체). */
   evolvesTo?: string;
+  /** 야생 크리처 적: 플레이어 크리처 모델(makeCreature)로 렌더. 값 = 진화 단계. */
+  creatureStage?: 1 | 2 | 3;
 }
 
 /**
@@ -96,3 +99,35 @@ export const ENEMIES: Record<string, EnemyDef> = {
   tyrant: { id: 'tyrant', name: '폭룡 티라노', element: 'fire', hp: 1200, speed: 0.7, attack: 22, leak: 'boss', radius: 2.0, model: 'Big/Dino.gltf', tier: 'boss', desc: '용암 지대 최상위 포식자. 대지를 뒤흔드는 최종 시련.' },
   // (타락체 시스템 제거 — 모든 보스는 enemy 단독 개체)
 };
+
+/** 야생 크리처 적 id (속성·단계). 웨이브 삽입/스폰 참조용. */
+export const creatureEnemyId = (el: Element, stage: 1 | 2 | 3): string => `cre_${el}_${stage}`;
+
+/** 단계별 야생 크리처 스탯 프리셋 (1→2→3 진화형). */
+const CRE_TIER: Record<1 | 2 | 3, EnemyTier> = { 1: 'normal', 2: 'elite', 3: 'elite' };
+const CRE_STATS: Record<1 | 2 | 3, { hp: number; speed: number; attack: number; radius: number }> = {
+  1: { hp: 70, speed: 1.4, attack: 8, radius: 0.8 },
+  2: { hp: 170, speed: 1.3, attack: 12, radius: 0.95 },
+  3: { hp: 340, speed: 1.15, attack: 16, radius: 1.1 },
+};
+
+// 플레이어 크리처 모델(mon_{el}_{stage}.glb)을 재사용한 "야생 개체"를 도감에 등록.
+for (const el of ['fire', 'water', 'grass', 'light', 'dark'] as Element[]) {
+  for (const stage of [1, 2, 3] as (1 | 2 | 3)[]) {
+    const st = CRE_STATS[stage];
+    const name = MONSTERS[el].stages[stage - 1].name;
+    ENEMIES[creatureEnemyId(el, stage)] = {
+      id: creatureEnemyId(el, stage),
+      name: `야생 ${name}`,
+      element: el,
+      hp: st.hp,
+      speed: st.speed,
+      attack: st.attack,
+      leak: 'normal',
+      radius: st.radius,
+      tier: CRE_TIER[stage],
+      desc: `길들지 않은 야생 개체. ${MONSTERS[el].stages[stage - 1].role}`,
+      creatureStage: stage,
+    };
+  }
+}

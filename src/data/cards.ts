@@ -114,37 +114,37 @@ export function cardsOfCharacter(character: DeckCharacter): CardDef[] {
 }
 
 const ELEMENT_BADGE: Record<CardElement, string> = {
-  fire: '불',
-  water: '물',
-  grass: '풀',
-  light: '빛',
-  dark: '암',
-  normal: '공용',
+  fire: '🔥',
+  water: '💧',
+  grass: '🌿',
+  light: '✨',
+  dark: '🌙',
+  normal: '⚪',
 };
 
 export function cardIcon(def: CardDef): string {
   switch (def.effect.kind) {
+    case 'cleanseHeal': return '💚';
     case 'healAll':
-    case 'cleanseHeal':
-    case 'baseHeal': return '수리';
-    case 'shieldAll': return '방벽';
-    case 'blessOne': return '축복';
-    case 'judgment': return '빛';
-    case 'rally': return '정비';
-    case 'draw': return '드로우';
-    case 'coinflip': return '골드';
-    case 'bind': return '속박';
-    case 'capture': return '포획';
-    case 'haste': return '가속';
-    case 'overheat': return '과열';
-    case 'drain': return '흡수';
-    case 'defDown': return '약화';
-    case 'markArea': return '표식';
-    case 'eclipseVerdict': return '일식';
-    case 'zone': return '장판';
-    case 'chain': return '연쇄';
+    case 'baseHeal': return '🩹';
+    case 'shieldAll': return '🛡️';
+    case 'blessOne': return '🌟';
+    case 'judgment': return '☀️';
+    case 'rally': return '🔄';
+    case 'draw': return '🃏';
+    case 'coinflip': return '🪙';
+    case 'bind': return '🕸️';
+    case 'capture': return '🔮';
+    case 'haste': return '💨';
+    case 'overheat': return '♨️';
+    case 'drain': return '🩸';
+    case 'defDown': return '💢';
+    case 'markArea': return ELEMENT_BADGE[def.element] ?? '🔖';
+    case 'eclipseVerdict': return '🌑';
+    case 'zone': return '🌀';
+    case 'chain': return '⚡';
     case 'damage': return ELEMENT_BADGE[def.element];
-    default: return ELEMENT_BADGE[def.element] ?? '카드';
+    default: return ELEMENT_BADGE[def.element] ?? '❔';
   }
 }
 

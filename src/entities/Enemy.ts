@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import type { ElementOrNeutral } from '../core/types';
+import type { Element, ElementOrNeutral } from '../core/types';
 import type { EnemyDef } from '../data/enemies';
 import { FIELD, CURSE_DMG_PER_STACK, WET_SLOW, FLOAT, isFloating, CAPTURE, ENEMY_HEIGHT } from '../data/constants';
-import { makeEnemy, disposeCreatureView } from '../render/fallback';
+import { makeCreature, makeEnemy, disposeCreatureView } from '../render/fallback';
 import { Marks } from './Marks';
 
 const PATH = FIELD.path;
@@ -77,7 +77,10 @@ export class Enemy {
 
     // 정규화 높이(티어별, 보스는 크게). 바/표식도 이 높이에 맞춘다.
     const V = ENEMY_HEIGHT[def.tier];
-    this.view = makeEnemy(this.element, def.radius, def.flying, def.model, 'walk', V);
+    // 야생 크리처 적: 플레이어 크리처 모델을 재사용(걷기 애니메이션 재생).
+    this.view = def.creatureStage
+      ? makeCreature(def.element as Element, V / 1.85, def.creatureStage, undefined, true)
+      : makeEnemy(this.element, def.radius, def.flying, def.model, 'walk', V);
     const start = PATH[0];
     this.pos.set(start.x, 0, start.z);
     this.view.position.copy(this.pos);

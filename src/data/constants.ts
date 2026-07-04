@@ -30,11 +30,11 @@ export const NEUTRAL_COLOR = 0xb8a888;
 
 /** ?띿꽦 ?꾩씠肄?(?대え吏 ?대갚 ??Sora ?꾩씠肄?誘몄셿???? */
 export const ELEMENT_ICON: Record<Element, string> = {
-  fire: '불',
-  water: '물',
-  grass: '풀',
-  light: '빛',
-  dark: '암',
+  fire: '🔥',
+  water: '💧',
+  grass: '🌿',
+  light: '✨',
+  dark: '🌙',
 };
 
 export const ELEMENT_NAME_KO: Record<Element, string> = {
@@ -46,11 +46,11 @@ export const ELEMENT_NAME_KO: Record<Element, string> = {
 };
 
 export const MARK_ICON: Record<MarkType, string> = {
-  burn: '화상',
-  wet: '젖음',
-  overgrowth: '덩굴',
-  curse: '저주',
-  bless: '축복',
+  burn: '🔥',
+  wet: '💧',
+  overgrowth: '🍃',
+  curse: '🌑',
+  bless: '🌟',
 };
 
 /** 寃⑹옄 ?꾩옣 洹쒓꺽. ???= ?뺤쑁硫댁껜. 寃쎈줈??吏곴컖(寃⑹옄 ?뺣젹). */
@@ -216,7 +216,7 @@ export const CAPTURE = {
   arcHeight: 5,      // ?щЪ??理쒓퀬 ?믪씠
   cooldown: 5,       // 移대뱶 ?ъ궗??荑⑤떎??珥? ???쒖궗 諛⑹?
   bossStun: 3,       // 蹂댁뒪/誘몃땲蹂댁뒪 HP0 ???ы쉷 媛??湲곗젅 李?珥?
-  duplicateXp: 70,
+  duplicateXp: 200,
   duplicateBond: 0.04,
 } as const;
 
@@ -227,7 +227,7 @@ export const CAPTURE_RADIUS: Record<EnemyTier, number> = {
 /** ?ы쉷???곸쓣 ?뚮젅?댁뼱釉붾줈 ?????ㅽ꺈 ?섏궛 諛곗쑉 (???꾧컧 ?ㅽ꺈 ???꾧뎔 ?좊떅 ?ㅼ???. */
 export const ENEMY_PLAY = { hpMult: 1.5, atkMult: 1.3 } as const;
 /** ?ы쉷 enemy 2??吏꾪솕 ?덈꺼 (???쇱씤留?. ?⑤룆/蹂댁뒪泥대뒗 臾댁쭊?? */
-export const ENEMY_EVOLVE_LEVEL = 5;
+export const ENEMY_EVOLVE_LEVEL = 10;
 
 // ?? 罹먮┃???ш린 ?뺢퇋???????????????????????????????
 /** ?뚮젅?댁뼱釉??좊떅(?щ━泥샕룻룷?띿껜) ?뺢퇋???믪씠 ??吏꾪솕?좎닔濡??뚰룺 而ㅼ쭊?? */
@@ -235,6 +235,15 @@ export const UNIT_HEIGHT = { base: 2.0, perStage: 0.26 } as const;
 export function unitHeight(stage: number): number {
   return UNIT_HEIGHT.base + (Math.max(1, stage) - 1) * UNIT_HEIGHT.perStage;
 }
+/** 속성별 크리처 표시 배율 — 모델 비율 편차 보정. 물 거북은 몸통이 커 보여 축소. */
+export const CREATURE_DISPLAY_SCALE: Record<Element, number> = {
+  fire: 1, water: 0.8, grass: 1, light: 1, dark: 1,
+};
+
+/** 만렙 (레벨 확장). 이 이상 XP는 누적하지 않는다. */
+export const MAX_LEVEL = 30;
+/** 레벨당 스탯 성장률(HP·공격). 30레벨 확장에 맞춰 완만하게. */
+export const LEVEL_GROWTH_PER = 0.035;
 /** ?꾨뱶 ???뺢퇋???믪씠 (?곗뼱蹂???蹂댁뒪/誘몃땲蹂댁뒪???쇰????ш쾶). */
 export const ENEMY_HEIGHT: Record<EnemyTier, number> = {
   swarm: 1.6, flyer: 1.8, normal: 2.0, healer: 2.0, tank: 2.4, elite: 2.8, miniboss: 4.2, boss: 6.2,

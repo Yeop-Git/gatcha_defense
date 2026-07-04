@@ -518,7 +518,7 @@ export class Game {
     const def = this.battle!.stage;
     // 유닛 경험치 지급
     const rewards: string[] = [`현재 골드 ${state.gold}`];
-    const xpGain = 70 + def.id * 25; // 육성 속도 상향 (유닛이 적 스케일을 따라가도록)
+    const xpGain = 120 + def.id * 90; // 만렙 30 곡선에 맞춘 스테이지 XP (레벨업 완만화)
     for (const u of state.roster) {
       const before = unitName(u);
       const r = state.addUnitXp(u, xpGain);
@@ -556,9 +556,14 @@ export class Game {
     this.showNodeChoice();
   }
 
-  /** 진화 연출 대기열 처리. 띄웠으면 true. */
+  /** 진화 연출 대기열 처리. 띄웠으면 true. 현재 유닛 단계/종류로 포트레이트 정합. */
   private processEvolveQueue(): boolean {
-    if (this.evolveQueue.length) { this.ui.showEvolve(this.evolveQueue[0]); return true; }
+    if (this.evolveQueue.length) {
+      const e = this.evolveQueue[0];
+      const u = state.roster.find((x) => x.uid === e.uid);
+      this.ui.showEvolve({ from: e.from, to: e.to, element: e.element, stage: u?.stage ?? 3, kind: u?.kind ?? 'creature', species: u?.species });
+      return true;
+    }
     return false;
   }
   private onEvolveAck(): void {
@@ -578,13 +583,14 @@ export class Game {
       if (!u || !card) continue;
       const r = state.acquireCard(gain.uid, gain.cardId);
       if (r.result === 'skip') continue;
+      const desc = { name: displayName(u), element: u.element, kind: u.kind, stage: u.stage, species: u.species };
       if (r.result === 'added') {
-        this.ui.showCardGain(displayName(u), gain.cardId);
+        this.ui.showCardGain(desc, gain.cardId);
         return true;
       }
       // replace: 항상 5장 유지 — 오래된 3장 + 신규 중 하나를 버린다
       this.currentGain = gain;
-      this.ui.showCardReplace(displayName(u), gain.cardId, r.options!);
+      this.ui.showCardReplace(desc, gain.cardId, r.options!);
       return true;
     }
     return false;
@@ -638,8 +644,15 @@ export class Game {
       case 'hotspring': {
         const evolved: string[] = [];
         state.roster.forEach((u) => {
-          const r = state.addUnitXp(u, 40);
-          if (r.evolved) evolved.push(displayName(u));
+          const before = unitName(u);
+          const r = state.addUnitXp(u, 200);
+          if (r.evolved) {
+            evolved.push(displayName(u));
+            // 스테이지 클리어와 동일한 진화 플로우: 연출 + 각성 시그니처 학습
+            this.evolveQueue.push({ uid: u.uid, from: before, to: unitName(u), element: u.element });
+            const key = state.evolveKeySkill(u);
+            if (key) this.gainQueue.push({ uid: u.uid, cardId: key });
+          }
           this.gainQueue.push(...r.gains);
         });
         this.ui.toast(evolved.length ? `온천 효과! ${evolved.join(', ')} 진화!` : '온천 효과! 모든 유닛 성장', 'good');

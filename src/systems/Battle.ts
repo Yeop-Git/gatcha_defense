@@ -3,7 +3,7 @@ import type { Scene } from '../render/Scene';
 import { type GameState, type OwnedUnit, displayName, deriveStats, unitName } from '../core/GameState';
 import type { StageDef } from '../data/stages';
 import type { Element, ElementOrNeutral, Vec2 } from '../core/types';
-import { ENEMIES } from '../data/enemies';
+import { ENEMIES, creatureEnemyId } from '../data/enemies';
 import { CARD_BY_ID, type CardEffect, type CardElement } from '../data/cards';
 import {
   UNIT_SLOTS,
@@ -12,6 +12,7 @@ import {
   BASE_LEAK_BOSS,
   BURN_DPS_PER_STACK,
   OVERGROWTH_DPS,
+  ELEMENTS,
   HERO,
   DARK_KILL_STACK,
   DARK_KILL_STACK_MAX,
@@ -221,6 +222,10 @@ export class Battle {
     for (const g of groups) {
       for (let k = 0; k < g.count; k++) this.spawnQueue.push({ t: k * g.interval, enemy: g.enemy });
     }
+    // 야생 크리처 1마리 삽입 (스테이지↑ → 진화형 1→2→3). 웨이브 중반 등장.
+    const creStage: 1 | 2 | 3 = this.stage.id <= 3 ? 1 : this.stage.id <= 7 ? 2 : 3;
+    const creEl = ELEMENTS[(this.stage.id + this.waveIndex) % ELEMENTS.length];
+    this.spawnQueue.push({ t: 2.5, enemy: creatureEnemyId(creEl, creStage) });
     this.spawnQueue.sort((a, b) => a.t - b.t);
     bus.emit('wave:start', { stage: this.stage.id, wave: this.waveIndex + 1, total: this.totalWaves });
   }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Element, ElementOrNeutral } from '../core/types';
-import { ELEMENT_COLOR, NEUTRAL_COLOR, ELEMENT_ICON } from '../data/constants';
+import { ELEMENT_COLOR, NEUTRAL_COLOR, ELEMENT_ICON, CREATURE_DISPLAY_SCALE } from '../data/constants';
 import { attachModel, modelFile, addOutline } from './ModelLoader';
 
 /**
@@ -133,8 +133,9 @@ export function makeBarSprite(worldWidth = 3, color = '#e05a4a'): { sprite: THRE
  * 유닛/야생 몬스터 폴백 캡슐 (속성색 + 아이콘). height로 진화 크기 표현.
  * tint = 팔레트 스왑 색(분기 진화·타락체). 폴백 캡슐은 틴트색 자체를, GLB는 색 곱을 적용.
  */
-export function makeCreature(el: Element, scale = 1, stage = 1, tint?: number): THREE.Group {
+export function makeCreature(el: Element, scale = 1, stage = 1, tint?: number, play = false): THREE.Group {
   const g = new THREE.Group();
+  scale *= CREATURE_DISPLAY_SCALE[el] ?? 1; // 속성별 표시 배율(물 축소 등)
   const color = tint ?? elementColor(el);
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.55 * scale, 0.5 * scale, 6, 12),
@@ -160,8 +161,9 @@ export function makeCreature(el: Element, scale = 1, stage = 1, tint?: number): 
   icon.userData.placeholder = true;
   g.add(icon);
   g.userData.baseY = 0;
-  // 아군은 제자리 대기 → Idle 클립 우선 (모델에 애니메이션이 있을 때만)
-  attachModel(g, modelFile.creature(el, stage), 1.85 * scale, tint, [/idle/i, /walk/i], false);
+  // 아군 유닛은 제자리 대기(Idle 우선, 재생 안 함). 야생 크리처 적(play)은 걷기 재생.
+  const prefs = play ? [/walk/i, /run/i, /move/i, /idle/i] : [/idle/i, /walk/i];
+  attachModel(g, modelFile.creature(el, stage), 1.85 * scale, tint, prefs, play);
   return g;
 }
 
