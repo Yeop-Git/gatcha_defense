@@ -54,6 +54,8 @@ export class Battle {
 
   waveIndex = 0;
   private waveClock = 0;
+  /** 현재 웨이브의 덱 스냅샷 — 웨이브 도중 포획한 유닛 카드는 다음 웨이브부터 반영(즉시 유입 방지). */
+  private waveDeck: string[] = [];
   private spawnQueue: SpawnEvent[] = [];
   private healTimer = 0;
   private hasDarkS3 = false;
@@ -275,7 +277,8 @@ export class Battle {
 
   beginWave(): void {
     if (this.phase !== 'placement') return;
-    this.deck.drawHand(this.state.battleDeck(), 5, [CAPTURE_CARD_ID]);
+    this.waveDeck = this.state.battleDeck(); // 이번 웨이브 덱 고정 스냅샷
+    this.deck.drawHand(this.waveDeck, 5, [CAPTURE_CARD_ID]);
     this.phase = 'wave';
     this.waveClock = 0;
     this.spawnQueue = [];
@@ -339,7 +342,7 @@ export class Battle {
     if (this.phase !== 'wave') return;
     const hasTarget = this.enemies.some((e) => e.alive && ((!e.isBoss && !e.isMini) || e.stunTimer > 0));
     if (!hasTarget) return;
-    if (this.deck.ensureInHand(CAPTURE_CARD_ID, this.state.battleDeck(), 5)) {
+    if (this.deck.ensureInHand(CAPTURE_CARD_ID, this.waveDeck, 5)) {
       bus.emit('toast', { text: '포획구를 회수했습니다.', kind: 'info' });
     }
   }
@@ -633,7 +636,7 @@ export class Battle {
     if ((def.target === 'point' || def.target === 'enemy-area') && !pt) pt = this.frontEnemyPoint() ?? this.castleXZ();
     if (!this.deck.consume(id)) return false;
     this.applyCardEffect(def.effect, def.element, pt);
-    if (this.deck.hand.length === 0) this.deck.refillTo(this.state.battleDeck(), 5);
+    if (this.deck.hand.length === 0) this.deck.refillTo(this.waveDeck, 5);
     if (def.effect.kind === 'baseHeal') this.deck.setCooldown(id, BASE_HEAL_CD);
     if (def.effect.kind === 'capture') this.deck.setCooldown(id, CAPTURE.cooldown);
     playSfx(def.effect.kind === 'capture' ? 'select' : 'card');
@@ -725,7 +728,7 @@ export class Battle {
         this.scene.vfx.burst(p.x, p.z, 0xf2ce6b, 16);
         break;
       case 'rally':
-        this.deck.refillTo(this.state.battleDeck(), 5);
+        this.deck.refillTo(this.waveDeck, 5);
         break;
       case 'baseHeal':
         this.repairBase(fx.amount);
