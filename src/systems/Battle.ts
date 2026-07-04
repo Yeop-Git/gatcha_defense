@@ -33,6 +33,7 @@ import { affinity } from './affinity';
 import { DeckSystem } from './DeckSystem';
 import { bus } from '../core/events';
 import { playSfx } from '../audio/Sfx';
+import { unlockEnemy } from '../core/Dex';
 
 type Phase = 'placement' | 'wave' | 'stageClear' | 'lost' | 'won';
 interface SpawnEvent { t: number; enemy: string }
@@ -235,6 +236,7 @@ export class Battle {
 
   private spawn(ev: SpawnEvent): void {
     const def = ENEMIES[ev.enemy] ?? ENEMIES.slime;
+    if (!def.creatureStage) unlockEnemy(def.id); // 도감: 조우한 적 해금(야생 크리처 변종 제외)
     const e = new Enemy(def, this.hpScale);
     this.scene.entities.add(e.view);
     this.enemies.push(e);

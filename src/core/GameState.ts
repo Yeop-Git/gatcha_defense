@@ -2,6 +2,7 @@ import type { Element, ElementOrNeutral } from './types';
 import { MONSTERS } from '../data/monsters';
 import { ENEMIES, type EnemyTier } from '../data/enemies';
 import { CARD_BY_ID, cardsOfCharacter, type CardDef, type DeckCharacter } from '../data/cards';
+import { unlockCreature } from './Dex';
 import {
   BASE_HP, BOND_CAP, BOND_PER_STAGE, CAPTURE, ELEMENTS, ENEMY_EVOLVE_LEVEL, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
   LEVEL_GROWTH_PER, MANA_MAX, MANA_REGEN, MAX_LEVEL, MAX_MONSTERS, UNIT_BASE,
@@ -263,6 +264,7 @@ export class GameState {
     const unit: OwnedUnit = { uid: nextUid(), kind: 'creature', element, level, stage: 1, xp: 0, equipped: [], discarded: [], bond: 0 };
     unit.equipped = this.defaultEquip(element, level);
     this.roster.push(unit);
+    unlockCreature(element, 1); // 도감: 소유 크리처 해금
     return unit;
   }
 
@@ -389,7 +391,7 @@ export class GameState {
         continue;
       }
       const newStage = stageForLevel(unit.element, unit.level);
-      if (newStage > unit.stage) { unit.stage = newStage; evolved = true; }
+      if (newStage > unit.stage) { unit.stage = newStage; evolved = true; unlockCreature(unit.element, newStage); }
       // 이번 레벨에서 새로 학습하는 스킬
       for (const c of cardsOfCharacter(unit.element)) {
         if (c.learnLevel === unit.level) gains.push({ uid: unit.uid, cardId: c.id });

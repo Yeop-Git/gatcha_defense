@@ -10,6 +10,7 @@ import { getPortrait } from '../render/Portraits';
 import { getEnemyPortrait } from '../render/EnemyPortraits';
 import { settings, saveSettings } from '../core/Settings';
 import { playSfx } from '../audio/Sfx';
+import * as Dex from '../core/Dex';
 
 export interface HudInfo {
   stageLabel: string;
@@ -121,6 +122,7 @@ export class UI {
   onManageClose = () => {};
   onSettings = () => {};
   onSettingsChange = () => {};
+  onDex = () => {};
   onManageSelectHolder = (_id: string) => {};
   onManageToggle = (_holderId: string, _cardId: string) => {};
 
@@ -213,6 +215,42 @@ export class UI {
     vol.onchange = () => { saveSettings(); playSfx('select'); };
     speed.onchange = () => { settings.speed = (Number(speed.value) as 1 | 2 | 3); saveSettings(); this.onSettingsChange(); playSfx('click'); };
     (scroll.querySelector('#set-ok') as HTMLButtonElement).onclick = () => { playSfx('click'); this.clearModal(); };
+  }
+
+  /** 도감(컬렉션) 모달 — 영속 Dex 기준. 미해금은 실루엣(???). 전 종 수집이 엔드컨텐츠. */
+  showDex(): void {
+    const els: Element[] = ['fire', 'water', 'grass', 'light', 'dark'];
+    const cell = (unlocked: boolean, element: string, name: string, attr: string): string =>
+      `<div class="dex-cell${unlocked ? '' : ' locked'} el-${element}" style="width:78px;display:flex;flex-direction:column;align-items:center;gap:3px;${unlocked ? '' : 'opacity:0.5;filter:grayscale(1)'}">
+        <div class="dex-pic" ${attr} style="width:60px;height:60px;font-size:34px;display:flex;align-items:center;justify-content:center;background-size:contain;background-repeat:no-repeat;background-position:center;border-radius:12px;background-color:rgba(0,0,0,0.18)">${unlocked ? '' : '❔'}</div>
+        <div class="dex-nm" style="font-size:11px;text-align:center;line-height:1.1">${unlocked ? name : '???'}</div>
+      </div>`;
+    let cCount = 0, creHtml = '';
+    for (const el of els) for (const st of [1, 2, 3] as const) {
+      const u = Dex.hasCreature(el, st); if (u) cCount++;
+      creHtml += cell(u, el, u ? MONSTERS[el].stages[st - 1].name : '', `data-cre="${el}:${st}"`);
+    }
+    const enemyIds = Object.keys(ENEMIES).filter((id) => !ENEMIES[id].creatureStage);
+    let eCount = 0, enHtml = '';
+    for (const id of enemyIds) {
+      const d = ENEMIES[id]; const u = Dex.hasEnemy(id); if (u) eCount++;
+      enHtml += cell(u, d.element, u ? d.name : '', `data-enemy="${id}"`);
+    }
+    const total = els.length * 3 + enemyIds.length;
+    const gridCss = 'display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:6px 0 14px';
+    const scroll = this.modal(`<h1>도감</h1><p>수집 <b>${cCount + eCount}</b> / ${total}</p>
+      <h2 style="margin:8px 0 2px">몬스터 ${cCount}/${els.length * 3}</h2><div class="dex-grid" style="${gridCss}">${creHtml}</div>
+      <h2 style="margin:8px 0 2px">적 ${eCount}/${enemyIds.length}</h2><div class="dex-grid" style="${gridCss}">${enHtml}</div>
+      <div class="choice-row"><button class="btn primary" id="dex-ok">닫기</button></div>`);
+    scroll.querySelectorAll('.dex-pic[data-cre]').forEach((elm) => {
+      const [el, st] = (elm.getAttribute('data-cre') ?? '').split(':');
+      if (Dex.hasCreature(el as Element, Number(st))) applyPortrait(elm as HTMLElement, el as Element, Number(st));
+    });
+    scroll.querySelectorAll('.dex-pic[data-enemy]').forEach((elm) => {
+      const id = elm.getAttribute('data-enemy') ?? '';
+      if (Dex.hasEnemy(id)) { const d = ENEMIES[id]; applyEnemyPortrait(elm as HTMLElement, d.element, id, d.name); }
+    });
+    (scroll.querySelector('#dex-ok') as HTMLButtonElement).onclick = () => { playSfx('click'); this.clearModal(); };
   }
   hideTitle(): void { this.title.classList.add('hidden'); }
 
@@ -558,11 +596,12 @@ export class UI {
     this.lobbyUI = el('div');
     this.lobbyUI.id = 'lobby';
     this.lobbyUI.style.display = 'none';
-    this.lobbyUI.innerHTML = `<div class="lobby-head"><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card primary" id="lobby-battle"><div class="mc-ico">⚔️</div><div class="mc-title">출정</div><div class="mc-sub" id="lobby-next-stage"></div></div><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div></div></div>`;
+    this.lobbyUI.innerHTML = `<div class="lobby-head"><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card primary" id="lobby-battle"><div class="mc-ico">⚔️</div><div class="mc-title">출정</div><div class="mc-sub" id="lobby-next-stage"></div></div><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div><div class="menu-card" id="lobby-dex"><div class="mc-ico">📖</div><div class="mc-title">도감</div><div class="mc-sub">수집 컬렉션</div></div></div></div>`;
     this.root.appendChild(this.lobbyUI);
     (this.lobbyUI.querySelector('#lobby-battle') as HTMLElement).onclick = () => this.onEnterBattle();
     (this.lobbyUI.querySelector('#lobby-manage') as HTMLElement).onclick = () => this.onManage();
     (this.lobbyUI.querySelector('#lobby-viewer') as HTMLElement).onclick = () => this.onOpenViewer();
+    (this.lobbyUI.querySelector('#lobby-dex') as HTMLElement).onclick = () => { playSfx('click'); this.onDex(); };
   }
 
   showLobby(info: { stageNo: number; stageLabel: string; gold: number; roster: OwnedUnit[]; capturedCount: number }): void {

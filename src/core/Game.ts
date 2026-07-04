@@ -80,6 +80,7 @@ export class Game {
     this.ui.onManageClose = () => this.showLobby();
     this.ui.onSettings = () => this.ui.showSettings();
     this.ui.onSettingsChange = () => { this.speed = settings.speed; };
+    this.ui.onDex = () => this.ui.showDex();
     this.ui.onManageSelectHolder = (id) => { this.manageHolder = id; this.renderManage(); };
     this.ui.onManageToggle = (holderId, cardId) => this.toggleEquip(holderId, cardId);
     this.ui.onCaptureDiscardPick = (id) => this.onCaptureDiscardPick(id);
