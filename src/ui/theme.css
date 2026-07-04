@@ -613,3 +613,30 @@ body { font-family: 'Gowun Batang', 'Jua', serif; color: var(--ink); -webkit-use
   background: rgba(20,14,8,0.66); color: var(--gold-bright);
   font-family: 'Jua', sans-serif; font-size: 10px; line-height: 1.1;
 }
+
+/* ── 설정 모달 ─────────────────────────────── */
+.settings-list { display: flex; flex-direction: column; gap: 12px; margin: 12px auto; max-width: 340px; }
+.set-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 10px 14px; border-radius: 10px;
+  background: rgba(20,14,8,0.28); border: 1px solid rgba(216,169,59,0.28);
+}
+.set-row > span { font-family: 'Jua', sans-serif; color: var(--parchment); font-size: 15px; }
+.set-row input[type="range"] { flex: 1; max-width: 170px; accent-color: var(--gold); }
+.set-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--gold); cursor: pointer; }
+.set-row select {
+  background: var(--wood-dark); color: var(--parchment); border: 1px solid var(--gold);
+  border-radius: 8px; padding: 5px 10px; font-family: 'Jua', sans-serif; cursor: pointer;
+}
+
+/* ── 도감 셀 ─────────────────────────────── */
+.dex-cell .dex-pic { border: 1px solid rgba(216,169,59,0.35); box-shadow: inset 0 0 8px rgba(0,0,0,0.35); }
+.dex-cell.locked .dex-pic { border-style: dashed; }
+.dex-cell .dex-nm { color: var(--parchment); font-family: 'Jua', sans-serif; opacity: 0.92; }
+
+/* ── 관리창: 전투 카드 UI 재사용 시 그리드 정렬 ── */
+#manage-cards .mc-grid { display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start; }
+#manage-cards .mc-grid .card { position: relative; cursor: pointer; }
+#manage-cards .mc-grid .card.locked { opacity: 0.42; filter: grayscale(0.6); cursor: default; }
+#manage-cards .mc-grid .card.equipped { outline: 2px solid var(--gold-bright); outline-offset: 1px; }
+.card .mc-foot { color: var(--gold-bright); font-family: 'Jua', sans-serif; }
