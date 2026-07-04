@@ -258,13 +258,15 @@ export class GameState {
     return this.roster.some((u) => u.element === element);
   }
 
-  /** 로스터 합류 (드래프트 전용, §3). 항상 1단부터 시작 → 육성으로 진화. */
+  /** 로스터 합류 (드래프트/야생 크리처 합류). level에 맞는 진화 단계로 시작. */
   giveUnit(element: Element, level = 1): OwnedUnit | null {
     if (this.hasElement(element) || this.monstersFull) return null;
-    const unit: OwnedUnit = { uid: nextUid(), kind: 'creature', element, level, stage: 1, xp: 0, equipped: [], discarded: [], bond: 0 };
+    const stage = stageForLevel(element, level);
+    const unit: OwnedUnit = { uid: nextUid(), kind: 'creature', element, level, stage, xp: 0, equipped: [], discarded: [], bond: 0 };
     unit.equipped = this.defaultEquip(element, level);
     this.roster.push(unit);
     unlockCreature(element, 1); // 도감: 소유 크리처 해금
+    if (stage > 1) unlockCreature(element, stage);
     return unit;
   }
 
@@ -316,6 +318,21 @@ export class GameState {
       xp: CAPTURE.duplicateXp,
       bondGain: unit.bond - beforeBond,
     };
+  }
+
+  /** 야생 크리처(같은 속성 보유) 중복 포획 흡수 — 해당 크리처에 XP/유대 강화(별도 유닛 미생성). */
+  absorbCreatureDuplicate(element: Element): { unit: OwnedUnit; from: string; to: string; evolved: boolean; gains: CardGain[]; xp: number; bondGain: number } | null {
+    const unit = this.roster.find((u) => u.kind === 'creature' && u.element === element);
+    if (!unit) return null;
+    const from = unitName(unit);
+    const beforeBond = unit.bond ?? 0;
+    unit.bond = Math.min(BOND_CAP, beforeBond + CAPTURE.duplicateBond);
+    const result = this.addUnitXp(unit, CAPTURE.duplicateXp);
+    if (result.evolved) {
+      const key = this.evolveKeySkill(unit);
+      if (key && !result.gains.some((g) => g.cardId === key)) result.gains.push({ uid: unit.uid, cardId: key });
+    }
+    return { unit, from, to: unitName(unit), evolved: result.evolved, gains: result.gains, xp: CAPTURE.duplicateXp, bondGain: unit.bond - beforeBond };
   }
 
   /** 스테이지 클리어 시 보유 유닛의 유대 누적(상한 BOND_CAP). 뚝심 육성 보상(§14). */

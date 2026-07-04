@@ -124,6 +124,7 @@ export class UI {
   onSettings = () => {};
   onSettingsChange = () => {};
   onDex = () => {};
+  onExit = () => {};
   onManageSelectHolder = (_id: string) => {};
   onManageToggle = (_holderId: string, _cardId: string) => {};
 
@@ -295,6 +296,10 @@ export class UI {
     const viewerBtn = el('button', 'btn', '몬스터 보기') as HTMLButtonElement;
     viewerBtn.onclick = () => this.onOpenViewer();
     this.actions.append(viewerBtn);
+    const exitBtn = el('button', 'btn', '⌂ 나가기') as HTMLButtonElement;
+    exitBtn.title = '원정대(홈)로 나가기 (ESC)';
+    exitBtn.onclick = () => { playSfx('click'); this.onExit(); };
+    this.actions.append(exitBtn);
     const speedWrap = el('div', 'speed-toggle');
     for (const speed of [1, 2, 3] as const) {
       const b = el('button', `speed-btn${speed === 1 ? ' on' : ''}`, `${speed}x`) as HTMLButtonElement;
@@ -323,7 +328,7 @@ export class UI {
     this.manaBar = el('div');
     this.manaBar.id = 'mana-vert';
     this.manaBar.innerHTML = `
-      <div class="mv-crystal">마나</div>
+      <div class="mv-crystal" title="마나">💧</div>
       <div class="mv-track"><div class="mv-fill" id="mana-fill"></div></div>
       <div class="mv-val"><span id="mana-val">0</span>/<span id="mana-max">0</span></div>`;
     this.root.appendChild(this.manaBar);

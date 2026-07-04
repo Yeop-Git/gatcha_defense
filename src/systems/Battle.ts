@@ -4,6 +4,7 @@ import { type GameState, type OwnedUnit, displayName, deriveStats, unitName } fr
 import type { StageDef } from '../data/stages';
 import type { Element, ElementOrNeutral, Vec2 } from '../core/types';
 import { ENEMIES, creatureEnemyId } from '../data/enemies';
+import { MONSTERS } from '../data/monsters';
 import { CARD_BY_ID, type CardEffect, type CardElement } from '../data/cards';
 import {
   UNIT_SLOTS,
@@ -227,7 +228,11 @@ export class Battle {
     }
     // 야생 크리처 1마리 삽입 (스테이지↑ → 진화형 1→2→3). 웨이브 중반 등장.
     const creStage: 1 | 2 | 3 = this.stage.id <= 3 ? 1 : this.stage.id <= 8 ? 2 : 3;
-    const creEl = ELEMENTS[(this.stage.id + this.waveIndex) % ELEMENTS.length];
+    // 초반(스테이지 1~3)엔 보유 크리처와 같은 속성의 야생은 제외(본인 캐릭터 중복 회피).
+    const owned = new Set(this.state.roster.filter((u) => u.kind === 'creature').map((u) => u.element));
+    let pool = ELEMENTS.slice();
+    if (this.stage.id <= 3) { const f = pool.filter((el) => !owned.has(el)); if (f.length) pool = f; }
+    const creEl = pool[(this.stage.id + this.waveIndex) % pool.length];
     this.spawnQueue.push({ t: 2.5, enemy: creatureEnemyId(creEl, creStage) });
     this.spawnQueue.sort((a, b) => a.t - b.t);
     playSfx('wave');
@@ -744,35 +749,48 @@ export class Battle {
     playSfx('capture');
     const r = this.state.registerCapture(e.def.id);
     const dex = r.firstTime ? '도감 신규 등록' : `포획 ${r.count}회`;
-    const absorbed = this.state.absorbCapturedEnemy(e.def.id);
-    if (absorbed) {
-      const placed = this.units.find((m) => m.unit.uid === absorbed.unit.uid);
-      placed?.refreshStats();
-      const bondPct = Math.round(absorbed.bondGain * 100);
-      const evolvedText = absorbed.evolved ? ` ${absorbed.from}이(가) ${absorbed.to}(으)로 진화했습니다.` : '';
-      bus.emit('toast', { text: `포획 성공! ${e.def.name}의 힘을 ${displayName(absorbed.unit)}이(가) 흡수했습니다. XP +${absorbed.xp}, 유대 +${bondPct}%. (${dex})${evolvedText}`, kind: 'good' });
-      if (absorbed.evolved || absorbed.gains.length) {
-        bus.emit('unit:grown', {
-          uid: absorbed.unit.uid,
-          from: absorbed.from,
-          to: unitName(absorbed.unit),
-          element: absorbed.unit.element,
-          evolved: absorbed.evolved,
-          gains: absorbed.gains,
-        });
+
+    // 야생 크리처: 같은 속성 보유 시 흡수 강화(별도 유닛 X), 미보유 시 새 크리처로 합류.
+    if (e.def.creatureStage) {
+      const el = e.def.element as Element;
+      if (this.state.hasElement(el)) {
+        const absorbed = this.state.absorbCreatureDuplicate(el);
+        if (absorbed) { this.onCaptureAbsorb(absorbed, e, dex); return; }
       }
-      this.scene.vfx.ring(e.pos.x, e.pos.z, 0xf2ce6b, 2.2, 0.5);
-      this.scene.vfx.burst(e.pos.x, e.pos.z, 0xf2ce6b, 20);
-      const idx = this.enemies.indexOf(e);
-      if (idx >= 0) this.despawn(idx);
+      const evo = MONSTERS[el].evolveLevels;
+      const lvl = e.def.creatureStage >= 3 ? evo[1] : e.def.creatureStage === 2 ? evo[0] : 1;
+      const joined = this.state.giveUnit(el, lvl);
+      if (joined) bus.emit('toast', { text: `포획 성공! 야생 ${displayName(joined)}이(가) 원정대에 합류했습니다. (${dex})`, kind: 'good' });
+      else bus.emit('toast', { text: `원정대가 가득 차 합류하지 못했습니다. (${dex})`, kind: 'bad' });
+      this.captureFx(e);
       return;
     }
+
+    const absorbed = this.state.absorbCapturedEnemy(e.def.id);
+    if (absorbed) { this.onCaptureAbsorb(absorbed, e, dex); return; }
     const joined = this.state.giveEnemyUnit(e.def.id, this.state.stageIndex + 1);
     if (joined) bus.emit('toast', { text: `포획 성공! ${e.def.name}이 원정대에 합류했습니다. (${dex})`, kind: 'good' });
     else {
       bus.emit('toast', { text: `포획 성공! ${e.def.name}. 원정대가 가득 찼습니다. (${dex})`, kind: 'good' });
       bus.emit('capture:full', { species: e.def.id, name: e.def.name });
     }
+    this.captureFx(e);
+  }
+
+  /** 흡수 강화 공통 처리(토스트·성장 이벤트·이펙트·디스폰). enemy/야생 크리처 공용. */
+  private onCaptureAbsorb(absorbed: NonNullable<ReturnType<GameState['absorbCapturedEnemy']>>, e: Enemy, dex: string): void {
+    const placed = this.units.find((m) => m.unit.uid === absorbed.unit.uid);
+    placed?.refreshStats();
+    const bondPct = Math.round(absorbed.bondGain * 100);
+    const evolvedText = absorbed.evolved ? ` ${absorbed.from}이(가) ${absorbed.to}(으)로 진화했습니다.` : '';
+    bus.emit('toast', { text: `포획 성공! ${e.def.name}의 힘을 ${displayName(absorbed.unit)}이(가) 흡수했습니다. XP +${absorbed.xp}, 유대 +${bondPct}%. (${dex})${evolvedText}`, kind: 'good' });
+    if (absorbed.evolved || absorbed.gains.length) {
+      bus.emit('unit:grown', { uid: absorbed.unit.uid, from: absorbed.from, to: unitName(absorbed.unit), element: absorbed.unit.element, evolved: absorbed.evolved, gains: absorbed.gains });
+    }
+    this.captureFx(e);
+  }
+
+  private captureFx(e: Enemy): void {
     this.scene.vfx.ring(e.pos.x, e.pos.z, 0xf2ce6b, 2.2, 0.5);
     this.scene.vfx.burst(e.pos.x, e.pos.z, 0xf2ce6b, 20);
     const i = this.enemies.indexOf(e);

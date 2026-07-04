@@ -82,6 +82,7 @@ export class Game {
     this.ui.onSettings = () => this.ui.showSettings();
     this.ui.onSettingsChange = () => { this.speed = settings.speed; };
     this.ui.onDex = () => this.ui.showDex();
+    this.ui.onExit = () => this.exitBattle();
     this.ui.onManageSelectHolder = (id) => { this.manageHolder = id; this.renderManage(); };
     this.ui.onManageToggle = (holderId, cardId) => this.toggleEquip(holderId, cardId);
     this.ui.onCaptureDiscardPick = (id) => this.onCaptureDiscardPick(id);
@@ -96,7 +97,9 @@ export class Game {
   private wireInput(): void {
     // 숫자키 = 손패 카드 스마트 시전.
     window.addEventListener('keydown', (e) => {
-      if (this.mode !== 'battle' || !this.battle || this.paused) return;
+      if (this.mode !== 'battle' || !this.battle) return;
+      if (e.code === 'Escape') { this.exitBattle(); return; }
+      if (this.paused) return;
       if (e.code.startsWith('Digit')) {
         const idx = parseInt(e.code.slice(5)) - 1;
         const id = this.battle.deck.hand[idx];
@@ -710,6 +713,18 @@ export class Game {
     this.battle = null;
     if (state.stageIndex >= STAGES.length) { this.win(); return; }
     saveRun();
+    this.showLobby();
+  }
+
+  /** 전투 중 ESC/나가기 → 원정대(홈)로 복귀. 현재 스테이지는 포기(다시 출정 가능). */
+  private exitBattle(): void {
+    if (this.mode !== 'battle' || !this.battle) return;
+    this.ui.clearModal();
+    this.paused = false;
+    this.battle.finish();
+    this.battle = null;
+    saveRun();
+    this.ui.toast('전투를 떠나 원정대로 돌아왔습니다.', 'info');
     this.showLobby();
   }
 

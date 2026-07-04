@@ -726,3 +726,13 @@ body { font-family: 'Gowun Batang', 'Jua', serif; color: var(--ink); -webkit-use
 .big-card.el-grass { background: linear-gradient(180deg, #e6f3d8, #c6e1ae); }
 .big-card.el-light { background: linear-gradient(180deg, #fdf3d2, #efdb9c); }
 .big-card.el-dark { background: linear-gradient(180deg, #e8e4f4, #cbc5e2); }
+
+/* ══ 가독성: 어두운 배경 위 금색/밝은 텍스트엔 항상 외곽선 ══ */
+#mana-vert .mv-val, #mana-vert .mv-crystal,
+.chip, .chip span[id], #hud-top .gauge .val, #hud-top .gauge .icon,
+.title-hint, .lobby-stage, .lobby-stage b,
+.manage-holders h2, .manage-cards h2, .manage-head h1, .lobby-head h1,
+#viewer-list h2, .holder-item .hi-name, .roster-item .ri-name, .lobby-mon .lm-name {
+  text-shadow: 0 1px 2px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.6);
+}
+#mana-vert .mv-crystal { filter: drop-shadow(0 2px 3px rgba(0,0,0,0.7)); }
