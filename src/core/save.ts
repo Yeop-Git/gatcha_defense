@@ -9,7 +9,7 @@ export function saveRun(): void {
       baseHpMax: state.baseHpMax, baseHp: state.baseHp, gold: state.gold, stageIndex: state.stageIndex,
       roster: state.roster, heroEquipped: state.heroEquipped, placementCap: state.placementCap,
       unitAtkMult: state.unitAtkMult, manaRegenMult: state.manaRegenMult, synergyCdCut: state.synergyCdCut,
-      reviveAvailable: state.reviveAvailable, discovered: state.discovered,
+      darkKillStacks: state.darkKillStacks, discovered: state.discovered,
     };
     localStorage.setItem(KEY, JSON.stringify(snap));
   } catch {
@@ -36,10 +36,13 @@ export function loadRun(): boolean {
     // 구버전 스냅샷 방어: 새 필드 기본값 보장
     state.discovered = state.discovered ?? [];
     state.synergyCdCut = state.synergyCdCut ?? 0;
-    for (const u of state.roster) u.branch = u.branch ?? null;
+    state.darkKillStacks = state.darkKillStacks ?? 0;
+    for (const u of state.roster) {
+      u.branch = u.branch ?? null;
+      u.discarded = u.discarded ?? [];
+    }
     // 로드된 uid와 새 uid 충돌 방지
     bumpUidAbove(state.roster.map((u) => u.uid));
-    state.mana = state.manaMax;
     return true;
   } catch {
     return false;

@@ -49,6 +49,10 @@ export class MonsterViewer {
     this.controls.target.set(0, 1.4, 0);
     this.controls.autoRotate = false;
     this.controls.enabled = false;
+
+    // 창 크기에 맞춘 종횡비 (없으면 뷰어가 늘어져 보임)
+    this.resize(window.innerWidth, window.innerHeight);
+    window.addEventListener('resize', () => this.resize(window.innerWidth, window.innerHeight));
   }
 
   setUnit(unit: OwnedUnit): void {
@@ -72,6 +76,8 @@ export class MonsterViewer {
     if (this.model) {
       this.model.rotation.y += dt * 0.4;
       this.model.position.y = 0.4 + Math.sin(this.t * 2) * 0.12; // 부유
+      const mixer = this.model.userData.mixer as THREE.AnimationMixer | undefined;
+      if (mixer) mixer.update(dt);
     }
     this.controls.update();
   }

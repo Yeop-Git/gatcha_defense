@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import type { Scene } from '../render/Scene';
-import { type GameState, type OwnedUnit, unitName } from '../core/GameState';
+import { type GameState, type OwnedUnit, displayName } from '../core/GameState';
 import type { StageDef } from '../data/stages';
 import type { Element, ElementOrNeutral, Vec2 } from '../core/types';
 import { ENEMIES } from '../data/enemies';
 import { CARD_BY_ID, type CardEffect, type CardElement } from '../data/cards';
-import { UNIT_SLOTS, BASE_LEAK_NORMAL, BASE_LEAK_MINIBOSS, BASE_LEAK_BOSS, ENEMY, BURN_DPS_PER_STACK, OVERGROWTH_DPS, HERO, DARK_KILL_STACK, DARK_KILL_STACK_MAX, ELEMENT_COLOR, NEUTRAL_COLOR, SYNERGY_COOLDOWN } from '../data/constants';
+import { UNIT_SLOTS, BASE_LEAK_NORMAL, BASE_LEAK_MINIBOSS, BASE_LEAK_BOSS, ENEMY, BURN_DPS_PER_STACK, OVERGROWTH_DPS, HERO, DARK_KILL_STACK, DARK_KILL_STACK_MAX, ELEMENT_COLOR, NEUTRAL_COLOR, SYNERGY_COOLDOWN, GRASS_MANA_REGEN, BASE_HEAL_CD } from '../data/constants';
 import { CORRUPT_MID_ID, CORRUPT_FINAL_ID, CORRUPT_SKILL, CORRUPT_TINT_P2, corruptedDef } from '../data/corrupted';
 
 /** 속성색 (무속성 포함) */
@@ -38,7 +38,6 @@ export class Battle implements SynergyCtx {
   private waveClock = 0;
   private spawnQueue: SpawnEvent[] = [];
   private healTimer = 0;
-  private darkKillMult = 1;
   private hasDarkS3 = false;
   private deadUnits: OwnedUnit[] = [];
   private time = 0;
@@ -77,6 +76,11 @@ export class Battle implements SynergyCtx {
     return -1;
   }
 
+  /** 이 유닛이 이번 스테이지에서 쓰러졌는가 (재배치 불가 — 긴급 소집으로만 복귀). */
+  private isDead(uid: string): boolean {
+    return this.deadUnits.some((u) => u.uid === uid);
+  }
+
   /** 기본 자동 배치: 강한 순 유닛을 빈 슬롯에. */
   private autoPlace(): void {
     const sorted = [...this.state.roster].sort((a, b) => b.stage - a.stage || b.level - a.level);
@@ -105,22 +109,23 @@ export class Battle implements SynergyCtx {
     }
   }
 
-  /** 배치 UI용: 로스터 유닛의 배치 상태 목록 */
-  placeablesState(): { id: string; name: string; element: import('../core/types').ElementOrNeutral; placed: boolean }[] {
-    const list: { id: string; name: string; element: import('../core/types').ElementOrNeutral; placed: boolean }[] = [];
+  /** 배치 UI용: 로스터 유닛의 배치 상태 목록 (쓰러진 유닛은 재배치 불가 표시) */
+  placeablesState(): { id: string; name: string; element: import('../core/types').ElementOrNeutral; placed: boolean; dead: boolean }[] {
+    const list: { id: string; name: string; element: import('../core/types').ElementOrNeutral; placed: boolean; dead: boolean }[] = [];
     for (const u of this.state.roster) {
-      list.push({ id: u.uid, name: unitName(u), element: u.element, placed: this.units.some((m) => m.unit.uid === u.uid) });
+      list.push({ id: u.uid, name: displayName(u), element: u.element, placed: this.units.some((m) => m.unit.uid === u.uid), dead: this.isDead(u.uid) });
     }
     return list;
   }
 
-  /** 배치 토글 (배치 페이즈에서만 호출). 배치되어 있으면 회수, 아니면 빈 슬롯에 배치. */
+  /** 배치 토글 (배치 페이즈에서만 호출). 쓰러진 유닛은 재배치 불가(긴급 소집 카드로만). */
   togglePlace(id: string): void {
     if (this.phase !== 'placement') return;
     const placed = this.units.find((m) => m.unit.uid === id);
     if (placed) { this.removeUnit(placed.slot); return; }
     const unit = this.state.roster.find((u) => u.uid === id);
     if (!unit) return;
+    if (this.isDead(id)) { bus.emit('toast', { text: '쓰러진 유닛은 이번 스테이지에 재배치 불가 (긴급 소집 카드로 복귀)', kind: 'bad' }); return; }
     if (this.units.length >= this.state.placementCap) { bus.emit('toast', { text: `유닛은 최대 ${this.state.placementCap}체까지 배치`, kind: 'bad' }); return; }
     const s = this.firstFreeSlot();
     if (s >= 0) this.placeUnit(unit, s);
@@ -175,7 +180,10 @@ export class Battle implements SynergyCtx {
   update(dt: number): void {
     this.time += dt;
     const t = this.time;
+    // 풀 = 마나 펌핑: 배치된 풀 유닛 수만큼 마나 재생 보너스 (풀의 "장악" 정체성, §4.2)
+    this.deck.bonusRegen = this.units.filter((m) => m.alive && m.element === 'grass').length * GRASS_MANA_REGEN;
     this.deck.regenMana(dt);
+    this.deck.updateCooldowns(dt);
     this.synergy.update(dt);
     this.updateCastleAttack(dt);
     this.scene.setBaseHp(this.state.baseHp / this.state.baseHpMax);
@@ -194,15 +202,16 @@ export class Battle implements SynergyCtx {
     this.updateHealers(dt);
     this.scene.vfx.update(dt);
 
-    // 웨이브 종료 판정
-    if (this.phase === 'wave' && this.spawnQueue.length === 0 && this.enemies.length === 0) {
-      this.onWaveClear();
-    }
-    // 패배 판정 (성 HP 0 = 런 종료, §1)
+    // 패배 판정을 웨이브 종료 판정보다 먼저 — "보스 통과로 기지 파괴 = 승리" 버그 방지
     if (this.state.baseHp <= 0 && this.phase !== 'lost' && this.phase !== 'won') {
       this.phase = 'lost';
       bus.emit('base:destroyed', {});
       bus.emit('run:lose', {});
+      return;
+    }
+    // 웨이브 종료 판정
+    if (this.phase === 'wave' && this.spawnQueue.length === 0 && this.enemies.length === 0) {
+      this.onWaveClear();
     }
   }
 
@@ -241,8 +250,9 @@ export class Battle implements SynergyCtx {
   private fireUnitShot(m: Monster, target: Enemy): void {
     const color = ELEMENT_COLOR[m.element];
     let power = m.attackPower();
-    if (m.element === 'dark' && this.hasDarkS3) power *= this.darkKillMult;
-    // 빛 유닛: 공격 대신 아군 보조 + 약한 피해
+    if (m.element === 'dark' && this.hasDarkS3) power *= 1 + this.state.darkKillStacks;
+    // 공격 타겟을 바라본다
+    m.faceTowards(target.pos.x, target.pos.z);
     const stage = m.unit.stage;
     // 머즐 플래시 — 유닛이 쏘는 게 보이도록
     this.scene.vfx.burst(m.pos.x, m.pos.z, color, 5, 1.3, 1.3);
@@ -252,11 +262,11 @@ export class Battle implements SynergyCtx {
       // 착탄 이펙트
       this.scene.vfx.burst(hit.pos.x, hit.pos.z, color, 8, 2.2, 1.0);
       this.scene.vfx.ring(hit.pos.x, hit.pos.z, color, 1.1, 0.22);
-      // 속성별 표식
-      if (m.element === 'fire') hit.marks.add('burn', 1);
-      else if (m.element === 'water') { hit.marks.add('wet', 1); hit.knockback(0.4); }
-      else if (m.element === 'dark') hit.marks.add('curse', 1);
-      else if (m.element === 'grass') hit.marks.add('overgrowth', 1);
+      // 속성별 표식 (시전자 진화 단계 기록 — 협동기 "양쪽" 게이트)
+      if (m.element === 'fire') hit.marks.add('burn', 1, stage);
+      else if (m.element === 'water') { hit.marks.add('wet', 1, stage); hit.knockback(0.4); }
+      else if (m.element === 'dark') hit.marks.add('curse', 1, stage);
+      else if (m.element === 'grass') hit.marks.add('overgrowth', 1, stage);
       else if (m.element === 'light') this.lightSupport(m);
     });
     this.projectiles.push(p);
@@ -280,7 +290,7 @@ export class Battle implements SynergyCtx {
         for (const z of this.zones) {
           if (z.contains(e.pos.x, e.pos.z)) {
             e.zoneSlow = Math.max(e.zoneSlow, z.slow);
-            if (z.root > 0) e.rootTimer = Math.max(e.rootTimer, 0.2);
+            if (z.root > 0) e.applyRoot(0.2); // 보스는 CC 저항으로 반감
             if (z.dps > 0) this.damageDot(e, z.dps * dt, z.element);
             // (overgrowth 표식은 풀 '공격'으로만 부여 — 장판 위 상시 스탬프는 협동기 스팸이라 제거)
           }
@@ -295,6 +305,12 @@ export class Battle implements SynergyCtx {
 
       if (e.reachedBase) {
         this.leak(e);
+        // 보스/미니보스는 통과로 사라지지 않는다 — 기지를 타격하고 경로 시작점으로 회귀 (처치로만 클리어)
+        if (e.isBoss || e.isMini) {
+          e.resetToPathStart();
+          bus.emit('toast', { text: `💥 ${e.def.name}이(가) 신전을 타격하고 되돌아온다!`, kind: 'bad' });
+          continue;
+        }
         this.despawn(i);
         continue;
       }
@@ -319,7 +335,8 @@ export class Battle implements SynergyCtx {
       e.bossPhase = 2;
       e.speed *= 1.3;
       e.def = { ...e.def, attack: Math.round(e.def.attack * 1.35) };
-      e.abilityInterval *= 0.5;
+      // 자기 회복형(풀)은 가속하지 않는다 — P2 재생이 가용 DPS를 넘어서는 소프트 불가 방지
+      if (CORRUPT_SKILL[el].kind !== 'thornheal') e.abilityInterval *= 0.5;
       tintModel(e.view, CORRUPT_TINT_P2);
       this.scene.vfx.burst(e.pos.x, e.pos.z, 0x4a4e9e, 30, 5, 2);
       this.scene.vfx.ring(e.pos.x, e.pos.z, 0x8a5fae, 6, 0.8);
@@ -426,7 +443,8 @@ export class Battle implements SynergyCtx {
     bus.emit('enemy:killed', { element: e.element, x: e.pos.x, z: e.pos.z, isBoss: e.isBoss });
     this.scene.vfx.burst(e.pos.x, e.pos.z, ELEMENT_COLOR[e.element === 'neutral' ? 'light' : e.element] ?? 0xffffff, 10);
     this.state.gold += e.isBoss ? 100 : e.isMini ? 30 : 3;
-    if (this.hasDarkS3) this.darkKillMult = Math.min(1 + DARK_KILL_STACK_MAX, this.darkKillMult + DARK_KILL_STACK);
+    // 어둠 3단 처치 스택 — 런 내 영구 누적 (§5.4), GameState에 보관
+    if (this.hasDarkS3) this.state.darkKillStacks = Math.min(DARK_KILL_STACK_MAX, this.state.darkKillStacks + DARK_KILL_STACK);
   }
 
   private despawn(i: number): void {
@@ -564,9 +582,9 @@ export class Battle implements SynergyCtx {
   playCard(id: string, point?: Vec2): boolean {
     const def = CARD_BY_ID[id];
     if (!def) return false;
-    // 부활 카드: 대상이 없으면 마나 소모 전에 차단 (헛시전 방지)
-    if (def.effect.kind === 'revive' && (!this.state.reviveAvailable || this.deadUnits.length === 0)) {
-      bus.emit('toast', { text: this.state.reviveAvailable ? '부활시킬 쓰러진 유닛이 없습니다' : '부활은 런당 1회만 가능', kind: 'bad' });
+    // 긴급 소집(rally): 쓰러진 유닛이 없으면 마나 소모 전에 차단 (헛시전 방지)
+    if (def.effect.kind === 'rally' && this.deadUnits.length === 0) {
+      bus.emit('toast', { text: '소집할 쓰러진 유닛이 없습니다', kind: 'bad' });
       return false;
     }
     let pt = point;
@@ -575,6 +593,8 @@ export class Battle implements SynergyCtx {
     }
     if (!this.deck.consume(id)) return false;
     this.applyCardEffect(def.effect, def.element, pt);
+    // 응급 처치: 재사용 쿨다운 (스팸 방지, §6.2 "쿨다운 존재")
+    if (def.effect.kind === 'baseHeal') this.deck.setCooldown(id, BASE_HEAL_CD);
     bus.emit('card:played', { id });
     return true;
   }
@@ -590,7 +610,7 @@ export class Battle implements SynergyCtx {
       case 'damage': {
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
           this.hitEnemy(e, fx.amount, fx.element, stage, { ignoreDef: false });
-          if (fx.mark) e.marks.add(fx.mark, fx.markStacks ?? 1);
+          if (fx.mark) e.marks.add(fx.mark, fx.markStacks ?? 1, stage);
           if (fx.knockback) e.knockback(fx.knockback);
         }
         this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), fx.radius, 0.4);
@@ -602,7 +622,7 @@ export class Battle implements SynergyCtx {
         const near = this.enemiesInRadius(p.x, p.z, 8).sort((a, b) => d2(a) - d2(b)).slice(0, fx.targets);
         for (const e of near) {
           this.hitEnemy(e, fx.amount, fx.element, stage);
-          if (fx.mark) e.marks.add(fx.mark, fx.markStacks ?? 1);
+          if (fx.mark) e.marks.add(fx.mark, fx.markStacks ?? 1, stage);
           this.scene.vfx.burst(e.pos.x, e.pos.z, colorOf(fx.element), 8);
         }
         break;
@@ -621,13 +641,13 @@ export class Battle implements SynergyCtx {
       case 'markArea':
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
           this.synergy.onReaction(e, fx.element, stage, 10, this);
-          e.marks.add(fx.mark, fx.stacks);
+          e.marks.add(fx.mark, fx.stacks, stage);
         }
         this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), fx.radius, 0.4);
         break;
       case 'defDown':
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
-          e.defDownPct = fx.pct; e.defDownTimer = fx.duration; e.marks.add('curse', 1);
+          e.defDownPct = fx.pct; e.defDownTimer = fx.duration; e.marks.add('curse', 1, stage);
           this.synergy.onReaction(e, fx.element, stage, 10, this);
         }
         this.scene.vfx.ring(p.x, p.z, ELEMENT_COLOR.dark, fx.radius, 0.4);
@@ -636,7 +656,7 @@ export class Battle implements SynergyCtx {
         let total = 0;
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
           total += this.hitEnemy(e, fx.amount, fx.element, stage);
-          e.marks.add('curse', 1);
+          e.marks.add('curse', 1, stage);
         }
         const heal = total * fx.drainPct;
         this.units.forEach((m) => m.heal(heal / Math.max(1, this.units.length)));
@@ -668,15 +688,23 @@ export class Battle implements SynergyCtx {
         this.scene.vfx.ring(p.x, p.z, 0xf2ce6b, fx.radius, 0.5);
         this.scene.vfx.burst(p.x, p.z, 0xf2ce6b, 16);
         break;
-      case 'revive':
-        if (this.state.reviveAvailable && this.deadUnits.length) {
-          const u = this.deadUnits.shift()!;
+      case 'rally': {
+        // 긴급 소집: 쓰러진 유닛 1체를 빈 슬롯에 HP 50%로 재배치 (죽음의 대가는 카드/마나)
+        const u = this.deadUnits.shift();
+        if (u) {
           const slot = UNIT_SLOTS.findIndex((_, i) => !this.units.some((m) => m.slot === i));
-          if (slot >= 0) { this.placeUnit(u, slot); const m = this.slotOccupant(slot); if (m) m.hp = m.maxHp * 0.5; }
-          this.state.reviveAvailable = false;
-          bus.emit('toast', { text: '유닛 부활!', kind: 'good' });
+          if (slot >= 0) {
+            this.placeUnit(u, slot);
+            const m = this.slotOccupant(slot);
+            if (m) { m.hp = m.maxHp * 0.5; this.scene.vfx.ring(m.pos.x, m.pos.z, 0xf2ce6b, 2.5, 0.6); }
+            bus.emit('toast', { text: `긴급 소집! ${displayName(u)} 복귀 (HP 50%)`, kind: 'good' });
+          } else {
+            this.deadUnits.unshift(u); // 슬롯 없음 → 되돌림
+            bus.emit('toast', { text: '빈 슬롯이 없습니다', kind: 'bad' });
+          }
         }
         break;
+      }
       case 'baseHeal':
         this.state.heal(fx.amount);
         this.scene.vfx.ring(this.scene.base.position.x, this.scene.base.position.z, 0x6fae4c, 3.5, 0.5);
@@ -694,16 +722,12 @@ export class Battle implements SynergyCtx {
         }
         break;
       }
-      case 'placementUp':
-        this.state.placementCap += fx.n;
-        bus.emit('toast', { text: `배치 상한 +${fx.n}`, kind: 'good' });
-        break;
       case 'coinflip':
         if (Math.random() < 0.5) { this.state.gold += 20; bus.emit('toast', { text: '동전 앞면! 골드 +20', kind: 'good' }); }
         else bus.emit('toast', { text: '동전 뒷면… 꽝', kind: 'bad' });
         break;
       case 'bind':
-        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) e.rootTimer = Math.max(e.rootTimer, fx.duration);
+        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) e.applyRoot(fx.duration); // 보스는 반감
         this.scene.vfx.ring(p.x, p.z, 0xb8a888, fx.radius, 0.5);
         this.scene.vfx.burst(p.x, p.z, 0xb8a888, 12);
         break;

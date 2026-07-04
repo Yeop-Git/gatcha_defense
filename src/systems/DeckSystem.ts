@@ -8,11 +8,35 @@ export class DeckSystem {
   mana: number;
   manaMax: number;
   private regen: number;
+  /** 추가 마나 재생 (풀 유닛 마나 펌핑 등) — Battle이 매 프레임 세팅 */
+  bonusRegen = 0;
+  /** 카드별 재사용 쿨다운 (응급 처치 등) */
+  private cooldowns = new Map<string, { remain: number; max: number }>();
 
   constructor(manaMax: number, regen: number) {
     this.manaMax = manaMax;
     this.mana = manaMax;
     this.regen = regen;
+  }
+
+  setCooldown(id: string, sec: number): void {
+    this.cooldowns.set(id, { remain: sec, max: sec });
+  }
+
+  /** 카드 쿨다운 진행률 0~1 (오버레이 표시용) */
+  cdFrac(id: string): number {
+    const cd = this.cooldowns.get(id);
+    return cd ? cd.remain / cd.max : 0;
+  }
+
+  updateCooldowns(dt: number): void {
+    for (const [id, cd] of this.cooldowns) {
+      cd.remain -= dt;
+      if (cd.remain <= 0) {
+        this.cooldowns.delete(id);
+        bus.emit('mana:change', { mana: this.mana, max: this.manaMax }); // 손패 재렌더
+      }
+    }
   }
 
   /** 스테이지 시작: 카드풀에서 랜덤 N장 (중복 허용 안 함, 부족하면 있는 만큼) */
@@ -30,7 +54,7 @@ export class DeckSystem {
 
   canPlay(id: string): boolean {
     const d = CARD_BY_ID[id];
-    return !!d && this.mana >= d.cost && this.hand.includes(id);
+    return !!d && this.mana >= d.cost && this.hand.includes(id) && this.cdFrac(id) <= 0;
   }
 
   /** 사용 성공 시 손패에서 제거 + 마나 차감 */
@@ -60,7 +84,7 @@ export class DeckSystem {
 
   regenMana(dt: number): void {
     const before = this.mana;
-    this.mana = Math.min(this.manaMax, this.mana + this.regen * dt);
+    this.mana = Math.min(this.manaMax, this.mana + (this.regen + this.bonusRegen) * dt);
     if (Math.floor(before) !== Math.floor(this.mana)) {
       bus.emit('mana:change', { mana: this.mana, max: this.manaMax });
     }

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { Element } from '../core/types';
-import { type OwnedUnit, type DerivedStats, deriveStats, unitName, unitTint, unitBranch } from '../core/GameState';
+import { type OwnedUnit, type DerivedStats, deriveStats, displayName, unitTint, unitBranch } from '../core/GameState';
 import { makeCreature, makeLabelSprite, makeTextSprite, disposeCreatureView } from '../render/fallback';
-import { BLESS_BUFF_PER_STACK, FLOAT, isFloating } from '../data/constants';
+import { BLESS_BUFF_PER_STACK, FLOAT, isFloating, MARK } from '../data/constants';
 
 /** 배치된 아군 유닛 (고정 슬롯). OwnedUnit(육성 모델)을 감싼 전투 인스턴스. */
 export class Monster {
@@ -40,20 +40,27 @@ export class Monster {
     this.pos.set(x, 0, z);
     this.view.position.copy(this.pos);
 
-    // 이름표 (다글자 한글도 안 깨지는 라벨). 분기 선택 시 형태명 병기.
+    // 이름표 (닉네임 우선, 다글자 한글도 안 깨지는 라벨). 분기 선택 시 형태명 병기.
     const br = unitBranch(unit);
-    const label = makeLabelSprite(br ? `${unitName(unit)}·${br.name}` : unitName(unit), { worldHeight: 0.5 });
+    const label = makeLabelSprite(br ? `${displayName(unit)}·${br.name}` : displayName(unit), { worldHeight: 0.5 });
     label.position.set(0, 2.3 + unit.stage * 0.2, 0);
     this.view.add(label);
 
-    // 보호막 셸
+    // 보호막 셸 (개체 고유 지오메트리 — dispose 대상 표시)
     this.shieldMesh = new THREE.Mesh(
       new THREE.SphereGeometry(1.1 * scale, 16, 12),
       new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.0, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
     this.shieldMesh.position.y = 0.9 * scale;
+    this.shieldMesh.userData.placeholder = true;
     this.view.add(this.shieldMesh);
   }
+
+  /** 공격 타겟을 바라보게 회전 목표 설정 (모델 +Z 정면 기준). */
+  faceTowards(x: number, z: number): void {
+    this.targetYaw = Math.atan2(x - this.pos.x, z - this.pos.z);
+  }
+  private targetYaw: number | null = null;
 
   private _atkMult = 1;
 
@@ -69,12 +76,26 @@ export class Monster {
     this.shield += amount;
   }
 
+  private blessTimer = 0;
+
+  /** 축복 (§4.3): 공/방 강화, 지속시간 만료 시 해제. */
   bless(stacks: number): void {
-    this.blessStacks = Math.min(3, this.blessStacks + stacks);
+    this.blessStacks = Math.min(MARK.bless.maxStacks, this.blessStacks + stacks);
+    this.blessTimer = MARK.bless.duration;
     if (!this.blessSprite) {
       this.blessSprite = makeTextSprite('✨', 0.5);
       this.blessSprite.position.set(0.6, 1.8, 0);
       this.view.add(this.blessSprite);
+    }
+  }
+
+  private clearBless(): void {
+    this.blessStacks = 0;
+    if (this.blessSprite) {
+      this.view.remove(this.blessSprite);
+      (this.blessSprite.material as THREE.SpriteMaterial).map?.dispose();
+      this.blessSprite.material.dispose();
+      this.blessSprite = undefined;
     }
   }
 
@@ -109,6 +130,9 @@ export class Monster {
 
   update(dt: number, t: number): void {
     if (this.atkCd > 0) this.atkCd -= dt;
+    // GLTF 내장 애니메이션 (대기 등)
+    const mixer = this.view.userData.mixer as THREE.AnimationMixer | undefined;
+    if (mixer) mixer.update(dt);
     if (this.overheatTimer > 0) {
       this.overheatTimer -= dt;
       if (this.overheatTimer <= 0) this.overheatMult = 1;
@@ -116,6 +140,17 @@ export class Monster {
     if (this.hasteTimer > 0) {
       this.hasteTimer -= dt;
       if (this.hasteTimer <= 0) this.hasteMult = 1;
+    }
+    if (this.blessTimer > 0) {
+      this.blessTimer -= dt;
+      if (this.blessTimer <= 0) this.clearBless();
+    }
+    // 공격 타겟을 바라보게 부드럽게 회전
+    if (this.targetYaw !== null) {
+      let d = this.targetYaw - this.view.rotation.y;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      this.view.rotation.y += d * Math.min(1, dt * 10);
     }
     // 빛/어둠 = 부유(floating) 대기 연출. 나머지는 접지(기본 애니메이션 추후).
     this.view.position.y = isFloating(this.element)

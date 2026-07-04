@@ -46,14 +46,23 @@ export class SynergySystem {
     for (const def of SYNERGIES) {
       if (def.reaction !== reaction) continue;
       if (this.cooldowns.has(def.id)) continue;
-      // 트리거 표식 확인
+      // 트리거 확인: 표식 중첩. overgrowth는 적이 풀 장판 위에 서 있어도 성립(§7 "장판 위에").
       const need = def.trigger.minStacks ?? 1;
-      if (e.marks.stacks(def.trigger.mark) < need) continue;
-      // 등급 게이트
-      if (unitStage < def.minStage) continue;
-      if (unitStage === 1 && !def.weakAtStage1) continue;
+      let markStage = e.marks.sourceStage(def.trigger.mark);
+      let viaZone = false;
+      if (e.marks.stacks(def.trigger.mark) < need) {
+        const zoneOk = def.trigger.mark === 'overgrowth' && need <= 1 &&
+          ctx.zonesNear(e.pos.x, e.pos.z, 0.1).some((z) => z.kind === 'overgrowth');
+        if (!zoneOk) continue;
+        viaZone = true;
+        markStage = unitStage; // 장판 경유는 시전자 단계 기준
+      }
+      // 등급 게이트 (§7.1): 양쪽(표식을 남긴 쪽 + 반응한 쪽) 모두 기준 충족
+      const effStage = viaZone ? unitStage : Math.min(unitStage, markStage || 1);
+      if (effStage < def.minStage) continue;
+      if (effStage === 1 && !def.weakAtStage1) continue;
 
-      const mag = unitStage === 1 && def.weakAtStage1 ? 0.5 : 1; // 1단끼리 약화판
+      const mag = effStage === 1 && def.weakAtStage1 ? 0.5 : 1; // 1단끼리 약화판
       this.cooldowns.set(def.id, this.cooldown);
       const handler = HANDLERS[def.effect];
       if (handler) {
@@ -99,11 +108,9 @@ const HANDLERS: Record<string, EffectHandler> = {
     ctx.vfxRing(x, z, 0xf2ce6b, 9, 0.9);
     ctx.vfxRing(x, z, 0x4a4e9e, 7, 0.9);
   },
-  // 증기 장막: 젖음 소모 → 안개(감속 장판 근사)
+  // 증기 장막: 젖음 소모 → 증기 안개가 주변 적을 지속 감속 (zoneSlow는 매 프레임 리셋되므로 지속형 사용)
   steamVeil: (_e, _d, x, z, _power, mag, ctx) => {
-    ctx.enemiesInRadius(x, z, 3).forEach((en) => {
-      en.zoneSlow = Math.min(0.7, en.zoneSlow + 0.4 * mag);
-    });
+    ctx.enemiesInRadius(x, z, 3).forEach((en) => en.applySlow(0.45 * mag, 3));
     ctx.vfxBurst(x, z, 0xd7e6ea, 16);
     ctx.vfxRing(x, z, 0xd7e6ea, 4, 0.6);
   },

@@ -89,9 +89,5 @@ export const ENEMIES: Record<string, EnemyDef> = {
   yeti: { id: 'yeti', name: '설산 예티', element: 'water', hp: 380, speed: 0.85, attack: 13, leak: 'miniboss', radius: 1.35, model: 'Yeti.gltf', tier: 'miniboss', desc: '설산의 주인. 얼어붙은 주먹으로 모든 것을 부순다.' },
   mushking: { id: 'mushking', name: '버섯왕', element: 'grass', hp: 440, speed: 0.8, attack: 14, leak: 'miniboss', radius: 1.45, model: 'MushroomKing.gltf', tier: 'miniboss', desc: '숲을 삼킨 거대 버섯의 왕. 포자 폭풍을 일으킨다.' },
 
-  // ── 최종 보스 ──────────────────────────────────────────────
-  chimera: { id: 'chimera', name: '일월식의 키메라', element: 'light', hp: 1600, speed: 0.7, attack: 20, leak: 'boss', radius: 2.2, model: 'Dragon_Evolved.gltf', tier: 'boss', desc: '해와 달을 삼킨 최종 시련. 빛과 어둠 두 형상을 오간다.' },
+  // (최종 보스는 §9 '가지 않은 길' 타락체가 동적 생성 — data/corrupted.ts)
 };
-
-/** 도감 표시 순서 (선언 순서 그대로). */
-export const BESTIARY_ORDER: string[] = Object.keys(ENEMIES);

@@ -6,6 +6,8 @@ import { makeTextSprite } from '../render/fallback';
 interface MarkInstance {
   stacks: number;
   remaining: number;
+  /** 표식을 남긴 유닛의 최고 진화 단계 — 협동기 등급 게이트(§7.1 "양쪽 모두") */
+  sourceStage: number;
 }
 
 /**
@@ -24,20 +26,26 @@ export class Marks {
     this.topY = topY;
   }
 
-  add(type: MarkType, stacks = 1): void {
+  add(type: MarkType, stacks = 1, sourceStage = 1): void {
     const cfg = MARK[type];
     const cur = this.map.get(type);
     if (cur) {
       cur.stacks = Math.min(cfg.maxStacks, cur.stacks + stacks);
       cur.remaining = cfg.duration; // 갱신
+      cur.sourceStage = Math.max(cur.sourceStage, sourceStage);
     } else {
-      this.map.set(type, { stacks: Math.min(cfg.maxStacks, stacks), remaining: cfg.duration });
+      this.map.set(type, { stacks: Math.min(cfg.maxStacks, stacks), remaining: cfg.duration, sourceStage });
     }
     this.refreshSprite(type);
   }
 
   stacks(type: MarkType): number {
     return this.map.get(type)?.stacks ?? 0;
+  }
+
+  /** 표식을 남긴 쪽의 최고 진화 단계 (협동기 "양쪽" 게이트용). 없으면 0. */
+  sourceStage(type: MarkType): number {
+    return this.map.get(type)?.sourceStage ?? 0;
   }
 
   has(type: MarkType): boolean {

@@ -23,11 +23,10 @@ export type CardEffect =
   | { kind: 'blessOne'; stacks: number }
   | { kind: 'cleanseHeal'; amount: number }
   | { kind: 'judgment'; amount: number; radius: number; darkBonus: number }
-  | { kind: 'revive' }
+  | { kind: 'rally' }
   | { kind: 'baseHeal'; amount: number }
   | { kind: 'overheat'; mult: number; duration: number }
   | { kind: 'draw'; n: number }
-  | { kind: 'placementUp'; n: number }
   | { kind: 'coinflip' }
   | { kind: 'bind'; radius: number; duration: number }
   | { kind: 'haste'; mult: number; duration: number };
@@ -80,11 +79,10 @@ function buildEffect(kind: string, p: Params, cardEl: CardElement): CardEffect {
     case 'blessOne': return { kind, stacks: num(p, 'stacks', 2) };
     case 'cleanseHeal': return { kind, amount: num(p, 'amount') };
     case 'judgment': return { kind, amount: num(p, 'amount'), radius: num(p, 'radius', 2), darkBonus: num(p, 'darkBonus', 1.5) };
-    case 'revive': return { kind };
+    case 'rally': return { kind };
     case 'baseHeal': return { kind, amount: num(p, 'amount', 25) };
     case 'overheat': return { kind, mult: num(p, 'mult', 2), duration: num(p, 'duration', 8) };
     case 'draw': return { kind, n: num(p, 'n', 1) };
-    case 'placementUp': return { kind, n: num(p, 'n', 1) };
     case 'coinflip': return { kind };
     case 'bind': return { kind, radius: num(p, 'radius', 2.6), duration: num(p, 'duration', 2.5) };
     case 'haste': return { kind, mult: num(p, 'mult', 1.3), duration: num(p, 'duration', 6) };
@@ -149,11 +147,10 @@ export function cardIcon(def: CardDef): string {
     case 'cleanseHeal': return '🙏';
     case 'blessOne': return '😇';
     case 'judgment': return '⚖️';
-    case 'revive': return '🕊️';
+    case 'rally': return '🚩';
     case 'baseHeal': return '⛑️';
     case 'draw': return '🃏';
     case 'coinflip': return '🪙';
-    case 'placementUp': return '🚩';
     case 'bind': return '🕸️';
     case 'haste': return '💨';
     case 'overheat': return '♨️';

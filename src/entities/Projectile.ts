@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Enemy } from './Enemy';
 
-/** 투사체: 대상 적을 추적, 도달 시 onArrive 콜백. 포획구/유닛탄 공용. */
+/** 투사체: 대상 적을 추적, 도달 시 onArrive 콜백. 유닛탄/성 평타 공용. */
 export class Projectile {
   mesh: THREE.Mesh;
   target: Enemy | null;
@@ -66,7 +66,12 @@ export class Projectile {
 
   dispose(parent: THREE.Object3D): void {
     parent.remove(this.mesh);
-    this.mesh.geometry.dispose();
-    (this.mesh.material as THREE.Material).dispose();
+    // 본체 + 발광 헤일로 자식까지 전부 해제 (GPU 버퍼 누수 방지)
+    this.mesh.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.geometry.dispose();
+        (o.material as THREE.Material).dispose();
+      }
+    });
   }
 }

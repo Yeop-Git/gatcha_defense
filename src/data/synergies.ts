@@ -50,8 +50,9 @@ export const SYNERGIES: SynergyDef[] = [
   // ── P1 (확장) ──
   {
     id: 'steam_veil', name: '증기 장막', a: 'water', b: 'fire',
+    // 젖음을 소모하면 젖음 감속(-20%)이 사라져 오히려 손해 → 트리거 유지(무소모형은 약하게, §7.4)
     trigger: { mark: 'wet' }, reaction: 'fire',
-    effect: 'steamVeil', consumesTrigger: true, minStage: 2, weakAtStage1: false,
+    effect: 'steamVeil', consumesTrigger: false, minStage: 2, weakAtStage1: false,
     desc: '젖은 적에 불 공격 — 증기 안개가 적을 크게 늦춘다',
   },
   {

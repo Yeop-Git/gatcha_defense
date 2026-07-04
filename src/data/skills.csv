@@ -1,6 +1,6 @@
 id,character,name,element,learn,cost,target,kind,params,branch,text
 n_draw,hero,재정비,normal,1,2,self,draw,n=2,,카드 2장을 뽑는다
-n_muster,hero,긴급 소집,normal,1,3,self,placementUp,n=1,,이번 웨이브 배치 상한 +1
+n_muster,hero,긴급 소집,normal,1,3,self,rally,,,쓰러진 유닛 1체를 HP 50%로 재배치
 n_coin,hero,동전 던지기,normal,1,1,self,coinflip,,,50% 확률로 골드 2배 아니면 꽝
 n_bind,hero,속박,normal,1,2,point,bind,radius=2.6;duration=2.5,,범위 2.6 적을 2.5초 묶는다
 n_heal,hero,응급 처치,normal,1,3,self,baseHeal,amount=25,,성(거점) HP를 25 회복한다

@@ -108,6 +108,3 @@ export const MONSTERS: Record<Element, MonsterDef> = {
     ],
   },
 };
-
-/** element 순회용 고정 순서 */
-export const ELEMENTS: Element[] = ['water', 'grass', 'fire', 'dark', 'light'];

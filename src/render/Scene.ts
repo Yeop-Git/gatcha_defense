@@ -47,8 +47,9 @@ export class Scene {
     this.renderer.shadowMap.enabled = false;
     this.scene.background = new THREE.Color(0x241a12);
 
+    // 캐릭터가 잘 보이도록 종전보다 가까운 앵글 (그리드가 화면을 더 채움)
     this.camera = new THREE.PerspectiveCamera(48, 1, 0.1, 300);
-    this.camera.position.set(2, 37, 27);
+    this.camera.position.set(2, 31.5, 23);
     this.camera.lookAt(2, 0, 1);
 
     // 라이팅: 따뜻한 키 + 앰비언트

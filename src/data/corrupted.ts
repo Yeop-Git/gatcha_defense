@@ -32,7 +32,7 @@ export interface CorruptSkill {
 export const CORRUPT_SKILL: Record<Element, CorruptSkill> = {
   fire: { name: '타락한 폭염', kind: 'firezone', interval: 7, power: 10, desc: '유닛 발밑에 화염 장판을 만든다' },
   water: { name: '검은 해일', kind: 'tidalwave', interval: 7, power: 14, desc: '주변 유닛 전체에 파도 충격' },
-  grass: { name: '타락한 재생', kind: 'thornheal', interval: 6, power: 0.04, desc: '최대 HP의 일부를 회복한다' },
+  grass: { name: '타락한 재생', kind: 'thornheal', interval: 6, power: 0.03, desc: '최대 HP의 일부를 회복한다' },
   dark: { name: '심연의 흡수', kind: 'darkdrain', interval: 6, power: 16, desc: '가장 강한 유닛에게서 생명력을 흡수' },
   light: { name: '거짓된 심판', kind: 'judgment', interval: 7, power: 12, desc: '모든 유닛에 신성 피해' },
 };

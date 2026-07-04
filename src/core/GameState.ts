@@ -3,7 +3,7 @@ import { MONSTERS, type BranchDef } from '../data/monsters';
 import { CARD_BY_ID, cardsOfCharacter, type DeckCharacter } from '../data/cards';
 import {
   BASE_HP, BOND_CAP, BOND_PER_STAGE, ELEMENTS, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
-  MANA_REGEN, MAX_MONSTERS, UNIT_BASE,
+  MANA_MAX, MANA_REGEN, MAX_MONSTERS, UNIT_BASE,
 } from '../data/constants';
 
 let _uid = 1;
@@ -27,12 +27,22 @@ export interface OwnedUnit {
   level: number;
   stage: 1 | 2 | 3;
   xp: number;
+  /** 사용자 지정 이름 (뷰어에서 편집). 없으면 단계 기본 이름. */
+  nickname?: string;
   /** 분기 진화 형태 (§5.6). 3단 도달 시 2택1, 선택 전에는 null. */
   branch: 'A' | 'B' | null;
-  /** 덱에 장착한 카드 id (최대 EQUIP_CAP) */
+  /** 덱에 장착한 카드 id (최대 EQUIP_CAP, 앞쪽 = 오래된 순) */
   equipped: string[];
+  /** 카드 교체에서 버린 카드 id — 이 런에서는 다시 쓸 수 없음 */
+  discarded: string[];
   /** 유대(Bond) 누적 보너스 비율 0~BOND_CAP. 함께 스테이지를 클리어할수록 누적(§14). */
   bond: number;
+}
+
+/** 카드 획득 이벤트 — 연출/교체 선택 큐용 (레벨업·분기 시그니처) */
+export interface CardGain {
+  uid: string;
+  cardId: string;
 }
 
 export interface DerivedStats {
@@ -89,6 +99,11 @@ export function unitName(unit: OwnedUnit): string {
   return MONSTERS[unit.element].stages[unit.stage - 1].name;
 }
 
+/** 표기 이름: 사용자 지정 닉네임 우선, 없으면 단계 기본 이름. */
+export function displayName(unit: OwnedUnit): string {
+  return unit.nickname?.trim() ? unit.nickname.trim() : unitName(unit);
+}
+
 /** 선택한 분기 정의 (§5.6). 미선택/3단 미만이면 null. */
 export function unitBranch(unit: OwnedUnit): BranchDef | null {
   if (unit.stage < 3 || !unit.branch) return null;
@@ -118,16 +133,16 @@ export class GameState {
   // 배치
   placementCap = 3;
 
-  // 런타임 마나 (스테이지 시작 시 리셋)
-  mana = 10;
-  manaMax = 10;
+  // 마나 상한 (런타임 마나는 DeckSystem이 스테이지 단위로 관리)
+  manaMax = MANA_MAX;
 
   // 스탯 수정자 (갈림길 버프)
   unitAtkMult = 1;
   manaRegenMult = 1;
   /** 협동기 내부 쿨다운 감소(초) — 갈림길 버프 (§10) */
   synergyCdCut = 0;
-  reviveAvailable = true;
+  /** 어둠 3단 처치 스택 (§5.4) — 런 내 영구 누적, 공격력 +비율 (상한 DARK_KILL_STACK_MAX) */
+  darkKillStacks = 0;
 
   /** 반응 도감 (§7.3): 발견한 협동기 id */
   discovered: string[] = [];
@@ -135,34 +150,22 @@ export class GameState {
   reset(): void {
     Object.assign(this, new GameState());
     this.heroEquipped = this.defaultEquip('hero', 1, null);
-    this.mana = this.manaMax;
   }
 
   // ── 덱(학습/장착) 모델 ─────────────────────────────
   /**
    * 캐릭터가 해당 레벨에서 사용 가능한(학습한) 카드 id 목록.
-   * 분기 시그니처 카드는 그 분기를 선택했을 때만 해금(§5.6).
+   * 분기 시그니처 카드는 그 분기를 선택했을 때만 해금(§5.6). 버린 카드는 제외.
    */
-  learnedIdsFor(character: DeckCharacter, level: number, branch: 'A' | 'B' | null): string[] {
+  learnedIdsFor(character: DeckCharacter, level: number, branch: 'A' | 'B' | null, discarded: string[] = []): string[] {
     return cardsOfCharacter(character)
-      .filter((c) => c.learnLevel <= level && (!c.branch || c.branch === branch))
+      .filter((c) => c.learnLevel <= level && (!c.branch || c.branch === branch) && !discarded.includes(c.id))
       .map((c) => c.id);
   }
 
   /** 기본 장착: 학습한 것 중 **가장 최신(고레벨) EQUIP_CAP개** — 강한 카드가 실제로 장착되도록. */
   private defaultEquip(character: DeckCharacter, level: number, branch: 'A' | 'B' | null): string[] {
     return this.learnedIdsFor(character, level, branch).slice(-EQUIP_CAP);
-  }
-
-  /** 빈 슬롯을 새로 학습한 카드로 채움 (기존 장착 유지, 채울 때는 최신 카드 우선) */
-  private autoFillEquip(equipped: string[], character: DeckCharacter, level: number, branch: 'A' | 'B' | null): string[] {
-    const learned = this.learnedIdsFor(character, level, branch);
-    const out = equipped.filter((id) => learned.includes(id));
-    for (const id of [...learned].reverse()) {
-      if (out.length >= EQUIP_CAP) break;
-      if (!out.includes(id)) out.push(id);
-    }
-    return out;
   }
 
   /** 전투 덱 = 성(무색) + 로스터 각자의 장착 카드 (총 최대 4×5=20장, §6) */
@@ -183,8 +186,11 @@ export class GameState {
   equippedOf(id: string): string[] {
     return id === 'hero' ? this.heroEquipped : (this.roster.find((u) => u.uid === id)?.equipped ?? []);
   }
+  holderDiscarded(id: string): string[] {
+    return id === 'hero' ? [] : (this.roster.find((u) => u.uid === id)?.discarded ?? []);
+  }
   setEquipped(id: string, ids: string[]): void {
-    const learned = this.learnedIdsFor(this.holderCharacter(id), this.holderLevel(id), this.holderBranch(id));
+    const learned = this.learnedIdsFor(this.holderCharacter(id), this.holderLevel(id), this.holderBranch(id), this.holderDiscarded(id));
     const valid = ids.filter((x) => learned.includes(x)).slice(0, EQUIP_CAP);
     if (id === 'hero') this.heroEquipped = valid;
     else { const u = this.roster.find((x) => x.uid === id); if (u) u.equipped = valid; }
@@ -202,7 +208,7 @@ export class GameState {
   /** 로스터 합류 (드래프트 전용, §3). 항상 1단부터 시작 → 육성으로 진화. */
   giveUnit(element: Element, level = 1): OwnedUnit | null {
     if (this.hasElement(element) || this.monstersFull) return null;
-    const unit: OwnedUnit = { uid: nextUid(), element, level, stage: 1, xp: 0, branch: null, equipped: [], bond: 0 };
+    const unit: OwnedUnit = { uid: nextUid(), element, level, stage: 1, xp: 0, branch: null, equipped: [], discarded: [], bond: 0 };
     unit.equipped = this.defaultEquip(element, level, null);
     this.roster.push(unit);
     return unit;
@@ -252,36 +258,71 @@ export class GameState {
   /**
    * 유닛 경험치 지급 → 레벨업/진화/스킬 학습.
    * 3단 도달 시 분기 미선택이면 needsBranch — 상위(Game)가 2택1 UI를 띄운다.
+   * 새로 배운 카드는 자동 장착하지 않고 gains로 반환 — Game이 획득 연출/교체 선택 큐로 처리.
    */
-  addUnitXp(unit: OwnedUnit, amount: number): { leveled: boolean; evolved: boolean; needsBranch: boolean; newCards: string[] } {
+  addUnitXp(unit: OwnedUnit, amount: number): { leveled: boolean; evolved: boolean; needsBranch: boolean; gains: CardGain[] } {
     unit.xp += amount;
     let leveled = false;
     let evolved = false;
-    const newCards: string[] = [];
+    const gains: CardGain[] = [];
     while (unit.xp >= xpForLevel(unit.level)) {
       unit.xp -= xpForLevel(unit.level);
       unit.level++;
       leveled = true;
       const newStage = stageForLevel(unit.element, unit.level);
       if (newStage > unit.stage) { unit.stage = newStage; evolved = true; }
-      // 이번 레벨에서 새로 학습하는 스킬 (분기 시그니처는 분기 선택 시 별도 안내)
+      // 이번 레벨에서 새로 학습하는 스킬 (분기 시그니처는 분기 선택 시 별도 획득)
       for (const c of cardsOfCharacter(unit.element)) {
-        if (c.learnLevel === unit.level && (!c.branch || c.branch === unit.branch)) newCards.push(c.name);
+        if (c.learnLevel === unit.level && !c.branch) gains.push({ uid: unit.uid, cardId: c.id });
       }
     }
-    if (leveled) unit.equipped = this.autoFillEquip(unit.equipped, unit.element, unit.level, unit.branch);
     const needsBranch = unit.stage >= 3 && !unit.branch;
-    return { leveled, evolved, needsBranch, newCards };
+    return { leveled, evolved, needsBranch, gains };
   }
 
-  /** 분기 선택 (§5.6) → 시그니처 카드 해금 + 장착 보충. 반환: 해금된 시그니처 카드 이름. */
-  chooseBranch(uid: string, key: 'A' | 'B'): string | null {
+  /** 분기 선택 (§5.6). 반환: 시그니처 카드 획득 이벤트 (Game이 획득/교체 큐로 처리). */
+  chooseBranch(uid: string, key: 'A' | 'B'): CardGain | null {
     const u = this.roster.find((x) => x.uid === uid);
     if (!u || u.stage < 3 || u.branch) return null;
     u.branch = key;
-    u.equipped = this.autoFillEquip(u.equipped, u.element, u.level, u.branch);
     const br = MONSTERS[u.element].branches.find((b) => b.key === key)!;
-    return CARD_BY_ID[br.signatureCardId]?.name ?? null;
+    return { uid, cardId: br.signatureCardId };
+  }
+
+  /**
+   * 카드 획득 처리 (항상 캐릭터당 EQUIP_CAP장 유지).
+   * 자리가 있으면 즉시 장착('added'), 가득이면 교체 선택 필요('replace') — 후보 = 오래된 3장 + 신규.
+   */
+  acquireCard(uid: string, cardId: string): { result: 'added' | 'replace' | 'skip'; options?: string[] } {
+    const u = this.roster.find((x) => x.uid === uid);
+    if (!u || u.equipped.includes(cardId) || u.discarded.includes(cardId)) return { result: 'skip' };
+    if (u.equipped.length < EQUIP_CAP) {
+      u.equipped.push(cardId);
+      return { result: 'added' };
+    }
+    return { result: 'replace', options: [...u.equipped.slice(0, 3), cardId] };
+  }
+
+  /**
+   * 교체 선택 확정: discardId를 버린다. 신규 카드를 버리면 장착 불변,
+   * 기존 카드를 버리면 신규 카드가 그 자리에 들어간다(항상 5장 유지).
+   */
+  resolveCardReplace(uid: string, newId: string, discardId: string): void {
+    const u = this.roster.find((x) => x.uid === uid);
+    if (!u) return;
+    u.discarded.push(discardId);
+    if (discardId !== newId) {
+      u.equipped = u.equipped.filter((id) => id !== discardId);
+      u.equipped.push(newId);
+    }
+  }
+
+  /** 닉네임 설정 (뷰어에서 편집). 공백/초과 길이는 정리, 빈 값이면 기본 이름 복귀. */
+  setNickname(uid: string, name: string): void {
+    const u = this.roster.find((x) => x.uid === uid);
+    if (!u) return;
+    const clean = name.trim().slice(0, 8);
+    u.nickname = clean.length ? clean : undefined;
   }
 
   /** 반응 도감 등록 (§7.3). 처음 본 협동기면 true. */

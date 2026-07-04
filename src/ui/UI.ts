@@ -2,7 +2,7 @@ import { bus } from '../core/events';
 import { ELEMENT_ICON, ELEMENT_NAME_KO, MAX_MONSTERS } from '../data/constants';
 import type { Element } from '../core/types';
 import type { OwnedUnit } from '../core/GameState';
-import { unitName, unitBranch, deriveStats } from '../core/GameState';
+import { unitName, displayName, unitBranch, deriveStats } from '../core/GameState';
 import { MONSTERS } from '../data/monsters';
 import { SYNERGIES } from '../data/synergies';
 import { CARD_BY_ID, cardIcon } from '../data/cards';
@@ -22,6 +22,8 @@ export interface HudInfo {
 export interface HandCard {
   id: string;
   playable: boolean;
+  /** 재사용 쿨다운 진행률 0~1 (오버레이) */
+  cdFrac?: number;
   /** 사용 불가 사유 (비활성 카드 탭 시 안내) */
   reason?: string;
 }
@@ -52,7 +54,10 @@ export class UI {
   onOpenViewer = () => {};
   onCloseViewer = () => {};
   onViewerSelect = (_uid: string) => {};
+  onRename = (_uid: string, _name: string) => {};
   onBranchPick = (_uid: string, _key: string) => {};
+  onCardGainAck = () => {};
+  onCardReplacePick = (_discardId: string) => {};
   onOpenCodex = () => {};
   onNode = (_kind: string) => {};
   onBuffPick = (_id: string) => {};
@@ -294,7 +299,8 @@ export class UI {
       <div class="card-elem">${cardElemIcon(def.element)}</div>
       <div class="art">${cardIcon(def)}</div>
       <div class="name">${def.name}</div>
-      <div class="desc">${def.text}</div>`;
+      <div class="desc">${def.text}</div>
+      ${c.cdFrac && c.cdFrac > 0 ? `<div class="cd-overlay" style="height:${Math.round(c.cdFrac * 100)}%"></div>` : ''}`;
   }
 
   setTargeting(on: boolean): void {
@@ -302,14 +308,15 @@ export class UI {
   }
 
   // ── 배치 바 (웨이브 사이에만 표시) ──
-  showPlacement(items: { id: string; name: string; element: string; placed: boolean }[]): void {
+  showPlacement(items: { id: string; name: string; element: string; placed: boolean; dead?: boolean }[]): void {
     this.placementBar.style.display = 'flex';
     this.placementBar.innerHTML = `<div class="place-hint">🪵 배치: 몬스터를 눌러 슬롯에 놓거나 회수 (성은 거점에서 자동 방어)</div>`;
     const row = el('div', 'place-row');
     for (const it of items) {
       const icon = it.element === 'neutral' ? '🧑' : (ELEMENT_ICON as Record<string, string>)[it.element] ?? '❓';
-      const chip = el('div', `place-chip${it.placed ? ' placed' : ''}`,
-        `<span class="pc-ico">${icon}</span><span class="pc-name">${it.name}</span><span class="pc-state">${it.placed ? '배치됨' : '대기'}</span>`);
+      const stateLabel = it.dead ? '쓰러짐' : it.placed ? '배치됨' : '대기';
+      const chip = el('div', `place-chip${it.placed ? ' placed' : ''}${it.dead ? ' dead' : ''}`,
+        `<span class="pc-ico">${icon}</span><span class="pc-name">${it.name}</span><span class="pc-state">${stateLabel}</span>`);
       chip.onclick = () => this.onPlacementToggle(it.id);
       row.appendChild(chip);
     }
@@ -372,6 +379,47 @@ export class UI {
          <div class="bc-sig">🃏 시그니처: ${b.signature}</div>`);
       c.onclick = () => { this.clearModal(); this.onBranchPick(data.uid, b.key); };
       row.appendChild(c);
+    }
+  }
+
+  /** 카드 1장의 큰 미리보기 HTML (획득/교체 모달용) */
+  private bigCardHtml(cardId: string, extraCls = ''): string {
+    const def = CARD_BY_ID[cardId];
+    if (!def) return '';
+    return `<div class="big-card el-${def.element} ${extraCls}" data-card="${cardId}">
+      <div class="cost">${def.cost}</div>
+      <div class="card-elem">${cardElemIcon(def.element)}</div>
+      <div class="art">${cardIcon(def)}</div>
+      <div class="name">${def.name}</div>
+      <div class="desc">${def.text}</div>
+    </div>`;
+  }
+
+  /** 새 카드 획득 연출 — 카드가 빛나며 등장. */
+  showCardGain(unitLabel: string, cardId: string): void {
+    const scroll = this.modal(`<h1>새 카드 획득!</h1>
+      <p><b>${unitLabel}</b>이(가) 새로운 스킬을 배웠다!</p>
+      <div class="gain-stage">${this.bigCardHtml(cardId, 'gain-anim')}</div>
+      <div class="choice-row"><button class="btn primary" id="gain-ok">획득!</button></div>`);
+    (scroll.querySelector('#gain-ok') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onCardGainAck(); };
+  }
+
+  /**
+   * 카드 교체 선택 — 캐릭터당 카드는 항상 5장.
+   * 후보 = 오래된 3장 + 신규 카드. 클릭한 카드를 버린다.
+   */
+  showCardReplace(unitLabel: string, newId: string, options: string[]): void {
+    const scroll = this.modal(`<h1>카드가 가득!</h1>
+      <p><b>${unitLabel}</b>의 카드는 5장까지. <b>버릴 카드</b>를 하나 고르세요.<br/>
+      <span style="opacity:0.75;font-size:13px">(오래된 카드 3장 + 새 카드 중 선택 — 버린 카드는 이 모험에서 사라집니다)</span></p>
+      <div class="replace-row"></div>`);
+    const row = scroll.querySelector('.replace-row')!;
+    for (const id of options) {
+      const isNew = id === newId;
+      const wrap = el('div', 'replace-slot');
+      wrap.innerHTML = `${isNew ? '<div class="rs-tag new">NEW</div>' : '<div class="rs-tag old">보유</div>'}${this.bigCardHtml(id, isNew ? 'gain-anim' : '')}`;
+      wrap.onclick = () => { this.clearModal(); this.onCardReplacePick(id); };
+      row.appendChild(wrap);
     }
   }
 
@@ -474,7 +522,7 @@ export class UI {
       const item = el('div', 'roster-item' + (i === 0 ? ' sel' : ''),
         `<div class="ri-pic">${ELEMENT_ICON[u.element]}</div>
          <div class="ri-text">
-           <div class="ri-name">${unitName(u)}</div>
+           <div class="ri-name">${displayName(u)}</div>
            <div class="ri-sub">${ELEMENT_NAME_KO[u.element]} · Lv${u.level} · ${u.stage}단</div>
          </div>`);
       applyPortrait(item.querySelector('.ri-pic') as HTMLElement, u.element, u.stage);
@@ -491,26 +539,39 @@ export class UI {
 
   closeViewer(): void { this.viewerUI.classList.remove('on'); }
 
-  // ── 로비 ──
+  // ── 로비 (독립 허브 화면 — 여기서 전투/관리/뷰어/도감으로 이동) ──
   private buildLobby(): void {
     this.lobbyUI = el('div'); this.lobbyUI.id = 'lobby'; this.lobbyUI.style.display = 'none';
     this.lobbyUI.innerHTML = `
-      <div class="lobby-card panel">
-        <h1>모험가 길드</h1>
+      <div class="lobby-head">
+        <h1>🏰 모험가 길드</h1>
         <div id="lobby-stage" class="lobby-stage"></div>
-        <div id="lobby-roster" class="lobby-roster"></div>
-        <div class="lobby-btns">
-          <button class="btn primary" id="lobby-battle">⚔ 전투 시작</button>
-          <button class="btn" id="lobby-manage">🃏 캐릭터 관리</button>
-          <button class="btn" id="lobby-viewer">📖 내 몬스터</button>
-          <button class="btn" id="lobby-codex">📜 반응 도감</button>
+      </div>
+      <div class="lobby-body">
+        <div class="lobby-left panel">
+          <h2>내 원정대</h2>
+          <div id="lobby-roster" class="lobby-roster"></div>
+        </div>
+        <div class="lobby-menu">
+          <div class="menu-card primary" id="lobby-battle">
+            <div class="mc-ico">⚔️</div><div class="mc-title">전투 출정</div><div class="mc-sub" id="lobby-next-stage"></div>
+          </div>
+          <div class="menu-card" id="lobby-manage">
+            <div class="mc-ico">🃏</div><div class="mc-title">캐릭터 관리</div><div class="mc-sub">스킬 카드 편성</div>
+          </div>
+          <div class="menu-card" id="lobby-viewer">
+            <div class="mc-ico">📖</div><div class="mc-title">내 몬스터</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div>
+          </div>
+          <div class="menu-card" id="lobby-codex">
+            <div class="mc-ico">📜</div><div class="mc-title">반응 도감</div><div class="mc-sub" id="lobby-codex-sub"></div>
+          </div>
         </div>
       </div>`;
     this.root.appendChild(this.lobbyUI);
-    (this.lobbyUI.querySelector('#lobby-battle') as HTMLButtonElement).onclick = () => this.onEnterBattle();
-    (this.lobbyUI.querySelector('#lobby-manage') as HTMLButtonElement).onclick = () => this.onManage();
-    (this.lobbyUI.querySelector('#lobby-viewer') as HTMLButtonElement).onclick = () => this.onOpenViewer();
-    (this.lobbyUI.querySelector('#lobby-codex') as HTMLButtonElement).onclick = () => this.onOpenCodex();
+    (this.lobbyUI.querySelector('#lobby-battle') as HTMLElement).onclick = () => this.onEnterBattle();
+    (this.lobbyUI.querySelector('#lobby-manage') as HTMLElement).onclick = () => this.onManage();
+    (this.lobbyUI.querySelector('#lobby-viewer') as HTMLElement).onclick = () => this.onOpenViewer();
+    (this.lobbyUI.querySelector('#lobby-codex') as HTMLElement).onclick = () => this.onOpenCodex();
   }
 
   showLobby(info: { stageNo: number; stageLabel: string; gold: number; roster: OwnedUnit[]; discoveredCount: number }): void {
@@ -518,17 +579,20 @@ export class UI {
     this.hideManage();
     this.lobbyUI.style.display = 'flex';
     (this.lobbyUI.querySelector('#lobby-stage') as HTMLElement).innerHTML =
-      `다음 전투: <b>스테이지 ${info.stageNo}</b> — ${info.stageLabel}<br/>🪙 ${info.gold} · 보유 몬스터 ${info.roster.length}/${MAX_MONSTERS} · 📜 도감 ${info.discoveredCount}/${SYNERGIES.length}`;
+      `🪙 ${info.gold} · 원정대 ${info.roster.length}/${MAX_MONSTERS} · 📜 도감 ${info.discoveredCount}/${SYNERGIES.length}`;
+    (this.lobbyUI.querySelector('#lobby-next-stage') as HTMLElement).textContent = `스테이지 ${info.stageNo} — ${info.stageLabel}`;
+    (this.lobbyUI.querySelector('#lobby-codex-sub') as HTMLElement).textContent = `발견 ${info.discoveredCount}/${SYNERGIES.length}`;
     const r = this.lobbyUI.querySelector('#lobby-roster') as HTMLElement;
     r.innerHTML = '';
     const heroChip = el('div', 'lobby-mon', `<div class="lm-ico">🏰</div><div class="lm-name">성 (거점)</div><div class="lm-sub">무색 카드 5장</div>`);
     r.appendChild(heroChip);
     for (const u of info.roster) {
       const br = unitBranch(u);
-      const chip = el('div', 'lobby-mon', `<div class="lm-ico">${cardElemIcon(u.element)}</div><div class="lm-name">${unitName(u)}${br ? `·${br.name}` : ''}</div><div class="lm-sub">Lv${u.level} · ${u.stage}단</div>`);
+      const chip = el('div', 'lobby-mon', `<div class="lm-ico">${cardElemIcon(u.element)}</div><div class="lm-name">${displayName(u)}${br ? `·${br.name}` : ''}</div><div class="lm-sub">Lv${u.level} · ${u.stage}단</div>`);
       applyPortrait(chip.querySelector('.lm-ico') as HTMLElement, u.element, u.stage);
       r.appendChild(chip);
     }
+    if (info.roster.length === 0) r.appendChild(el('div', 'lobby-empty', '아직 동료가 없다.<br/>전투 출정에서 첫 드래프트!'));
   }
 
   hideLobby(): void { this.lobbyUI.style.display = 'none'; }
@@ -594,7 +658,8 @@ export class UI {
     const body = this.viewerUI.querySelector('#info-body')!;
     body.innerHTML = `
       <div class="info-pic">${ELEMENT_ICON[u.element]}</div>
-      <h2>${unitName(u)}${br ? ` · ${br.name}` : ''}</h2>
+      <h2>${displayName(u)} <button class="rename-btn" id="rename-btn" title="이름 짓기">✏️</button></h2>
+      ${u.nickname ? `<div class="row"><span>종족</span><span>${unitName(u)}</span></div>` : ''}
       <div class="row"><span>속성</span><span>${ELEMENT_ICON[u.element]} ${ELEMENT_NAME_KO[u.element]}</span></div>
       <div class="row"><span>레벨</span><span>Lv ${u.level}</span></div>
       <div class="row"><span>진화 단계</span><span>${u.stage}단 / 3</span></div>
@@ -607,6 +672,26 @@ export class UI {
       <div class="row"><span>유대 보너스</span><span>+${Math.round(s.bond * 100)}% <span style="opacity:0.6">(HP·공격)</span></span></div>
       <p style="margin-top:10px;font-size:12.5px;opacity:0.9">${br ? br.role : def.stages[u.stage - 1].role}</p>`;
     applyPortrait(body.querySelector('.info-pic') as HTMLElement, u.element, u.stage);
+    (body.querySelector('#rename-btn') as HTMLButtonElement).onclick = () => this.showRenameDialog(u);
+  }
+
+  /** 이름 짓기 다이얼로그 (최대 8자, 비우면 기본 이름 복귀). */
+  private showRenameDialog(u: OwnedUnit): void {
+    const scroll = this.modal(`<h1>이름 짓기</h1>
+      <p><b>${unitName(u)}</b>에게 새 이름을 지어주세요. (최대 8자, 비우면 기본 이름)</p>
+      <div class="rename-row">
+        <input id="rename-input" maxlength="8" placeholder="${unitName(u)}" value="${u.nickname ?? ''}" />
+      </div>
+      <div class="choice-row">
+        <button class="btn primary" id="rename-ok">확정</button>
+        <button class="btn" id="rename-cancel">취소</button>
+      </div>`);
+    const input = scroll.querySelector('#rename-input') as HTMLInputElement;
+    input.focus();
+    const confirm = () => { this.clearModal(); this.onRename(u.uid, input.value); };
+    (scroll.querySelector('#rename-ok') as HTMLButtonElement).onclick = confirm;
+    input.onkeydown = (e) => { if (e.key === 'Enter') confirm(); };
+    (scroll.querySelector('#rename-cancel') as HTMLButtonElement).onclick = () => this.clearModal();
   }
 }
 

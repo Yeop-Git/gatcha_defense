@@ -58,6 +58,9 @@ export class Enemy {
   private segT = 0;
   rootTimer = 0;
   zoneSlow = 0; // 이번 프레임 장판 감속(0~1), Battle이 매 프레임 세팅
+  /** 임시 감속 (증기 장막 등 지속형 디버프): slowTimer 동안 slowPct 적용 */
+  slowPct = 0;
+  slowTimer = 0;
   defDownPct = 0;
   defDownTimer = 0;
   atkCd = 0; // 적 반격 쿨다운 (근처 방어자 타격)
@@ -104,11 +107,28 @@ export class Enemy {
     }
   }
 
-  /** 현재 이동속도 배율 (wet + zoneSlow 합성, root면 0) */
+  /** 상태이상(CC) 저항 배율 — 보스/미니보스는 넉백·속박·감속 효과 반감. */
+  get ccFactor(): number {
+    return this.isBoss ? 0.4 : this.isMini ? 0.5 : 1;
+  }
+
+  /** 속박 적용 (CC 저항 반영). */
+  applyRoot(duration: number): void {
+    this.rootTimer = Math.max(this.rootTimer, duration * this.ccFactor);
+  }
+
+  /** 임시 감속 적용 (증기 장막 등, CC 저항 반영). */
+  applySlow(pct: number, duration: number): void {
+    this.slowPct = Math.max(this.slowPct, pct * this.ccFactor);
+    this.slowTimer = Math.max(this.slowTimer, duration);
+  }
+
+  /** 현재 이동속도 배율 (wet + zoneSlow + 임시감속 합성, root면 0). 보스는 감속 반감. */
   private speedMult(): number {
     if (this.rootTimer > 0) return 0;
     const wet = this.marks.has('wet') ? WET_SLOW : 0;
-    const slow = Math.min(0.85, wet + this.zoneSlow);
+    const temp = this.slowTimer > 0 ? this.slowPct : 0;
+    const slow = Math.min(0.85, (wet + this.zoneSlow) * this.ccFactor + temp);
     return 1 - slow;
   }
 
@@ -130,8 +150,12 @@ export class Enemy {
   update(dt: number, t: number): void {
     if (!this.alive) return;
     if (this.rootTimer > 0) this.rootTimer -= dt;
+    if (this.slowTimer > 0) { this.slowTimer -= dt; if (this.slowTimer <= 0) this.slowPct = 0; }
     if (this.defDownTimer > 0) this.defDownTimer -= dt;
     this.marks.update(dt, t);
+    // GLTF 내장 애니메이션 (걷기 등) — 감속/속박 시 재생 속도도 함께 줄어 자연스럽게
+    const mixer = this.view.userData.mixer as THREE.AnimationMixer | undefined;
+    if (mixer) mixer.update(dt * Math.max(0.25, this.speedMult()));
 
     // 이동 (경로 따라)
     const mult = this.speedMult();
@@ -155,6 +179,7 @@ export class Enemy {
       this.alive = false;
       return;
     }
+    // (보스 루프백은 Battle이 resetToPathStart로 처리)
     const a = PATH[this.seg];
     const b = PATH[this.seg + 1];
     this.pos.set(a.x + (b.x - a.x) * this.segT, 0, a.z + (b.z - a.z) * this.segT);
@@ -164,10 +189,10 @@ export class Enemy {
     const dx = b.x - a.x, dz = b.z - a.z;
     if (dx || dz) this.view.rotation.y = Math.atan2(dx, dz);
 
-    // 빛/어둠 = 부유(floating). 그 외는 접지(폴백 도형만 소소한 바운스).
+    // 빛/어둠 = 부유(floating). 그 외는 접지. 폴백 도형은 소소한 바운스(애니메이션 모델은 클립이 담당).
     if (isFloating(this.element)) {
       this.view.position.y = FLOAT.height + Math.sin(t * FLOAT.speed + this.seg) * FLOAT.amp;
-    } else {
+    } else if (!this.view.userData.mixer) {
       const body = this.view.userData.body as THREE.Mesh | undefined;
       if (body && !this.def.flying) body.position.y = this.def.radius + Math.abs(Math.sin(t * 6 + this.seg)) * 0.15;
     }
@@ -178,11 +203,25 @@ export class Enemy {
     return (this.seg + this.segT) / (PATH.length - 1);
   }
 
-  /** 넉백: 경로를 따라 뒤로 dist만큼 밀려남 */
+  /**
+   * 보스 루프백 (§9): 기지를 타격한 보스는 소멸하지 않고 경로 시작점으로 되돌아온다.
+   * "보스 통과 = 승리" 버그 방지 + 보스전은 반드시 처치로 끝나게.
+   */
+  resetToPathStart(): void {
+    this.seg = 0;
+    this.segT = 0;
+    this.reachedBase = false;
+    this.alive = true;
+    const start = PATH[0];
+    this.pos.set(start.x, 0, start.z);
+    this.view.position.copy(this.pos);
+  }
+
+  /** 넉백: 경로를 따라 뒤로 dist만큼 밀려남. 보스/미니보스는 반감(CC 저항) — 무한 스톨 방지. */
   knockback(dist: number): void {
     // 마지막 waypoint(기지)에 도달한 상태면 마지막 세그먼트로 클램프 (PATH[seg+1] 안전)
     if (this.seg >= PATH.length - 1) { this.seg = PATH.length - 2; this.segT = 1; }
-    let back = dist;
+    let back = dist * this.ccFactor;
     while (back > 0 && (this.seg > 0 || this.segT > 0)) {
       const a = PATH[this.seg];
       const b = PATH[this.seg + 1];

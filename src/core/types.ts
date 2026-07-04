@@ -35,8 +35,6 @@ export interface GameEvents {
   'base:damage': { amount: number; hp: number };
   'base:destroyed': {};
   'enemy:killed': { element: ElementOrNeutral; x: number; z: number; isBoss: boolean };
-  'unit:levelup': { uid: string; level: number };
-  'unit:evolve': { uid: string; stage: number };
   'card:played': { id: string };
   'synergy:fire': { id: string; name: string; x: number; z: number; a: Element; b: Element; discovered: boolean };
   'mana:change': { mana: number; max: number };

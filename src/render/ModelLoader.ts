@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import {
   MODEL_MAX_TEXTURE,
   MODEL_UNLIT,
@@ -26,7 +27,8 @@ import type { Element, ElementOrNeutral } from '../core/types';
 
 const BASE = `${import.meta.env.BASE_URL}assets/models/`;
 const loader = new GLTFLoader();
-const cache = new Map<string, Promise<THREE.Group>>();
+interface LoadedModel { scene: THREE.Group; animations: THREE.AnimationClip[] }
+const cache = new Map<string, Promise<LoadedModel>>();
 
 /**
  * 네이밍 규칙 (ASSETS.md §0)
@@ -116,7 +118,7 @@ export function addOutline(mesh: THREE.Mesh): void {
   mesh.add(outline); // 부모(mesh) 트랜스폼 상속 → 정규화 스케일도 함께 적용
 }
 
-async function loadRaw(file: string): Promise<THREE.Group> {
+async function loadRaw(file: string): Promise<LoadedModel> {
   let p = cache.get(file);
   if (!p) {
     p = loader.loadAsync(BASE + file).then((gltf) => {
@@ -124,9 +126,11 @@ async function loadRaw(file: string): Promise<THREE.Group> {
       gltf.scene.traverse((o) => {
         if (o instanceof THREE.Mesh) meshes.push(o);
       });
+      const animated = gltf.animations.length > 0;
       for (const o of meshes) {
         o.castShadow = true;
         o.receiveShadow = true;
+        o.frustumCulled = false; // 스킨드 메시가 애니메이션 중 잘못 컬링되는 문제 방지
         if (MODEL_UNLIT) {
           o.material = Array.isArray(o.material)
             ? o.material.map(toUnlit)
@@ -134,13 +138,16 @@ async function loadRaw(file: string): Promise<THREE.Group> {
         }
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((mm) => processMaterial(mm, MODEL_MAX_TEXTURE));
-        if (MODEL_OUTLINE) addOutline(o);
+        // 스킨드(리깅) 메시의 인버티드 헐 아웃라인은 본을 따라가지 못한다 → 애니메이션 모델은 아웃라인 생략
+        if (MODEL_OUTLINE && !(animated && o instanceof THREE.SkinnedMesh)) addOutline(o);
       }
-      return gltf.scene;
+      return { scene: gltf.scene, animations: gltf.animations };
     });
     cache.set(file, p);
   }
-  return (await p).clone(true);
+  const loaded = await p;
+  // SkeletonUtils.clone: 스킨드 메시의 본 바인딩까지 올바르게 복제 (Object3D.clone은 깨짐)
+  return { scene: skeletonClone(loaded.scene) as THREE.Group, animations: loaded.animations };
 }
 
 /** 목표 높이에 맞춰 정규화 (발바닥 y=0) */
@@ -158,29 +165,48 @@ function normalize(model: THREE.Group, targetHeight: number): void {
 /**
  * 팔레트 스왑 (§5.6·§9): 클론된 모델의 머티리얼을 복제한 뒤 base color에 틴트를 곱한다.
  * 캐시 원본과 다른 클론은 머티리얼을 공유하므로 반드시 복제 후 수정 — 다른 개체에 번지지 않게.
+ * 이미 틴트된 머티리얼(재틴트: 보스 P2 등)은 제자리에서 색만 곱한다(중복 클론 누수 방지).
+ * 복제본은 userData.tinted 표시 → disposeCreatureView가 해제한다.
  */
 export function tintModel(root: THREE.Object3D, tint: number): void {
   const c = new THREE.Color(tint);
   root.traverse((o) => {
     if (!(o instanceof THREE.Mesh) || o.userData.outline) return;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
-    const cloned = mats.map((m) => {
+    const tinted = mats.map((m) => {
+      if (m.userData.tinted) { // 재틴트: 제자리 곱
+        const bm = m as THREE.MeshBasicMaterial;
+        if (bm.color) bm.color.multiply(c);
+        return m;
+      }
       const nm = m.clone() as THREE.MeshBasicMaterial;
+      nm.userData.tinted = true;
       if (nm.color) nm.color.multiply(c);
       return nm;
     });
-    o.material = Array.isArray(o.material) ? cloned : cloned[0];
+    o.material = Array.isArray(o.material) ? tinted : tinted[0];
   });
+}
+
+/** 선호 애니메이션 클립 선택: 이름 우선순위 → 첫 클립 폴백. */
+function pickClip(clips: THREE.AnimationClip[], prefs: RegExp[]): THREE.AnimationClip | null {
+  for (const re of prefs) {
+    const hit = clips.find((c) => re.test(c.name));
+    if (hit) return hit;
+  }
+  return clips[0] ?? null;
 }
 
 /**
  * group에 GLB 모델을 비동기로 붙인다. 성공 시 폴백(placeholder) 메시를 제거.
  * 파일이 없거나 로드 실패하면 조용히 폴백 유지(파일당 최초 1회만 요청 — 캐시).
  * tint가 있으면 팔레트 스왑(분기 진화/타락체) — 머티리얼 복제 후 색 오버라이드.
+ * 애니메이션 클립이 있으면 AnimationMixer를 group.userData.mixer에 부착 —
+ * 소유 엔티티(Enemy/Monster/뷰어)가 매 프레임 mixer.update(dt)를 호출한다.
  */
-export function attachModel(group: THREE.Group, file: string, targetHeight: number, tint?: number): void {
+export function attachModel(group: THREE.Group, file: string, targetHeight: number, tint?: number, animPrefs?: RegExp[]): void {
   loadRaw(file)
-    .then((model) => {
+    .then(({ scene: model, animations }) => {
       normalize(model, targetHeight);
       if (tint !== undefined) tintModel(model, tint);
       // 폴백 placeholder 제거
@@ -188,6 +214,15 @@ export function attachModel(group: THREE.Group, file: string, targetHeight: numb
         if (child.userData.placeholder) group.remove(child);
       }
       group.add(model);
+      // 내장 애니메이션 재생 (걷기/대기 등)
+      if (animations.length) {
+        const clip = pickClip(animations, animPrefs ?? [/walk/i, /run/i, /move/i, /idle/i]);
+        if (clip) {
+          const mixer = new THREE.AnimationMixer(model);
+          mixer.clipAction(clip).play();
+          group.userData.mixer = mixer;
+        }
+      }
     })
     .catch(() => {
       /* 파일 없음/로드 실패 → 폴백 캡슐 유지 (조용히 무시) */

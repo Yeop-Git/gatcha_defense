@@ -35,6 +35,10 @@ export function disposeCreatureView(view: THREE.Object3D): void {
       if (o.userData.placeholder) {
         o.geometry.dispose();
         (o.material as THREE.Material).dispose();
+      } else {
+        // 팔레트 스왑으로 복제된 틴트 머티리얼은 개체 고유 → 해제 (GLB 캐시 공유분은 유지)
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) if (m?.userData?.tinted) m.dispose();
       }
     } else if (o instanceof THREE.Sprite) {
       const sm = o.material as THREE.SpriteMaterial;
@@ -156,7 +160,8 @@ export function makeCreature(el: Element, scale = 1, stage = 1, tint?: number): 
   icon.userData.placeholder = true;
   g.add(icon);
   g.userData.baseY = 0;
-  attachModel(g, modelFile.creature(el, stage), 1.6 * scale, tint);
+  // 아군은 제자리 대기 → Idle 클립 우선 (모델에 애니메이션이 있을 때만)
+  attachModel(g, modelFile.creature(el, stage), 1.85 * scale, tint, [/idle/i, /walk/i]);
   return g;
 }
 
@@ -174,7 +179,8 @@ export function makeEnemy(el: ElementOrNeutral, radius: number, flying?: boolean
   g.add(body);
   g.userData.body = body;
   if (model) {
-    attachModel(g, modelFile.enemy(model), radius * 2.2);
+    // 적은 경로를 따라 이동 → 걷기/뛰기 클립 우선
+    attachModel(g, modelFile.enemy(model), radius * 2.5, undefined, [/walk/i, /run/i, /fly/i, /move/i, /idle/i]);
   }
   return g;
 }

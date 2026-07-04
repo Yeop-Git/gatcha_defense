@@ -109,7 +109,7 @@ export const MODEL_MAX_TEXTURE = 1024;
 export const MODEL_UNLIT = true;
 export const MODEL_OUTLINE = true;
 /** 외곽선 두께 (뷰 공간 단위 ≈ 월드 단위, 모델 스케일과 무관하게 일정). */
-export const MODEL_OUTLINE_THICKNESS = 0.022;
+export const MODEL_OUTLINE_THICKNESS = 0.012;
 
 /** 포트레이트(PNG) 정규화 정사각형 한 변 px + 여백 비율 */
 export const PORTRAIT_SIZE = 256;
@@ -162,10 +162,14 @@ export const LATE_BLOOM_STAGE3_JUMP = 1.9; // 3단 도달 점프
 export const BOND_PER_STAGE = 0.025; // 스테이지 클리어당 유대 +2.5% (HP·공격)
 export const BOND_CAP = 0.2; // 유대 보너스 상한 (+20%)
 
-/** 마나 (§6) */
+/** 마나 (§6). 기본은 스펙(초당 1)에 가깝게 — 풀 유닛의 마나 펌핑이 가속을 담당. */
 export const MANA_MAX = 10;
-export const MANA_REGEN = 1.5; // 초당 (후반 고코스트 카드 대응)
+export const MANA_REGEN = 1.1; // 초당 기본
+/** 풀 = 마나 펌핑: 배치된 풀 유닛 1체당 초당 추가 마나 */
+export const GRASS_MANA_REGEN = 0.35;
 export const HAND_SIZE = 5;
+/** 응급 처치(기지 회복) 재사용 쿨다운(초) — §6.2 "쿨다운 존재" */
+export const BASE_HEAL_CD = 18;
 
 /** 부유(floating) 연출 파라미터 — 빛/어둠 정령류에만 적용. 나머지는 접지(애니메이션 추후). */
 export const FLOAT = { height: 0.5, amp: 0.16, speed: 1.7 } as const;
