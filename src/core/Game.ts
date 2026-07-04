@@ -67,6 +67,7 @@ export class Game {
     };
     this.ui.onNode = (kind) => this.chooseNode(kind);
     this.ui.onBuffPick = (id) => { state.applyBuff(id); this.backToLobby(); };
+    this.ui.onBonusPick = (id) => { state.applyBuff(id); saveRun(); this.paused = false; this.ui.toast('강화를 획득했습니다.', 'good'); this.refreshHand(); this.refreshPlacement(); };
     this.ui.onDraftPick = (el) => this.pickDraft(el);
     this.ui.onEventPick = (id) => { this.applyEvent(id); this.afterEvent(); };
     this.ui.onNext = () => this.afterStageClear();
@@ -560,10 +561,17 @@ export class Game {
     saveRun();
   }
 
-  /** '다음으로' 버튼 → 성장 플로우(카드 획득) → 갈림길 */
+  /** '다음으로' 버튼 → 성장 플로우(카드 획득) → 로비 (갈림길은 스테이지 중간 보너스로 이동) */
   private afterStageClear(): void {
-    this.growthDest = 'node';
+    this.growthDest = 'lobby';
     this.continueGrowthFlow();
+  }
+
+  /** 스테이지 중간(마지막 웨이브 직전) 보너스 강화 3택1. */
+  private showMidBonus(): void {
+    this.paused = true;
+    const picks = BUFF_NODES.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+    this.ui.showBonus(picks.map((b) => ({ id: b.apply, label: b.label })));
   }
 
   /** 진화 연출 → 카드 획득/교체 → 끝나면 목적지(갈림길/로비)로. */
@@ -759,6 +767,9 @@ export class Game {
     if (phase === 'stageClear') {
       this.battle.phase = 'placement'; // 중복 방지 (이미 처리)
       this.onStageClearedDetected();
+    } else if (phase === 'bonus') {
+      this.battle.phase = 'placement'; // 보너스 처리 후 마지막 웨이브 배치 페이즈로
+      this.showMidBonus();
     } else if (phase === 'won') {
       this.battle.finish(); this.battle = null; this.win();
     } else if (phase === 'lost') {

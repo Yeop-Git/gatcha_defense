@@ -35,7 +35,7 @@ import { bus } from '../core/events';
 import { playSfx } from '../audio/Sfx';
 import { unlockEnemy } from '../core/Dex';
 
-type Phase = 'placement' | 'wave' | 'stageClear' | 'lost' | 'won';
+type Phase = 'placement' | 'wave' | 'bonus' | 'stageClear' | 'lost' | 'won';
 interface SpawnEvent { t: number; enemy: string }
 
 const colorOf = (el: ElementOrNeutral): number => (el === 'neutral' ? NEUTRAL_COLOR : ELEMENT_COLOR[el]);
@@ -289,6 +289,9 @@ export class Battle {
       this.phase = this.stage.boss === 'final' ? 'won' : 'stageClear';
       if (this.stage.boss === 'final') bus.emit('run:win', {});
       else bus.emit('stage:clear', { stage: this.stage.id });
+    } else if (this.waveIndex === this.totalWaves - 1 && this.totalWaves >= 3) {
+      // 마지막 웨이브 직전(2~3 사이) = 갈림길 보너스(강화 3택1). Game이 처리 후 배치 페이즈로.
+      this.phase = 'bonus';
     } else {
       this.phase = 'placement';
     }

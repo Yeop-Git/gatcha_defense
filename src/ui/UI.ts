@@ -110,6 +110,7 @@ export class UI {
   onCaptureDiscardPick = (_id: string) => {};
   onNode = (_kind: string) => {};
   onBuffPick = (_id: string) => {};
+  onBonusPick = (_id: string) => {};
   onDraftPick = (_element: string) => {};
   onEventPick = (_id: string) => {};
   onNext = () => {};
@@ -538,6 +539,17 @@ export class UI {
     for (const o of options) {
       const c = el('div', 'choice', `<div class="ct">${o.label}</div>`);
       c.onclick = () => { this.clearModal(); this.onBuffPick(o.id); };
+      row.appendChild(c);
+    }
+  }
+
+  /** 스테이지 중간 보너스 강화 3택1 (갈림길 대체). */
+  showBonus(options: { id: string; label: string }[]): void {
+    const scroll = this.modal('<h1>✦ 보너스 강화 ✦</h1><p>다음 웨이브가 몰려오기 전에, 강화 하나를 챙기세요.</p><div class="choice-row"></div>');
+    const row = scroll.querySelector('.choice-row')!;
+    for (const o of options) {
+      const c = el('div', 'choice', `<div class="ct">${o.label}</div>`);
+      c.onclick = () => { playSfx('select'); this.clearModal(); this.onBonusPick(o.id); };
       row.appendChild(c);
     }
   }
