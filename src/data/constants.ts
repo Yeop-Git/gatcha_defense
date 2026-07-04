@@ -216,7 +216,7 @@ export const CAPTURE = {
   arcHeight: 5,      // ?щЪ??理쒓퀬 ?믪씠
   cooldown: 5,       // 移대뱶 ?ъ궗??荑⑤떎??珥? ???쒖궗 諛⑹?
   bossStun: 3,       // 蹂댁뒪/誘몃땲蹂댁뒪 HP0 ???ы쉷 媛??湲곗젅 李?珥?
-  duplicateXp: 200,
+  duplicateXp: 120,
   duplicateBond: 0.04,
 } as const;
 

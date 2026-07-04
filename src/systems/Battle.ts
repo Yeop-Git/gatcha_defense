@@ -32,6 +32,7 @@ import { GroundZone, type ZoneKind } from '../entities/GroundZone';
 import { affinity } from './affinity';
 import { DeckSystem } from './DeckSystem';
 import { bus } from '../core/events';
+import { playSfx } from '../audio/Sfx';
 
 type Phase = 'placement' | 'wave' | 'stageClear' | 'lost' | 'won';
 interface SpawnEvent { t: number; enemy: string }
@@ -223,10 +224,11 @@ export class Battle {
       for (let k = 0; k < g.count; k++) this.spawnQueue.push({ t: k * g.interval, enemy: g.enemy });
     }
     // 야생 크리처 1마리 삽입 (스테이지↑ → 진화형 1→2→3). 웨이브 중반 등장.
-    const creStage: 1 | 2 | 3 = this.stage.id <= 3 ? 1 : this.stage.id <= 7 ? 2 : 3;
+    const creStage: 1 | 2 | 3 = this.stage.id <= 3 ? 1 : this.stage.id <= 8 ? 2 : 3;
     const creEl = ELEMENTS[(this.stage.id + this.waveIndex) % ELEMENTS.length];
     this.spawnQueue.push({ t: 2.5, enemy: creatureEnemyId(creEl, creStage) });
     this.spawnQueue.sort((a, b) => a.t - b.t);
+    playSfx('wave');
     bus.emit('wave:start', { stage: this.stage.id, wave: this.waveIndex + 1, total: this.totalWaves });
   }
 
@@ -426,6 +428,7 @@ export class Battle {
   private leak(e: Enemy): void {
     const amt = e.def.leak === 'boss' ? BASE_LEAK_BOSS : e.def.leak === 'miniboss' ? BASE_LEAK_MINIBOSS : BASE_LEAK_NORMAL;
     this.state.baseHp = Math.max(0, this.state.baseHp - amt);
+    playSfx('leak');
     bus.emit('base:damage', { amount: amt, hp: this.state.baseHp });
     this.scene.vfx.floatText(this.scene.base.position.x, this.scene.base.position.z, `-${amt}`, '#ff6a6a');
     this.scene.vfx.ring(this.scene.base.position.x, this.scene.base.position.z, 0xc0392b, 4, 0.4);
@@ -558,6 +561,7 @@ export class Battle {
     if (this.deck.hand.length === 0) this.deck.refillTo(this.state.battleDeck(), 5);
     if (def.effect.kind === 'baseHeal') this.deck.setCooldown(id, BASE_HEAL_CD);
     if (def.effect.kind === 'capture') this.deck.setCooldown(id, CAPTURE.cooldown);
+    playSfx(def.effect.kind === 'capture' ? 'select' : 'card');
     bus.emit('card:played', { id });
     return true;
   }
@@ -723,12 +727,14 @@ export class Battle {
   }
 
   private captureMiss(p: Vec2, why: string): void {
+    playSfx('captureFail');
     this.scene.vfx.ring(p.x, p.z, 0xf2ce6b, 1.0, 0.3);
     this.scene.vfx.burst(p.x, p.z, 0xd23b3b, 6);
     bus.emit('toast', { text: `포획 실패: ${why}`, kind: 'bad' });
   }
 
   private captureEnemy(e: Enemy): void {
+    playSfx('capture');
     const r = this.state.registerCapture(e.def.id);
     const dex = r.firstTime ? '도감 신규 등록' : `포획 ${r.count}회`;
     const absorbed = this.state.absorbCapturedEnemy(e.def.id);

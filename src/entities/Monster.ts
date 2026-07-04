@@ -96,10 +96,7 @@ export class Monster {
     let p = this.stats.attack * this._atkMult;
     p *= 1 + this.blessStacks * BLESS_BUFF_PER_STACK;
     p *= this.overheatMult;
-    const tier = this.capturedTier();
-    if (tier === 'elite') p *= 1.1;
-    else if (tier === 'miniboss') p *= 1.18;
-    else if (tier === 'boss') p *= 1.25;
+    // 포획 tier 추가 공격배수는 제거 — deriveEnemyStats의 tier 기준 공격력이 이미 차등을 반영(이중배수 방지).
     return p;
   }
 

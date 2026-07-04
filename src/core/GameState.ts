@@ -3,7 +3,7 @@ import { MONSTERS } from '../data/monsters';
 import { ENEMIES, type EnemyTier } from '../data/enemies';
 import { CARD_BY_ID, cardsOfCharacter, type CardDef, type DeckCharacter } from '../data/cards';
 import {
-  BASE_HP, BOND_CAP, BOND_PER_STAGE, CAPTURE, ELEMENTS, ENEMY_EVOLVE_LEVEL, ENEMY_PLAY, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
+  BASE_HP, BOND_CAP, BOND_PER_STAGE, CAPTURE, ELEMENTS, ENEMY_EVOLVE_LEVEL, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
   LEVEL_GROWTH_PER, MANA_MAX, MANA_REGEN, MAX_LEVEL, MAX_MONSTERS, UNIT_BASE,
 } from '../data/constants';
 
@@ -76,15 +76,22 @@ function stageForLevel(element: Element, level: number): 1 | 2 | 3 {
   return 1;
 }
 
-/** 포획 enemy 유닛 파생 스탯 — 도감 스탯 × 플레이 배율 × 레벨/유대 성장. */
+/**
+ * 포획 유닛 tier별 플레이 기준 스탯. 원본 도감 HP(보스 1200·미니보스 520 등)를 그대로 쓰면
+ * 포획 보스가 만렙 크리처를 2~3배 압도해 밸런스가 붕괴하므로, tier 기반 기준치로 정규화한다.
+ */
+const PLAY_BASE_HP: Record<EnemyTier, number> = { swarm: 46, flyer: 44, normal: 62, tank: 92, healer: 56, elite: 92, miniboss: 122, boss: 150 };
+const PLAY_BASE_ATK: Record<EnemyTier, number> = { swarm: 9, flyer: 9, normal: 10, tank: 9, healer: 7, elite: 13, miniboss: 15, boss: 18 };
+
+/** 포획 enemy 유닛 파생 스탯 — tier 기준 스탯 × 레벨/유대 성장(도감 원본 HP 미사용). */
 function deriveEnemyStats(unit: OwnedUnit): DerivedStats {
   const def = ENEMIES[unit.species ?? ''] ?? ENEMIES.slime;
   const lv = 1 + (unit.level - 1) * LEVEL_GROWTH_PER;
   const bond = Math.min(BOND_CAP, unit.bond ?? 0);
   const growth = lv * (1 + bond);
   return {
-    hp: Math.round(def.hp * ENEMY_PLAY.hpMult * growth),
-    attack: Math.round(def.attack * ENEMY_PLAY.atkMult * growth),
+    hp: Math.round(PLAY_BASE_HP[def.tier] * growth),
+    attack: Math.round(PLAY_BASE_ATK[def.tier] * growth),
     range: UNIT_BASE.range + (def.flying ? 0.6 : 0) + (unit.stage - 1) * 0.4,
     attackSpeed: UNIT_BASE.attackSpeed,
     bond,
@@ -293,6 +300,11 @@ export class GameState {
     const beforeBond = unit.bond ?? 0;
     unit.bond = Math.min(BOND_CAP, beforeBond + CAPTURE.duplicateBond);
     const result = this.addUnitXp(unit, CAPTURE.duplicateXp);
+    // 중복 포획 흡수로 진화하면 스테이지 클리어 진화와 동일하게 각성 시그니처를 부여(누락 버그 수정).
+    if (result.evolved) {
+      const key = this.evolveKeySkill(unit);
+      if (key && !result.gains.some((g) => g.cardId === key)) result.gains.push({ uid: unit.uid, cardId: key });
+    }
     return {
       unit,
       from,

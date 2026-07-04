@@ -10,6 +10,8 @@ import { cardsOfCharacter, CARD_BY_ID, cardIcon, cardRole } from '../data/cards'
 import type { Element } from './types';
 import { CAPTURE_CARD_ID, DIFFICULTY_JUMP_MULT, FIXED_DT } from '../data/constants';
 import { bus } from './events';
+import { settings } from './Settings';
+import { playSfx } from '../audio/Sfx';
 
 type Mode = 'title' | 'lobby' | 'battle' | 'viewer' | 'manage';
 
@@ -61,7 +63,7 @@ export class Game {
       saveRun();
       const u = state.roster.find((x) => x.uid === uid);
       if (u) this.ui.toast(`이름 확정: ${displayName(u)}`, 'good');
-      if (this.mode === 'viewer') this.ui.openViewer(state.roster); // 목록/정보 갱신
+      if (this.mode === 'viewer') this.ui.openViewer(state.roster, uid); // 선택 유닛 유지하며 갱신
     };
     this.ui.onNode = (kind) => this.chooseNode(kind);
     this.ui.onBuffPick = (id) => { state.applyBuff(id); this.backToLobby(); };
@@ -76,6 +78,8 @@ export class Game {
     this.ui.onEnterBattle = () => this.enterBattle();
     this.ui.onManage = () => this.openManage();
     this.ui.onManageClose = () => this.showLobby();
+    this.ui.onSettings = () => this.ui.showSettings();
+    this.ui.onSettingsChange = () => { this.speed = settings.speed; };
     this.ui.onManageSelectHolder = (id) => { this.manageHolder = id; this.renderManage(); };
     this.ui.onManageToggle = (holderId, cardId) => this.toggleEquip(holderId, cardId);
     this.ui.onCaptureDiscardPick = (id) => this.onCaptureDiscardPick(id);
@@ -343,8 +347,10 @@ export class Game {
       const dropped = state.roster.find((u) => u.uid === id);
       state.roster = state.roster.filter((u) => u.uid !== id);
       this.battle?.removeUnitByUid(id);
-      state.giveEnemyUnit(species, state.stageIndex + 1);
-      this.ui.toast(`${dropped ? displayName(dropped) : '동료'}을(를) 보내고 새 포획체가 합류`, 'info');
+      const joined = state.giveEnemyUnit(species, state.stageIndex + 1);
+      this.ui.toast(joined
+        ? `${dropped ? displayName(dropped) : '동료'}을(를) 보내고 새 포획체가 합류`
+        : '새 포획체 합류에 실패했습니다.', joined ? 'info' : 'bad');
     } else {
       this.ui.toast('새 포획체를 놓아주었다', 'info');
     }
@@ -396,9 +402,12 @@ export class Game {
   }
 
   private pickDraft(element: string): void {
+    const before = state.roster.length;
     state.draftPick(element as Element);
     saveRun();
-    this.ui.toast(`${unitName(state.roster[state.roster.length - 1])} 합류!`, 'good');
+    // giveUnit 실패(중복/가득) 시 roster가 안 늘어나므로 방금 뽑은 유닛만 안전하게 참조.
+    const u = state.roster.length > before ? state.roster[state.roster.length - 1] : undefined;
+    if (u) this.ui.toast(`${unitName(u)} 합류!`, 'good');
     this.startStage(state.stageIndex);
   }
 
@@ -462,6 +471,7 @@ export class Game {
     const hpScale = (1 + index * 0.06) * (1 + (DIFFICULTY_JUMP_MULT - 1) * jumps);
     this.battle = new Battle(this.scene, state, def, hpScale);
     this.paused = false;
+    this.speed = settings.speed; // 설정의 기본 전투 속도 적용
     this.lastPhase = this.battle.phase;
     this.refreshHand();
     this.refreshPlacement();
@@ -561,6 +571,7 @@ export class Game {
     if (this.evolveQueue.length) {
       const e = this.evolveQueue[0];
       const u = state.roster.find((x) => x.uid === e.uid);
+      playSfx('evolve');
       this.ui.showEvolve({ from: e.from, to: e.to, element: e.element, stage: u?.stage ?? 3, kind: u?.kind ?? 'creature', species: u?.species });
       return true;
     }
@@ -584,6 +595,7 @@ export class Game {
       const r = state.acquireCard(gain.uid, gain.cardId);
       if (r.result === 'skip') continue;
       const desc = { name: displayName(u), element: u.element, kind: u.kind, stage: u.stage, species: u.species };
+      playSfx('gain');
       if (r.result === 'added') {
         this.ui.showCardGain(desc, gain.cardId);
         return true;

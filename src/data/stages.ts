@@ -13,7 +13,7 @@ export interface StageDef {
   label: string;
   /** 웨이브 목록 */
   waves: SpawnGroup[][];
-  /** 난이도 점프 스테이지(3/6/9) — 적 스탯 ×1.4 */
+  /** 난이도 점프 스테이지(3/6/9) — 적 HP 스케일 가산(DIFFICULTY_JUMP_MULT ≈ ×1.28/점프) */
   difficultyJump: boolean;
   /** mini = 미니보스 스테이지, final = 최종 보스(클리어 = 런 승리) */
   boss?: 'mini' | 'final';

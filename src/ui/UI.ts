@@ -8,6 +8,8 @@ import { ENEMIES } from '../data/enemies';
 import { CARD_BY_ID, cardIcon, cardMeta, cardRole } from '../data/cards';
 import { getPortrait } from '../render/Portraits';
 import { getEnemyPortrait } from '../render/EnemyPortraits';
+import { settings, saveSettings } from '../core/Settings';
+import { playSfx } from '../audio/Sfx';
 
 export interface HudInfo {
   stageLabel: string;
@@ -116,6 +118,8 @@ export class UI {
   onEnterBattle = () => {};
   onManage = () => {};
   onManageClose = () => {};
+  onSettings = () => {};
+  onSettingsChange = () => {};
   onManageSelectHolder = (_id: string) => {};
   onManageToggle = (_holderId: string, _cardId: string) => {};
 
@@ -158,26 +162,56 @@ export class UI {
     this.setGameplayVisible(false);
   }
 
+  private hasSave = false;
   private buildTitle(): void {
     this.title = el('div');
     this.title.id = 'title-screen';
     this.title.innerHTML = `
       <div class="logo">Monster Keepers</div>
-      <div class="sub">스타터를 뽑고, 적을 포획해 원정대를 키우며 성을 지키세요.</div>
+      <div class="sub">적을 포획해 나만의 몬스터로 길들이고, 함께 육성해 성을 지키는 디펜스 로그라이크.</div>
       <div class="title-btns">
-        <button class="btn primary" id="start-btn">새 모험</button>
-        <button class="btn" id="continue-btn" style="display:none">이어하기</button>
-      </div>
-      <div class="tip">웨이브 전에는 유닛을 드래그해 배치합니다. 웨이브 중에는 스킬 카드로 싸우고, 포획구로 적을 잡아 원정대에 합류시킵니다.<br/>적이 성에 닿을 때마다 성 HP가 줄고, 성 HP가 0이 되면 패배합니다.</div>`;
+        <button class="btn primary" id="continue-btn">이어하기</button>
+        <button class="btn" id="new-btn">새 모험</button>
+        <button class="btn" id="settings-btn">설정</button>
+      </div>`;
     this.root.appendChild(this.title);
-    (this.title.querySelector('#start-btn') as HTMLButtonElement).onclick = () => this.onStart();
-    (this.title.querySelector('#continue-btn') as HTMLButtonElement).onclick = () => this.onContinue();
+    (this.title.querySelector('#continue-btn') as HTMLButtonElement).onclick = () => { playSfx('click'); if (this.hasSave) this.onContinue(); else this.onStart(); };
+    (this.title.querySelector('#new-btn') as HTMLButtonElement).onclick = () => { playSfx('click'); this.onStart(); };
+    (this.title.querySelector('#settings-btn') as HTMLButtonElement).onclick = () => { playSfx('click'); this.onSettings(); };
   }
 
   showTitle(canContinue = false): void {
+    this.hasSave = canContinue;
     this.title.classList.remove('hidden');
-    (this.title.querySelector('#continue-btn') as HTMLButtonElement).style.display = canContinue ? '' : 'none';
+    const cont = this.title.querySelector('#continue-btn') as HTMLButtonElement;
+    const nw = this.title.querySelector('#new-btn') as HTMLButtonElement;
+    cont.textContent = canContinue ? '이어하기' : '시작하기';
+    nw.style.display = canContinue ? '' : 'none'; // 저장 없으면 '새 모험'은 '시작하기'와 중복이라 숨김
     this.setGameplayVisible(false);
+  }
+
+  /** 설정 모달 — 효과음/음량/기본 전투속도. settings 싱글턴을 직접 갱신·저장. */
+  showSettings(): void {
+    const scroll = this.modal(`<h1>설정</h1>
+      <div class="settings-list">
+        <label class="set-row"><span>효과음</span><input type="checkbox" id="set-sfx" ${settings.sfx ? 'checked' : ''}/></label>
+        <label class="set-row"><span>음량</span><input type="range" id="set-vol" min="0" max="100" value="${Math.round(settings.volume * 100)}"/></label>
+        <label class="set-row"><span>기본 전투 속도</span>
+          <select id="set-speed">
+            <option value="1" ${settings.speed === 1 ? 'selected' : ''}>1x</option>
+            <option value="2" ${settings.speed === 2 ? 'selected' : ''}>2x</option>
+            <option value="3" ${settings.speed === 3 ? 'selected' : ''}>3x</option>
+          </select></label>
+      </div>
+      <div class="choice-row"><button class="btn primary" id="set-ok">확인</button></div>`);
+    const sfxBox = scroll.querySelector('#set-sfx') as HTMLInputElement;
+    const vol = scroll.querySelector('#set-vol') as HTMLInputElement;
+    const speed = scroll.querySelector('#set-speed') as HTMLSelectElement;
+    sfxBox.onchange = () => { settings.sfx = sfxBox.checked; saveSettings(); playSfx('click'); };
+    vol.oninput = () => { settings.volume = Number(vol.value) / 100; };
+    vol.onchange = () => { saveSettings(); playSfx('select'); };
+    speed.onchange = () => { settings.speed = (Number(speed.value) as 1 | 2 | 3); saveSettings(); this.onSettingsChange(); playSfx('click'); };
+    (scroll.querySelector('#set-ok') as HTMLButtonElement).onclick = () => { playSfx('click'); this.clearModal(); };
   }
   hideTitle(): void { this.title.classList.add('hidden'); }
 
@@ -497,12 +531,13 @@ export class UI {
     (this.viewerUI.querySelector('#viewer-close') as HTMLButtonElement).onclick = () => this.onCloseViewer();
   }
 
-  openViewer(roster: OwnedUnit[]): void {
+  openViewer(roster: OwnedUnit[], selectedUid?: string): void {
     this.viewerUI.classList.add('on');
     const list = this.viewerUI.querySelector('#roster-items')!;
     list.innerHTML = '';
+    const selIndex = Math.max(0, roster.findIndex((u) => u.uid === selectedUid));
     roster.forEach((u, i) => {
-      const item = el('div', 'roster-item' + (i === 0 ? ' sel' : ''), `<div class="ri-pic">${ELEMENT_ICON[u.element]}</div><div class="ri-text"><div class="ri-name">${displayName(u)}</div><div class="ri-sub">${ELEMENT_NAME_KO[u.element]} · Lv${u.level} · ${u.stage}단</div></div>`);
+      const item = el('div', 'roster-item' + (i === selIndex ? ' sel' : ''), `<div class="ri-pic">${ELEMENT_ICON[u.element]}</div><div class="ri-text"><div class="ri-name">${displayName(u)}</div><div class="ri-sub">${ELEMENT_NAME_KO[u.element]} · Lv${u.level} · ${u.stage}단</div></div>`);
       applyOwnedPortrait(item.querySelector('.ri-pic') as HTMLElement, u);
       item.onclick = () => {
         list.querySelectorAll('.roster-item').forEach((x) => x.classList.remove('sel'));
@@ -512,7 +547,8 @@ export class UI {
       };
       list.appendChild(item);
     });
-    if (roster[0]) { this.onViewerSelect(roster[0].uid); this.showUnitInfo(roster[0]); }
+    const sel = roster[selIndex];
+    if (sel) { this.onViewerSelect(sel.uid); this.showUnitInfo(sel); }
   }
   closeViewer(): void { this.viewerUI.classList.remove('on'); }
 

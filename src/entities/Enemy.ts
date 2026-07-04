@@ -232,6 +232,15 @@ export class Enemy {
     this.segT = 0;
     this.reachedBase = false;
     this.alive = true;
+    // 상태 초기화 — 부활 보스가 이전 기절/속박/감속/표식을 안고 되살아나 좀비/스톨/도트순삭되던 버그 방지.
+    this.stunned = false;
+    this.stunTimer = 0;
+    this.rootTimer = 0;
+    this.slowTimer = 0;
+    this.slowPct = 0;
+    this.zoneSlow = 0;
+    this.defDownTimer = 0;
+    this.marks.clearDebuffs();
     const start = PATH[0];
     this.pos.set(start.x, 0, start.z);
     this.view.position.copy(this.pos);
