@@ -732,6 +732,14 @@ body {
 .logo-banner::before { left: -18px; }
 .logo-banner::after { right: -18px; }
 #title-screen .logo { display: inline-block; color: var(--wood-dark); font-size: 50px; text-shadow: 0 2px 0 rgba(242,206,107,0.7); }
+/* 타이틀 로고 이미지 제공 시(probeTitleBg) — 나무 배너 대신 이미지 표시. 파일 없으면 위 텍스트 배너 유지. */
+.logo-banner.has-logo-img {
+  border: none; box-shadow: none; padding: 0; background-color: transparent;
+  background-size: contain; background-repeat: no-repeat; background-position: center;
+  width: min(86vw, 620px); height: min(38vh, 240px);
+}
+.logo-banner.has-logo-img::before, .logo-banner.has-logo-img::after { display: none; }
+.logo-banner.has-logo-img .logo { display: none; }
 #title-screen .sub { color: var(--parchment); opacity: 0.85; font-size: 15.5px; line-height: 1.6; }
 .title-menu { display: flex; flex-direction: column; align-items: stretch; gap: 12px; width: 288px; margin-top: 4px; }
 .menu-item {
@@ -906,6 +914,9 @@ body {
 .shop-item .si-desc { font-size: 12.5px; color: #5a4632; margin-top: 2px; }
 .shop-item .si-cost { font-family: 'Jua', sans-serif; font-size: 16px; color: #8a6a12; flex: 0 0 auto; white-space: nowrap; }
 .shop-item.disabled .si-cost { color: var(--hp-ruby); }
+.shop-item.sold { cursor: default; }
+.shop-item.sold .si-label { text-decoration: line-through; }
+.shop-item.sold .si-cost { color: var(--leather); }
 .shop-section { font-family: 'Jua', sans-serif; color: var(--wood-dark); font-size: 17px; margin: 16px auto 8px; max-width: 460px; text-align: left; }
 .shop-section .shop-note { font-size: 12px; color: var(--leather); font-weight: normal; }
 /* 도구 장착 대상 선택 */

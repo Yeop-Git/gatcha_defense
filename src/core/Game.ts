@@ -93,6 +93,7 @@ export class Game {
     this.ui.onManageToggle = (holderId, cardId) => this.toggleEquip(holderId, cardId);
     this.ui.onCaptureDiscardPick = (id) => this.onCaptureDiscardPick(id);
     this.ui.onShopBuy = (id) => this.buyShopItem(id);
+    this.ui.onShopReroll = () => this.rerollShop();
     this.ui.onShopClose = () => this.backToLobby(); // 상점(특수 노드) 닫으면 전투 정리 후 로비로
     this.ui.onItemAssign = (uid) => this.assignItem(uid);
   }
@@ -506,19 +507,63 @@ export class Game {
     { id: 'crit', icon: '💥', label: '급소 간파', desc: '모든 유닛 치명타 확률 +6%.', cost: 50 },
   ];
 
+  /** 스크롤 없이 보이도록 방문마다 소수만 무작위 진열. */
+  private static readonly SHOP_STOCK_SIZE = 4;
+  private shopStock: { id: string; sold: boolean }[] = [];
+  private shopRerolls = 0;
+
+  private shopRerollCost(): number { return 15 + this.shopRerolls * 10; }
+
+  /** 상점 진열 재추첨: 강화 + 도구 통합 풀에서 무작위 N개(중복 없이). */
+  private rollShop(): void {
+    const pool = [...Game.SHOP_ITEMS.map((it) => it.id), ...ITEMS.map((t) => `item:${t.id}`)];
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    this.shopStock = pool.slice(0, Game.SHOP_STOCK_SIZE).map((id) => ({ id, sold: false }));
+  }
+
+  /** 진열 id → 표시 정보(강화/도구 공용). */
+  private shopEntry(id: string): { icon: string; label: string; desc: string; cost: number } | null {
+    if (id.startsWith('item:')) { const t = ITEM_BY_ID[id.slice(5)]; return t ? { icon: t.icon, label: t.name, desc: t.desc, cost: t.cost } : null; }
+    const it = Game.SHOP_ITEMS.find((x) => x.id === id);
+    return it ? { icon: it.icon, label: it.label, desc: it.desc, cost: it.cost } : null;
+  }
+
+  /** 상점 진입 — 진열 새로 뽑고 리롤 카운터 초기화. */
+  private enterShop(): void {
+    this.shopRerolls = 0;
+    this.rollShop();
+    this.openShop();
+  }
+
   private openShop(): void {
     const full = state.baseHp >= state.baseHpMax;
-    const items = Game.SHOP_ITEMS.map((it) => ({
-      ...it,
-      disabled: it.id === 'heal' && full,
-      note: it.id === 'heal' && full ? '성이 이미 온전합니다.' : undefined,
-    }));
-    const tools = ITEMS.map((t) => ({ id: `item:${t.id}`, icon: t.icon, label: t.name, desc: t.desc, cost: t.cost }));
-    this.ui.showShop({ gold: state.gold, items, tools });
+    const stock = this.shopStock.map((s) => {
+      const e = this.shopEntry(s.id)!;
+      const healFull = s.id === 'heal' && full;
+      return {
+        id: s.id, icon: e.icon, label: e.label, desc: e.desc, cost: e.cost, sold: s.sold,
+        disabled: s.sold || healFull || state.gold < e.cost,
+        note: s.sold ? '품절' : healFull ? '성이 이미 온전합니다.' : undefined,
+      };
+    });
+    const rerollCost = this.shopRerollCost();
+    this.ui.showShop({ gold: state.gold, stock, rerollCost, canReroll: state.gold >= rerollCost });
+  }
+
+  /** 골드로 진열 새로고침. 리롤할수록 비용 증가(무한 리롤 방지). */
+  private rerollShop(): void {
+    const cost = this.shopRerollCost();
+    if (!state.spendGold(cost)) { this.ui.toast('골드가 부족합니다.', 'bad'); this.openShop(); return; }
+    this.shopRerolls++;
+    this.rollShop();
+    saveRun();
+    this.openShop();
   }
 
   private buyShopItem(id: string): void {
-    if (id.startsWith('item:')) { this.startBuyItem(id.slice(5)); return; }
+    const slot = this.shopStock.find((s) => s.id === id);
+    if (!slot || slot.sold) { this.openShop(); return; } // 진열에 없거나 품절
+    if (id.startsWith('item:')) { this.startBuyItem(id.slice(5)); return; } // 품절 처리는 장착 확정 후
     const item = Game.SHOP_ITEMS.find((it) => it.id === id);
     if (!item) return;
     if (id === 'heal' && state.baseHp >= state.baseHpMax) { this.openShop(); return; }
@@ -526,8 +571,9 @@ export class Game {
     if (id === 'heal') { state.heal(state.baseHpMax); this.ui.toast('성을 완전히 수리했습니다.', 'good'); }
     else if (id === 'maxhp') { state.baseHpMax += 25; state.baseHp += 25; this.ui.toast('성벽을 보강했습니다. 최대 HP +25', 'good'); }
     else { state.applyBuff(id); this.ui.toast(`${item.label} 완료!`, 'good'); }
+    slot.sold = true; // 산 물건은 그 방문 동안 품절 (더 원하면 새로고침)
     saveRun();
-    this.openShop(); // 잔액/상태 갱신하며 다시 열기 (연속 구매)
+    this.openShop();
   }
 
   // ── 도구(held item) 구매 → 장착 대상 선택 ──
@@ -553,6 +599,8 @@ export class Game {
     if (!def || !state.spendGold(def.cost)) { this.ui.toast('골드가 부족합니다.', 'bad'); this.openShop(); return; }
     const prev = state.giveItem(uid, itemId);
     const u = state.roster.find((x) => x.uid === uid);
+    const slot = this.shopStock.find((s) => s.id === `item:${itemId}`);
+    if (slot) slot.sold = true; // 구매 확정 시 품절
     this.battle?.refreshUnitStats(); // 장착 즉시 스탯 반영(전투 대기 중일 수 있음)
     this.ui.toast(`${u ? displayName(u) : '동료'}에게 ${def.name} 장착${prev ? ` (${prev} 교체)` : ''}`, 'good');
     saveRun();
@@ -765,7 +813,7 @@ export class Game {
 
   private chooseNode(kind: string): void {
     if (kind === 'shop') {
-      this.openShop();
+      this.enterShop();
     } else if (kind === 'event') {
       const node = EVENT_NODES[Math.floor(Math.random() * EVENT_NODES.length)];
       this.ui.showEvent(node);

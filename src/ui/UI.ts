@@ -138,6 +138,7 @@ export class UI {
   onManageToggle = (_holderId: string, _cardId: string) => {};
   onShop = () => {};
   onShopBuy = (_id: string) => {};
+  onShopReroll = () => {};
   onShopClose = () => {};
   onItemAssign = (_uid: string) => {};
   onStageEnter = () => {};
@@ -178,6 +179,7 @@ export class UI {
     this.buildLobby();
     this.buildStageMap();
     this.probeLobbyBg();
+    this.probeTitleBg();
     this.buildManage();
     this.buildDexView();
     bus.on('base:damage', () => this.pulseHp());
@@ -627,33 +629,31 @@ export class UI {
     (scroll.querySelector('#ev-ok') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onEventPick(node.id); };
   }
 
-  /** 상점 모달 — 골드로 성 회복/영구 강화 + 캐릭터 도구 구매. 구매마다 Game이 다시 열어 잔액/상태 갱신. */
+  /**
+   * 상점 모달 — 방문마다 랜덤 소수 진열(스크롤 없음) + 골드 새로고침(리롤).
+   * 강화/도구 통합 진열. 도구는 클릭 시 장착 대상 선택으로 이어짐. 구매마다 Game이 재오픈.
+   */
   showShop(data: {
     gold: number;
-    items: { id: string; icon: string; label: string; desc: string; cost: number; disabled?: boolean; note?: string }[];
-    tools?: { id: string; icon: string; label: string; desc: string; cost: number }[];
+    stock: { id: string; icon: string; label: string; desc: string; cost: number; disabled?: boolean; sold?: boolean; note?: string }[];
+    rerollCost: number;
+    canReroll: boolean;
   }): void {
-    const rowHtml = (it: { id: string; icon: string; label: string; desc: string; cost: number; disabled?: boolean; note?: string }): string => {
-      const affordable = !it.disabled && data.gold >= it.cost;
-      return `<div class="shop-item${affordable ? '' : ' disabled'}" data-id="${it.id}">
-        <div class="si-ico">${it.icon}</div>
-        <div class="si-text"><div class="si-label">${it.label}</div><div class="si-desc">${it.note ?? it.desc}</div></div>
-        <div class="si-cost">🪙 ${it.cost}</div>
-      </div>`;
-    };
-    const upgradeRows = data.items.map(rowHtml).join('');
-    const toolRows = (data.tools ?? []).map((t) => rowHtml({ ...t, disabled: data.gold < t.cost })).join('');
-    const toolSection = toolRows
-      ? `<h2 class="shop-section">🎒 도구 <span class="shop-note">동료에게 장착</span></h2><div class="shop-list">${toolRows}</div>`
-      : '';
-    const scroll = this.modal(`<h1>🛒 상점</h1><p class="shop-gold">보유 골드 <b>${data.gold}</b></p>
-      <h2 class="shop-section">✦ 강화</h2>
-      <div class="shop-list">${upgradeRows}</div>
-      ${toolSection}
-      <div class="choice-row"><button class="btn primary" id="shop-ok">닫기</button></div>`);
+    const rows = data.stock.map((it) => `<div class="shop-item${it.disabled ? ' disabled' : ''}${it.sold ? ' sold' : ''}" data-id="${it.id}">
+      <div class="si-ico">${it.icon}</div>
+      <div class="si-text"><div class="si-label">${it.label}</div><div class="si-desc">${it.note ?? it.desc}</div></div>
+      <div class="si-cost">${it.sold ? '품절' : `🪙 ${it.cost}`}</div>
+    </div>`).join('');
+    const scroll = this.modal(`<h1>🛒 상점</h1><p class="shop-gold">보유 골드 <b>${data.gold}</b> · 마음에 드는 게 없으면 새로고침</p>
+      <div class="shop-list">${rows}</div>
+      <div class="choice-row">
+        <button class="btn" id="shop-reroll"${data.canReroll ? '' : ' disabled'}>🔄 새로고침 (🪙 ${data.rerollCost})</button>
+        <button class="btn primary" id="shop-ok">닫기</button>
+      </div>`);
     scroll.querySelectorAll('.shop-item:not(.disabled)').forEach((row) => {
       (row as HTMLElement).onclick = () => { playSfx('coin'); this.onShopBuy((row as HTMLElement).dataset.id!); };
     });
+    (scroll.querySelector('#shop-reroll') as HTMLButtonElement).onclick = () => { playSfx('select'); this.onShopReroll(); };
     (scroll.querySelector('#shop-ok') as HTMLButtonElement).onclick = () => { playSfx('click'); this.clearModal(); this.onShopClose(); };
   }
 
@@ -831,6 +831,37 @@ export class UI {
       img.src = base + candidates[i];
     };
     tryNext(0);
+  }
+
+  /**
+   * 타이틀 로고/배경 이미지 예비 — public/assets/ui/ 에 파일을 넣으면 자동 적용(없으면 우드톤 유지).
+   *  · 배경: title_bg.{jpg,png,webp} → #title-screen 전체 배경(가독성 위해 어둡게 오버레이).
+   *  · 로고: title_logo.{png,webp} → 나무 배너 대신 로고 이미지(.has-logo-img).
+   * 이미지는 추후 제공 예정 — 지금은 파일만 감지해 두는 골격.
+   */
+  private probeTitleBg(): void {
+    const base = import.meta.env.BASE_URL;
+    const tryImg = (cands: string[], on: (url: string) => void): void => {
+      const go = (i: number): void => {
+        if (i >= cands.length) return;
+        const img = new Image();
+        img.onload = () => on(base + cands[i]);
+        img.onerror = () => go(i + 1);
+        img.src = base + cands[i];
+      };
+      go(0);
+    };
+    tryImg(['assets/ui/title_bg.jpg', 'assets/ui/title_bg.png', 'assets/ui/title_bg.webp'], (url) => {
+      this.title.style.backgroundImage = `linear-gradient(rgba(18,12,7,0.30), rgba(18,12,7,0.60)), url("${url}")`;
+      this.title.style.backgroundSize = 'cover';
+      this.title.style.backgroundPosition = 'center';
+    });
+    tryImg(['assets/ui/title_logo.png', 'assets/ui/title_logo.webp'], (url) => {
+      const banner = this.title.querySelector('.logo-banner') as HTMLElement | null;
+      if (!banner) return;
+      banner.classList.add('has-logo-img');
+      banner.style.backgroundImage = `url("${url}")`;
+    });
   }
 
   private buildManage(): void {
