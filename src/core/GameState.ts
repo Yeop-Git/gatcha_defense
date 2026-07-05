@@ -6,8 +6,13 @@ import { ITEM_BY_ID, type ItemEffect } from '../data/items';
 import { unlockCreature } from './Dex';
 import {
   BASE_HP, BOND_CAP, BOND_PER_STAGE, CAPTURE, ELEMENTS, ENEMY_EVOLVE_LEVEL, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
-  CRIT, LEVEL_GROWTH_PER, MANA_MAX, MANA_REGEN, MAX_LEVEL, MAX_MONSTERS, UNIT_BASE, STAGE_HP_FLOOR_PER,
+  CRIT, LEVEL_GROWTH_PER, MANA_MAX, MANA_REGEN, MAX_LEVEL, ENEMY_MAX_LEVEL, MAX_MONSTERS, UNIT_BASE, STAGE_HP_FLOOR_PER,
 } from '../data/constants';
+
+/** 유닛 종류별 만렙: 크리처 30, 포획 적 25 (에너미 육성 상한을 낮춰 차등). */
+export function maxLevelFor(kind: OwnedUnit['kind']): number {
+  return kind === 'enemy' ? ENEMY_MAX_LEVEL : MAX_LEVEL;
+}
 
 /** 무속성 적을 플레이어블 유닛으로 쓸 때의 대체 속성 (마크/색 판정용). */
 export function asElement(el: ElementOrNeutral): Element {
@@ -305,9 +310,15 @@ export class GameState {
     return this.roster.some((u) => u.element === element);
   }
 
+  /** 같은 속성의 '크리처'를 이미 보유했는가 (드래프트/야생 크리처는 속성당 1마리). */
+  hasCreatureElement(element: Element): boolean {
+    return this.roster.some((u) => u.kind === 'creature' && u.element === element);
+  }
+
   /** 로스터 합류 (드래프트/야생 크리처 합류). level에 맞는 진화 단계로 시작. */
   giveUnit(element: Element, level = 1): OwnedUnit | null {
-    if (this.hasElement(element) || this.monstersFull) return null;
+    // 같은 속성 '크리처'만 중복 차단 — 같은 속성의 포획 적이 있어도 야생 크리처는 합류 가능(버그 수정).
+    if (this.hasCreatureElement(element) || this.monstersFull) return null;
     const stage = stageForLevel(element, level);
     const unit: OwnedUnit = { uid: nextUid(), kind: 'creature', element, level, stage, xp: 0, equipped: [], discarded: [], bond: 0 };
     unit.equipped = this.defaultEquip(element, level);
@@ -432,7 +443,8 @@ export class GameState {
     let leveled = false;
     let evolved = false;
     const gains: CardGain[] = [];
-    while (unit.level < MAX_LEVEL && unit.xp >= xpForLevel(unit.level)) {
+    const cap = maxLevelFor(unit.kind); // 크리처 30 / 에너미 25
+    while (unit.level < cap && unit.xp >= xpForLevel(unit.level)) {
       unit.xp -= xpForLevel(unit.level);
       unit.level++;
       leveled = true;
@@ -461,7 +473,7 @@ export class GameState {
         if (c.learnLevel === unit.level) gains.push({ uid: unit.uid, cardId: c.id });
       }
     }
-    if (unit.level >= MAX_LEVEL) unit.xp = 0; // 만렙: XP 바 오버플로 방지
+    if (unit.level >= cap) unit.xp = 0; // 만렙: XP 바 오버플로 방지
     return { leveled, evolved, gains };
   }
 

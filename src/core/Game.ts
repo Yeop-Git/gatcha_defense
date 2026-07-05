@@ -12,7 +12,7 @@ import { ITEMS, ITEM_BY_ID } from '../data/items';
 import type { Element } from './types';
 import { CAPTURE_CARD_ID, DIFFICULTY_JUMP_MULT, FIXED_DT, MAX_MONSTERS } from '../data/constants';
 import { bus } from './events';
-import { settings } from './Settings';
+import { settings, saveSettings } from './Settings';
 import { playSfx } from '../audio/Sfx';
 import { setBgmTrack, updateBgmSettings } from '../audio/Bgm';
 
@@ -54,7 +54,8 @@ export class Game {
     this.ui.onBeginWave = () => { this.battle?.beginWave(); this.refreshHand(); this.refreshPlacement(); };
     this.ui.onCardGrab = (id, ev) => this.beginCardDrag(id, ev);
     this.ui.onUnitCardGrab = (id, ev) => this.beginUnitCardDrag(id, ev);
-    this.ui.onSpeedChange = (speed) => { this.speed = speed; this.ui.toast(`전투 속도 ${speed}배`, 'info'); };
+    // 배속은 설정에 영속화 — 스테이지/웨이브 전환 시 startStage가 settings.speed로 되돌려도 유지되도록.
+    this.ui.onSpeedChange = (speed) => { this.speed = speed; settings.speed = speed; saveSettings(); this.ui.toast(`전투 속도 ${speed}배`, 'info'); };
     this.ui.onCardBlocked = (reason) => this.ui.warn(reason);
     this.ui.onOpenViewer = () => this.openViewer();
     this.ui.onCloseViewer = () => this.closeViewer();

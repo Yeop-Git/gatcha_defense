@@ -15,7 +15,7 @@ function makeUnitBar(): THREE.Sprite {
   return sp;
 }
 
-function drawUnitBar(sp: THREE.Sprite, frac: number): void {
+function drawUnitBar(sp: THREE.Sprite, frac: number, shieldFrac = 0): void {
   const tex = sp.material.map as THREE.CanvasTexture;
   const c = tex.image as HTMLCanvasElement;
   const ctx = c.getContext('2d')!;
@@ -24,6 +24,12 @@ function drawUnitBar(sp: THREE.Sprite, frac: number): void {
   ctx.fillRect(0, 0, 64, 10);
   ctx.fillStyle = frac > 0.5 ? '#54e0c8' : frac > 0.25 ? '#d8a93b' : '#c0392b';
   ctx.fillRect(1, 1, 62 * Math.max(0, frac), 8);
+  // 보호막: HP 위에 파란색으로 더해 표시(오른쪽에서 채움). 피격 시 HP보다 먼저 흡수되는 양.
+  if (shieldFrac > 0) {
+    const sw = 62 * Math.min(1, shieldFrac);
+    ctx.fillStyle = '#4fa8ff';
+    ctx.fillRect(1 + (62 - sw), 1, sw, 8);
+  }
   tex.needsUpdate = true;
 }
 
@@ -143,6 +149,7 @@ export class Monster {
 
   addShield(amount: number): void {
     this.shield += amount;
+    this.updateHpBar(); // 보호막 게이지(파란색)를 체력바에 즉시 반영
   }
 
   private blessTimer = 0;
@@ -203,8 +210,10 @@ export class Monster {
 
   private updateHpBar(): void {
     const frac = Math.max(0, this.hp / this.maxHp);
-    this.hpBar.visible = this.alive && frac < 0.999;
-    drawUnitBar(this.hpBar, frac);
+    const shieldFrac = this.maxHp > 0 ? this.shield / this.maxHp : 0;
+    // 피해를 입었거나 보호막이 있으면 바를 표시(보호막만 있어도 파란 게이지가 보이도록).
+    this.hpBar.visible = this.alive && (frac < 0.999 || this.shield > 0);
+    drawUnitBar(this.hpBar, frac, shieldFrac);
   }
 
   refreshStats(): void {

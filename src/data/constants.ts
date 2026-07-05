@@ -106,13 +106,22 @@ export const FIELD = {
   pathCellSet: new Set<string>(),
 };
 
-/** 경로 인접(비경로) 셀에 배치 슬롯 자동 생성 — 경로를 따라 고르게 count개. */
-function genSlots(cells: Set<string>, count = PARTY_SIZE): { x: number; z: number }[] {
+/** 성(城)과 유닛 배치 슬롯이 렌더상 겹치지 않도록 두는 최소 간격(월드 단위).
+ *  성 받침 반경 ≈3.2 + 유닛 몸통 여유. 이 반경 안의 경로 인접 셀은 배치 슬롯에서 제외. */
+export const CASTLE_CLEARANCE = 4.4;
+
+/** 경로 인접(비경로) 셀에 배치 슬롯 자동 생성 — 경로를 따라 고르게 count개. 성 주변은 제외. */
+function genSlots(cells: Set<string>, castleCell: [number, number], count = PARTY_SIZE): { x: number; z: number }[] {
+  const castle = cellCenter(castleCell[0], castleCell[1]);
   const cand: { col: number; row: number }[] = [];
   for (let col = 0; col < GRID_COLS; col++) for (let row = 0; row < GRID_ROWS; row++) {
     if (cells.has(`${col},${row}`)) continue;
     const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => cells.has(`${col + dc},${row + dr}`));
-    if (near) cand.push({ col, row });
+    if (!near) continue;
+    // 성과 겹치는 자리는 배치 슬롯에서 제외 — 내 캐릭터가 성에 파묻히던 문제 방지.
+    const p = cellCenter(col, row);
+    if (Math.hypot(p.x - castle.x, p.z - castle.z) < CASTLE_CLEARANCE) continue;
+    cand.push({ col, row });
   }
   cand.sort((a, b) => a.col - b.col || a.row - b.row); // 좌→우(진행 방향 근사)로 정렬
   if (cand.length <= count) return cand.map((c) => cellCenter(c.col, c.row));
@@ -131,7 +140,8 @@ export function setStageLayout(stageIndex: number): void {
   FIELD.path.length = 0; FIELD.path.push(...pts);
   FIELD.pathCellSet.clear();
   for (const [c, r] of expandCells(corners)) FIELD.pathCellSet.add(`${c},${r}`);
-  const slots = genSlots(FIELD.pathCellSet, PARTY_SIZE);
+  const castleCell = corners[corners.length - 1]; // 경로 끝 = 성 위치
+  const slots = genSlots(FIELD.pathCellSet, castleCell, PARTY_SIZE);
   UNIT_SLOTS.length = 0; UNIT_SLOTS.push(...slots);
 }
 
@@ -167,20 +177,25 @@ export const PORTRAIT_KEY_HIGH = 92;
 /** 湲곗? / 二쇱씤怨?湲곕낯移?(짠14) */
 export const BASE_HP = 235; // ?꾨컲 ?ㅼ썫/?꾩닔??寃щ뵒?꾨줉 ?곹뼢(諛몃윴??
 export const BASE_LEAK_NORMAL = 3;
-export const BASE_LEAK_MINIBOSS = 20;
-export const BASE_LEAK_BOSS = 70;
+export const BASE_LEAK_MINIBOSS = 24; // 밸런스: 미니보스 루프백 누수 소폭↑(20→24) — 점프 스테이지 긴장 (스테이지1~3 온보딩은 유지)
+export const BASE_LEAK_BOSS = 60;     // 밸런스: 보스 루프백 누수 ↓(70→60) — 불가피한 죽음 절벽 방지(플랫·비스케일). 위협은 공성으로.
 
 // SIEGE: normal enemies that reach the castle no longer vanish with a flat leak.
 // They stop at the gate and strike the castle for their own `attack` value every `interval`
 // seconds (visible attack motion + damage number), so enemy attack stats finally matter and
 // losing HP is never a "mystery death". Boss/miniboss keep the loop-back leak (BASE_LEAK_*).
-export const SIEGE = { interval: 1.2, attackMult: 1 } as const;
+// 밸런스: 성 위협의 핵심 밸브. 공성 피해 = round(적 attack × atkScale × attackMult)로 스테이지 스케일이 걸리고,
+// 포탑+유닛을 뚫고 성문에 도달한 적에게만 적용된다 — 깔끔한 방어는 거의 안 아프고, 새어나간 웨이브는 성을 갉는다.
+// mult 1.6/interval 1.05 (기존 1/1.2) ≈ 공성 DPS ×1.83. 병렬·무제한 공성이라 과하지 않게 유지(레드팀 검증).
+export const SIEGE = { interval: 1.05, attackMult: 1.6 } as const;
 
 // ENEMY_ATTACK: enemies now fight your units. A (non-boss) enemy that comes within `range` of an
 // ally stops marching and strikes it every `interval` seconds for the enemy's own `attack`. Units
 // have HP and are downed at 0 (out for the wave, revived next placement phase). This is the core
 // "my character is under attack" risk — placement near the lane trades DPS for danger.
-export const ENEMY_ATTACK = { range: 2.2, interval: 1.55, hitsBeforeLeave: 1, leaveDuration: 2.4 } as const;
+// 밸런스: leaveDuration 2.4→2.1 — 적이 속도방지턱 유닛에서 조금 더 빨리 이탈해 성문으로 흘러가도록(공성 밸브에 공급).
+// hitsBeforeLeave·interval은 그대로 → 유닛이 받는 교전당 피해는 동일(유닛 생존 유지).
+export const ENEMY_ATTACK = { range: 2.2, interval: 1.55, hitsBeforeLeave: 1, leaveDuration: 2.1 } as const;
 
 /** ??諛섍꺽: 洹쇱쿂 諛⑹뼱???좊떅/二쇱씤怨?瑜?二쇨린 ?寃????뷀렂???깅┰(??蹂댄샇留?遺??移대뱶媛 ?섎?瑜?媛吏?. */
 // 적→아군 교전 파라미터는 위 ENEMY_ATTACK 참조. 아군 유닛은 이제 피해를 받고 쓰러질 수 있다
@@ -190,7 +205,9 @@ export const ENEMY_ATTACK = { range: 2.2, interval: 1.55, hitsBeforeLeave: 1, le
 export const HERO = {
   hp: 120,
   attack: 17,
-  attackSpeed: 1.45, // 珥덈떦 怨듦꺽 ?잛닔
+  // 밸런스: 유일한 포탑 완화 — 공속만 1.45→1.25(DPS 24.6→21.25). 성문 공성 적이 2~3발 버텨 더 많이 새어들도록.
+  // range는 7.5 유지(축소 안 함) — 사거리는 보스가 얼마나 일찍 교전되는지=플랫 누수 랩 수를 결정하므로 건드리지 않음.
+  attackSpeed: 1.25,
   range: 7.5, // ?깆씠 ?ㅼ쭏??諛⑹뼱?먭? ?섎룄濡??됰꼮??寃쎈줈 ??而ㅻ쾭)
 } as const;
 
@@ -307,8 +324,10 @@ export const CREATURE_DISPLAY_SCALE: Record<Element, number> = {
   fire: 1, water: 0.6, grass: 1, light: 1, dark: 1,
 };
 
-/** 만렙 (레벨 확장). 이 이상 XP는 누적하지 않는다. */
+/** 만렙 (레벨 확장). 이 이상 XP는 누적하지 않는다. 크리처 = 30. */
 export const MAX_LEVEL = 30;
+/** 포획 적(enemy) 육성 상한 — 크리처(30)보다 낮게 두어 차등. */
+export const ENEMY_MAX_LEVEL = 25;
 /** 레벨당 스탯 성장률(HP·공격). 30레벨 확장에 맞춰 완만하게. */
 export const LEVEL_GROWTH_PER = 0.035;
 

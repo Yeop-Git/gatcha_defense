@@ -46,6 +46,8 @@ export interface UnitCard {
   level?: number;
   hp?: number;
   maxHp?: number;
+  /** 현재 보호막(HP 위에 파란색으로 표시). 배치된 유닛만. */
+  shield?: number;
 }
 
 const el = (tag: string, cls?: string, html?: string): HTMLElement => {
@@ -368,7 +370,8 @@ export class UI {
     this.actions.append(exitBtn);
     const speedWrap = el('div', 'speed-toggle');
     for (const speed of [1, 2, 3] as const) {
-      const b = el('button', `speed-btn${speed === 1 ? ' on' : ''}`, `${speed}x`) as HTMLButtonElement;
+      // 초기 하이라이트를 저장된 기본 속도에 맞춘다 — HUD 재생성 시 UI와 실제 배속이 어긋나지 않게.
+      const b = el('button', `speed-btn${speed === settings.speed ? ' on' : ''}`, `${speed}x`) as HTMLButtonElement;
       b.onclick = () => {
         speedWrap.querySelectorAll('.speed-btn').forEach((x) => x.classList.remove('on'));
         b.classList.add('on');
@@ -473,8 +476,11 @@ export class UI {
       const hasHp = it.hp != null && it.maxHp != null && it.maxHp > 0;
       const frac = hasHp ? Math.max(0, Math.min(1, it.hp! / it.maxHp!)) : 1;
       const hpColor = it.dead ? '#7a1c1c' : frac > 0.5 ? 'var(--el-grass)' : frac > 0.25 ? 'var(--gold)' : 'var(--hp-ruby)';
+      const shieldFrac = it.shield && it.maxHp ? Math.min(1, it.shield / it.maxHp) : 0;
+      const shieldTxt = shieldFrac > 0 ? ` +🛡️${it.shield}` : '';
+      const shieldEl = shieldFrac > 0 ? `<div class="unit-shield-fill" style="width:${Math.round(shieldFrac * 100)}%"></div>` : '';
       const hpBar = hasHp
-        ? `<div class="unit-hp"><div class="unit-hp-fill" style="width:${Math.round(frac * 100)}%;background:${hpColor}"></div><span class="unit-hp-txt">${it.dead ? '쓰러짐' : `${it.hp}/${it.maxHp}`}</span></div>`
+        ? `<div class="unit-hp"><div class="unit-hp-fill" style="width:${Math.round(frac * 100)}%;background:${hpColor}"></div>${shieldEl}<span class="unit-hp-txt">${it.dead ? '쓰러짐' : `${it.hp}/${it.maxHp}${shieldTxt}`}</span></div>`
         : '';
       const card = el('div', `unit-card el-${it.element}${it.placed ? ' placed' : ''}${it.dead ? ' dead' : ''}`, `
         <div class="unit-lv" style="position:absolute;top:4px;left:6px;font-size:11px;font-weight:800;color:#f2ce6b;text-shadow:0 1px 2px #000;z-index:2">Lv${it.level ?? 1}</div>

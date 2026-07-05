@@ -178,7 +178,7 @@ export class Battle {
     if (slot >= 0) this.placeUnit(unit, slot);
   }
 
-  placeablesState(): { id: string; name: string; element: ElementOrNeutral; placed: boolean; dead: boolean; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3; level: number; hp: number; maxHp: number }[] {
+  placeablesState(): { id: string; name: string; element: ElementOrNeutral; placed: boolean; dead: boolean; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3; level: number; hp: number; maxHp: number; shield: number }[] {
     this.syncPlacement();
     return this.state.roster.map((u) => {
       const live = this.units.find((m) => m.unit.uid === u.uid);
@@ -198,6 +198,7 @@ export class Battle {
         level: u.level,
         hp,
         maxHp,
+        shield: live ? Math.max(0, Math.round(live.shield)) : 0,
       };
     });
   }
@@ -1155,10 +1156,10 @@ export class Battle {
     const r = this.state.registerCapture(e.def.id);
     const dex = r.firstTime ? '도감 신규 등록' : `포획 ${r.count}회`;
 
-    // 야생 크리처: 같은 속성 보유 시 흡수 강화(별도 유닛 X), 미보유 시 새 크리처로 합류.
+    // 야생 크리처: 같은 속성 '크리처' 보유 시 흡수 강화(별도 유닛 X), 미보유 시 새 크리처로 합류.
     if (e.def.creatureStage) {
       const el = e.def.element as Element;
-      if (this.state.hasElement(el)) {
+      if (this.state.hasCreatureElement(el)) {
         const absorbed = this.state.absorbCreatureDuplicate(el);
         if (absorbed) { this.onCaptureAbsorb(absorbed, e, dex); return; }
       }
