@@ -496,6 +496,13 @@ export class Battle {
       const burn = e.marks.stacks('burn');
       if (burn > 0) this.damageDot(e, burn * BURN_DPS_PER_STACK * dt, 'fire');
       if (e.marks.has('overgrowth') && !e.def.flying) this.damageDot(e, OVERGROWTH_DPS * dt, 'grass');
+      if (e.ignoreUnitTimer > 0) {
+        e.ignoreUnitTimer -= dt;
+        if (e.ignoreUnitTimer <= 0) {
+          e.ignoreUnitUid = null;
+          e.engageHits = 0;
+        }
+      }
 
       // 아군 유닛 교전: 일반 적이 사거리 내 아군을 만나면 진격을 멈추고 공격한다(보스/미니보스 제외).
       const foe = (!e.isBoss && !e.isMini && !e.stunned && !e.atBase && e.fearTimer <= 0)
@@ -570,6 +577,7 @@ export class Battle {
     let bd = range * range;
     for (const m of this.units) {
       if (!m.alive) continue;
+      if (e.ignoreUnitTimer > 0 && e.ignoreUnitUid === m.unit.uid) continue;
       const d = (m.pos.x - e.pos.x) ** 2 + (m.pos.z - e.pos.z) ** 2;
       if (d <= bd) { bd = d; best = m; }
     }
@@ -586,7 +594,21 @@ export class Battle {
     this.scene.vfx.burst(m.pos.x, m.pos.z, 0xff5a4a, 7, 2.0, 0.9);
     this.scene.vfx.ring(m.pos.x, m.pos.z, 0xd23b3b, 1.2, 0.2);
     this.scene.vfx.ring(e.pos.x, e.pos.z, 0xff8a4a, 0.8, 0.14);
-    if (!m.alive) this.downUnit(m);
+    if (!m.alive) {
+      e.engageHits = 0;
+      e.ignoreUnitUid = null;
+      e.ignoreUnitTimer = 0;
+      this.downUnit(m);
+      return;
+    }
+    e.engageHits++;
+    if (e.engageHits >= ENEMY_ATTACK.hitsBeforeLeave) {
+      e.engageHits = 0;
+      e.ignoreUnitUid = m.unit.uid;
+      e.ignoreUnitTimer = ENEMY_ATTACK.leaveDuration;
+      e.engaging = false;
+      this.scene.vfx.floatText(e.pos.x, e.pos.z + 0.8, '전진', '#f2ce6b');
+    }
   }
 
   /** 유닛 다운: 회색 폭발 + 경고 토스트 + 타격음. 필드에서 이탈, 다음 배치 페이즈에 부활. */
@@ -670,6 +692,18 @@ export class Battle {
     if (healed > 0) this.scene.vfx.floatText(base.x, base.z, `+${healed}`, '#6fae4c');
     this.scene.vfx.ring(base.x, base.z, color, 3.5, 0.5);
     this.scene.setBaseHp(this.state.baseHp / this.state.baseHpMax);
+  }
+
+  private healAnyAllies(amount: number): void {
+    for (const m of this.units) {
+      if (!m.alive) continue;
+      const before = m.hp;
+      m.heal(amount);
+      const healed = Math.round(m.hp - before);
+      if (healed <= 0) continue;
+      this.scene.vfx.floatText(m.pos.x, m.pos.z + 0.6, `+${healed}`, '#6fae4c');
+      this.scene.vfx.burst(m.pos.x, m.pos.z, 0x8fe06a, 6);
+    }
   }
 
   private nearestEnemy(x: number, z: number): Enemy | null {
@@ -903,7 +937,8 @@ export class Battle {
         break;
       case 'baseHeal':
         this.repairBase(fx.amount);
-        bus.emit('toast', { text: `성 HP +${fx.amount}`, kind: 'good' });
+        this.healAnyAllies(fx.amount);
+        bus.emit('toast', { text: `성/아군 HP +${fx.amount}`, kind: 'good' });
         break;
       case 'overheat':
         this.units.filter((m) => m.element === 'fire').forEach((m) => { m.overheatMult = fx.mult; m.overheatTimer = fx.duration; });

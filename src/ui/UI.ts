@@ -518,13 +518,13 @@ export class UI {
       ${c.cdFrac && c.cdFrac > 0 ? `<div class="cd-overlay" style="height:${Math.round(c.cdFrac * 100)}%"></div>` : ''}`;
   }
 
-  showPlacement(items: { id: string; name: string; element: string; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3; placed: boolean; dead?: boolean }[]): void {
+  showPlacement(items: UnitCard[]): void {
     this.placementBar.style.display = 'flex';
     this.placementBar.innerHTML = '<div class="place-hint">유닛 카드를 전장으로 드래그해 배치하세요. 배치된 유닛을 드래그하면 위치를 바꿀 수 있습니다.</div>';
     const row = el('div', 'place-row');
     for (const it of items) {
-      const stateLabel = it.placed ? '배치됨' : '대기';
-      const chip = el('div', `place-chip${it.placed ? ' placed' : ''}`, `<span class="pc-ico">${cardElemIcon(it.element)}</span><span class="pc-name">${it.name}</span><span class="pc-state">${stateLabel}</span>`);
+      const stateLabel = it.dead ? '쓰러짐' : it.placed ? '배치됨' : '대기';
+      const chip = el('div', `place-chip${it.placed ? ' placed' : ''}${it.dead ? ' dead' : ''}`, `<span class="pc-ico">${cardElemIcon(it.element)}</span><span class="pc-name">${it.name}</span><span class="pc-state">${stateLabel}</span>`);
       applyUnitPortrait(chip.querySelector('.pc-ico') as HTMLElement, it);
       chip.onclick = () => this.onPlacementToggle(it.id);
       row.appendChild(chip);
@@ -592,7 +592,7 @@ export class UI {
    *  1) 편입할지 / 놓아줄지 확인.
    *  2) 편입 시, 자리를 비울 동료 1명을 선택(전체 원정대에서).
    */
-  showCaptureFull(data: { newName: string; newElement: string; newSpecies?: string; options: { id: string; name: string; sub: string; element: string; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3 }[] }): void {
+  showCaptureFull(data: { newName: string; newElement: string; newSpecies?: string; options: { id: string; name: string; sub: string; element: string; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3; dead?: boolean }[] }): void {
     const newCard = `<div class="replace-slot"><div class="rs-tag new">새 포획체</div><div class="big-card el-${data.newElement}"><div class="card-elem">${cardElemIcon(data.newElement)}</div><div class="art" id="cap-new-art">${cardElemIcon(data.newElement)}</div><div class="name">${data.newName}</div><div class="desc">방금 포획한 개체</div></div></div>`;
     const scroll = this.modal(`<h1>원정대가 가득 찼습니다</h1>
       <p>원정대는 최대 ${MAX_MONSTERS}마리까지 함께할 수 있습니다.<br/>방금 포획한 <b>${data.newName}</b>을(를) 원정대에 편입시킬까요?</p>
@@ -612,7 +612,9 @@ export class UI {
         <div class="replace-row"></div>`;
       const row = scroll.querySelector('.replace-row')!;
       for (const o of data.options) {
-        const wrap = el('div', 'replace-slot', `<div class="rs-tag old">동료</div><div class="big-card el-${o.element}"><div class="card-elem">${cardElemIcon(o.element)}</div><div class="art">${cardElemIcon(o.element)}</div><div class="name">${o.name}</div><div class="desc">${o.sub}</div></div>`);
+        const deadTag = o.dead ? '<div class="rs-tag downed">쓰러짐</div>' : '<div class="rs-tag old">동료</div>';
+        const deadDesc = o.dead ? `${o.sub}<br/><b class="downed-note">현재 쓰러짐</b>` : o.sub;
+        const wrap = el('div', `replace-slot${o.dead ? ' downed' : ''}`, `${deadTag}<div class="big-card el-${o.element}${o.dead ? ' downed' : ''}"><div class="card-elem">${cardElemIcon(o.element)}</div><div class="art">${cardElemIcon(o.element)}</div><div class="name">${o.name}</div><div class="desc">${deadDesc}</div></div>`);
         applyUnitPortrait(wrap.querySelector('.art') as HTMLElement, { name: o.name, element: o.element, kind: o.kind, species: o.species, stage: o.stage });
         wrap.onclick = () => { playSfx('select'); this.clearModal(); this.onCaptureDiscardPick(o.id); };
         row.appendChild(wrap);

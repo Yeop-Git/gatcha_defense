@@ -29,13 +29,13 @@ export interface StageDef {
 const WAVES: Record<number, SpawnGroup[][]> = {
   1: [
     [{ enemy: 'slime', count: 4, interval: 1.2 }],
-    [{ enemy: 'slime', count: 5, interval: 1.0 }, { enemy: 'pinkling', count: 3, interval: 1.1 }],
-    [{ enemy: 'slime', count: 4, interval: 0.9 }, { enemy: 'bunbun', count: 4, interval: 1.0 }, { enemy: 'spikeblob', count: 2, interval: 1.4 }],
+    [{ enemy: 'slime', count: 4, interval: 1.05 }, { enemy: 'pinkling', count: 2, interval: 1.2 }],
+    [{ enemy: 'slime', count: 3, interval: 1.0 }, { enemy: 'bunbun', count: 3, interval: 1.1 }, { enemy: 'spikeblob', count: 1, interval: 1.5 }],
   ],
   2: [
-    [{ enemy: 'cluck', count: 5, interval: 1.0 }, { enemy: 'dog', count: 4, interval: 0.9 }],
-    [{ enemy: 'mushling', count: 6, interval: 0.9 }, { enemy: 'alpaca', count: 3, interval: 1.3 }],
-    [{ enemy: 'hopper', count: 4, interval: 1.0 }, { enemy: 'monkroose', count: 3, interval: 1.2 }, { enemy: 'cactoro', count: 2, interval: 1.8 }],
+    [{ enemy: 'cluck', count: 4, interval: 1.05 }, { enemy: 'dog', count: 3, interval: 1.0 }],
+    [{ enemy: 'mushling', count: 5, interval: 0.95 }, { enemy: 'alpaca', count: 2, interval: 1.35 }],
+    [{ enemy: 'hopper', count: 3, interval: 1.05 }, { enemy: 'monkroose', count: 2, interval: 1.25 }, { enemy: 'cactoro', count: 1, interval: 1.8 }],
   ],
   3: [
     [{ enemy: 'mushling', count: 6, interval: 0.8 }, { enemy: 'monkroose', count: 4, interval: 1.0 }],

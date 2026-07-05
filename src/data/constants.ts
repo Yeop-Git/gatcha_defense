@@ -163,7 +163,7 @@ export const PORTRAIT_KEY_LOW = 26;
 export const PORTRAIT_KEY_HIGH = 92;
 
 /** 湲곗? / 二쇱씤怨?湲곕낯移?(짠14) */
-export const BASE_HP = 205; // ?꾨컲 ?ㅼ썫/?꾩닔??寃щ뵒?꾨줉 ?곹뼢(諛몃윴??
+export const BASE_HP = 235; // ?꾨컲 ?ㅼ썫/?꾩닔??寃щ뵒?꾨줉 ?곹뼢(諛몃윴??
 export const BASE_LEAK_NORMAL = 3;
 export const BASE_LEAK_MINIBOSS = 20;
 export const BASE_LEAK_BOSS = 70;
@@ -178,7 +178,7 @@ export const SIEGE = { interval: 1.2, attackMult: 1 } as const;
 // ally stops marching and strikes it every `interval` seconds for the enemy's own `attack`. Units
 // have HP and are downed at 0 (out for the wave, revived next placement phase). This is the core
 // "my character is under attack" risk — placement near the lane trades DPS for danger.
-export const ENEMY_ATTACK = { range: 2.2, interval: 1.6 } as const;
+export const ENEMY_ATTACK = { range: 2.2, interval: 1.75, hitsBeforeLeave: 2, leaveDuration: 3.5 } as const;
 
 /** ??諛섍꺽: 洹쇱쿂 諛⑹뼱???좊떅/二쇱씤怨?瑜?二쇨린 ?寃????뷀렂???깅┰(??蹂댄샇留?遺??移대뱶媛 ?섎?瑜?媛吏?. */
 // 적→아군 교전 파라미터는 위 ENEMY_ATTACK 참조. 아군 유닛은 이제 피해를 받고 쓰러질 수 있다
@@ -197,8 +197,8 @@ export const MAX_MONSTERS = 6;
 
 /** ?좊떅 1??湲곕낯移?+ 吏꾪솕 諛곗쑉 (짠14) */
 export const UNIT_BASE = {
-  hp: 72,
-  attack: 9,
+  hp: 82,
+  attack: 10,
   range: 3,
   attackSpeed: 1.0,
 } as const;

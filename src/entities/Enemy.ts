@@ -48,6 +48,9 @@ export class Enemy {
   /** 아군 유닛과 교전 중(일반 적): 사거리 내 아군을 만나 진격을 멈추고 공격한다. Battle이 구동. */
   engaging = false;
   unitAtkCd = 0;
+  engageHits = 0;
+  ignoreUnitUid: string | null = null;
+  ignoreUnitTimer = 0;
   isBoss: boolean;
   isMini: boolean;
 

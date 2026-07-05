@@ -346,10 +346,11 @@ export class Game {
     this.pendingCaptureSpecies = species;
     this.paused = true; // 전투 일시정지 후 선택
     const def = ENEMIES[species];
+    const placeState = new Map(this.battle?.placeablesState().map((u) => [u.id, u]) ?? []);
     // 편입을 택하면 원정대 전원 중에서 내보낼 동료 1명을 고른다(오래된 순).
     const options = state.roster.map((u) => ({
       id: u.uid, name: displayName(u), sub: `Lv${u.level} · ${unitName(u)}`, element: u.element as string,
-      kind: u.kind, species: u.species, stage: u.stage,
+      kind: u.kind, species: u.species, stage: u.stage, dead: placeState.get(u.uid)?.dead ?? false,
     }));
     this.ui.showCaptureFull({ newName: name, newElement: def?.element ?? 'neutral', newSpecies: species, options });
   }
@@ -656,9 +657,11 @@ export class Game {
     const jumps = STAGES.filter((s) => s.difficultyJump && s.id <= def.id).length;
     // 난이도 점프는 단계적(가산)으로 — 기존 Math.pow는 복리로 S10 ×4.7까지 폭주해 클리어 불가.
     // 후반(3점프 누적)이 ×3까지 치솟아 벽이 됨 → 스테이지당 증가율 완화(0.08→0.06).
-    const hpScale = (1 + index * 0.06) * (1 + (DIFFICULTY_JUMP_MULT - 1) * jumps);
+    const earlyHpEase = index <= 2 ? 0.88 + index * 0.04 : 1;
+    const hpScale = earlyHpEase * (1 + index * 0.06) * (1 + (DIFFICULTY_JUMP_MULT - 1) * jumps);
     // 공격력 스케일: 점프에만 완만히 반응(+8%/점프). 유닛이 순삭되지 않게 완화 — 위협은 주되 죽음은 아니게.
-    const atkScale = 1 + 0.08 * jumps;
+    const earlyAtkEase = index <= 2 ? 0.85 + index * 0.05 : 1;
+    const atkScale = earlyAtkEase * (1 + 0.08 * jumps);
     this.battle = new Battle(this.scene, state, def, hpScale, atkScale);
     this.paused = false;
     this.speed = settings.speed; // 설정의 기본 전투 속도 적용
