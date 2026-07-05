@@ -6,7 +6,7 @@ import { ITEM_BY_ID, type ItemEffect } from '../data/items';
 import { unlockCreature } from './Dex';
 import {
   BASE_HP, BOND_CAP, BOND_PER_STAGE, CAPTURE, ELEMENTS, ENEMY_EVOLVE_LEVEL, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
-  CRIT, LEVEL_GROWTH_PER, MANA_MAX, MANA_REGEN, MAX_LEVEL, MAX_MONSTERS, UNIT_BASE,
+  CRIT, LEVEL_GROWTH_PER, MANA_MAX, MANA_REGEN, MAX_LEVEL, MAX_MONSTERS, UNIT_BASE, STAGE_HP_FLOOR_PER,
 } from '../data/constants';
 
 /** 무속성 적을 플레이어블 유닛으로 쓸 때의 대체 속성 (마크/색 판정용). */
@@ -104,9 +104,9 @@ function stageForLevel(element: Element, level: number): 1 | 2 | 3 {
  * 포획 유닛 tier별 플레이 기준 스탯. 원본 도감 HP(보스 1200·미니보스 520 등)를 그대로 쓰면
  * 포획 보스가 만렙 크리처를 2~3배 압도해 밸런스가 붕괴하므로, tier 기반 기준치로 정규화한다.
  */
-const PLAY_BASE_HP: Record<EnemyTier, number> = { swarm: 46, flyer: 44, normal: 62, tank: 92, healer: 56, elite: 96, miniboss: 128, boss: 158 };
-// 포획체가 원정대 슬롯값을 하도록 상위 tier 공격력 상향(포획=핵심 루프). 정예/보스는 크리처와 대략 동급.
-const PLAY_BASE_ATK: Record<EnemyTier, number> = { swarm: 9, flyer: 9, normal: 11, tank: 11, healer: 7, elite: 17, miniboss: 22, boss: 28 };
+const PLAY_BASE_HP: Record<EnemyTier, number> = { swarm: 46, flyer: 44, normal: 62, tank: 92, healer: 56, elite: 96, miniboss: 150, boss: 200 };
+// 포획체가 원정대 슬롯값을 하도록 상위 tier 공격력 상향(포획=핵심 루프). 미니보스/보스는 포획의 정점이라 트로피값을 준다.
+const PLAY_BASE_ATK: Record<EnemyTier, number> = { swarm: 9, flyer: 9, normal: 11, tank: 11, healer: 7, elite: 17, miniboss: 26, boss: 34 };
 
 /** 포획 enemy 유닛 파생 스탯 — tier 기준 스탯 × 레벨/유대 성장(도감 원본 HP 미사용). */
 function deriveEnemyStats(unit: OwnedUnit): DerivedStats {
@@ -116,8 +116,9 @@ function deriveEnemyStats(unit: OwnedUnit): DerivedStats {
   const growth = lv * (1 + bond);
   const c = critFor(unit.level, unit.stage);
   const ie = itemEffectOf(unit);
+  const stageFloor = 1 + STAGE_HP_FLOOR_PER * state.stageIndex; // 스테이지 진행에 따른 생존 바닥
   return {
-    hp: Math.round(PLAY_BASE_HP[def.tier] * growth),
+    hp: Math.round(PLAY_BASE_HP[def.tier] * growth * stageFloor),
     attack: Math.round(PLAY_BASE_ATK[def.tier] * growth * state.unitAtkMult * (1 + (ie.atkMult ?? 0))),
     range: UNIT_BASE.range + (def.flying ? 0.6 : 0) + (unit.stage - 1) * 0.4 + (unit.level - 1) * 0.015 + state.rangeBonus + (ie.range ?? 0),
     // 크리처와 동일하게 진화 단계(stage) 공속 보너스를 부여 — 누락 시 포획체가 상시 열세.
@@ -150,8 +151,9 @@ export function deriveStats(unit: OwnedUnit): DerivedStats {
   const growth = lv * (1 + bond);
   const c = critFor(unit.level, unit.stage);
   const ie = itemEffectOf(unit);
+  const stageFloor = 1 + STAGE_HP_FLOOR_PER * state.stageIndex; // 스테이지 진행에 따른 생존 바닥
   return {
-    hp: Math.round(hp * growth),
+    hp: Math.round(hp * growth * stageFloor),
     attack: Math.round(attack * growth * state.unitAtkMult * (1 + (ie.atkMult ?? 0))),
     range: UNIT_BASE.range + (unit.stage - 1) * 0.6 + (unit.level - 1) * 0.015 + state.rangeBonus + (ie.range ?? 0),
     attackSpeed: UNIT_BASE.attackSpeed + (unit.stage - 1) * 0.15 + (unit.level - 1) * 0.008 + state.aspdBonus + (ie.aspd ?? 0),

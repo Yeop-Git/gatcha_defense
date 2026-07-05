@@ -169,6 +169,15 @@ body {
 }
 .unit-card .unit-art.has-img { background-color: var(--parchment-dark); }
 .unit-card .unit-name { font: 17px 'Jua', sans-serif; text-align: center; overflow-wrap: anywhere; }
+.unit-card .unit-hp {
+  position: relative; width: 100%; height: 15px; border-radius: 8px; overflow: hidden;
+  background: rgba(40,26,14,0.55); border: 1px solid var(--wood-dark);
+}
+.unit-card .unit-hp-fill { position: absolute; inset: 0 auto 0 0; height: 100%; border-radius: 8px 0 0 8px; transition: width 0.2s ease; }
+.unit-card .unit-hp-txt {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font: 700 10px 'Jua', sans-serif; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.9); letter-spacing: 0.3px;
+}
 .card.el-fire .art { border-color: var(--el-fire); background: #fbe3d5; }
 .card.el-water .art { border-color: var(--el-water); background: #d9eef2; }
 .card.el-grass .art { border-color: var(--el-grass); background: #e2f0d6; }
@@ -283,6 +292,10 @@ body {
 }
 .draft-card .ct { font-size: 19px; }
 .draft-card .cd { margin-top: auto; }
+.draft-card .dc-bloom {
+  margin-top: 8px; font-size: 11px; line-height: 1.3; color: var(--wood-dark);
+  background: var(--gold-bright); border-radius: 8px; padding: 4px 6px; font-family: 'Jua';
+}
 .draft-card.el-fire { border-color: var(--el-fire); } .draft-card.el-fire .dc-el { color: var(--el-fire); }
 .draft-card.el-water { border-color: var(--el-water); } .draft-card.el-water .dc-el { color: var(--el-water); }
 .draft-card.el-grass { border-color: var(--el-grass); } .draft-card.el-grass .dc-el { color: var(--el-grass); }
@@ -312,7 +325,7 @@ body {
 .toast {
   padding: 8px 18px; border-radius: 20px; font-family: 'Jua'; font-size: 15px;
   background: var(--wood-dark); color: var(--parchment); border: 2px solid var(--gold);
-  animation: toastIn 0.2s ease-out, toastOut 0.4s ease-in 2s forwards;
+  animation: toastIn 0.2s ease-out, toastOut 0.4s ease-in 3.2s forwards;
 }
 .toast.good { border-color: var(--el-grass); }
 .toast.bad { border-color: var(--hp-ruby); }
@@ -850,6 +863,8 @@ body {
   background: none; gap: 12px;
 }
 #card-shelf.placement::before { display: none; }
+.shelf-hint { flex-basis: 100%; text-align: center; order: -1; font-size: 14px; opacity: 0.96; }
+.shelf-hint b { color: var(--parchment); }
 
 /* ══ 로비 출정 버튼: 하단 중앙 CTA (웨이브 시작 버튼과 동일 위치감) ══ */
 .lobby-cta {

@@ -34,6 +34,8 @@ export class Enemy {
   element: ElementOrNeutral;
   hp: number;
   maxHp: number;
+  /** 스테이지 난이도 점프로 스케일된 실효 공격력(유닛 타격·공성 공용). */
+  attack: number;
   speed: number;
   view: THREE.Group;
   marks: Marks;
@@ -71,12 +73,15 @@ export class Enemy {
   stunned = false;
   stunTimer = 0;
   private stunUsed = false;
+  /** 이번 프레임에 기절(포획 창)에 막 진입했는지 — Battle이 읽어 안내/연출 후 클리어. */
+  justStunned = false;
 
-  constructor(def: EnemyDef, hpScale: number) {
+  constructor(def: EnemyDef, hpScale: number, atkScale = 1) {
     this.def = def;
     this.element = def.element;
     this.maxHp = Math.round(def.hp * hpScale);
     this.hp = this.maxHp;
+    this.attack = Math.max(1, Math.round(def.attack * atkScale));
     this.speed = def.speed;
     this.isBoss = def.leak === 'boss';
     this.isMini = def.leak === 'miniboss';
@@ -146,6 +151,7 @@ export class Enemy {
         // HP0 → 즉사 대신 3초 기절(포획 창). 놓치면 update가 사망 처리.
         this.stunned = true;
         this.stunUsed = true;
+        this.justStunned = true;
         this.stunTimer = CAPTURE.bossStun;
         this.hp = 0;
       } else {

@@ -43,6 +43,8 @@ export interface UnitCard {
   placed: boolean;
   dead?: boolean;
   level?: number;
+  hp?: number;
+  maxHp?: number;
 }
 
 const el = (tag: string, cls?: string, html?: string): HTMLElement => {
@@ -456,14 +458,24 @@ export class UI {
     this.cardEls.clear();
     this.shelf.classList.add('placement'); // 배치 페이즈: 카드 위로, 전투 버튼 하단 중앙
     this.shelf.innerHTML = '';
+    if (items.length > 0) {
+      this.shelf.appendChild(el('div', 'place-hint shelf-hint', '유닛 카드를 전장으로 <b>드래그</b>해 배치하세요 · 배치된 유닛도 드래그로 위치 교환'));
+    }
     for (const it of items) {
       const icon = cardElemIcon(it.element);
-      const stateLabel = it.placed ? '배치됨' : '대기';
-      const card = el('div', `unit-card el-${it.element}${it.placed ? ' placed' : ''}`, `
+      const stateLabel = it.dead ? '쓰러짐' : it.placed ? '배치됨' : '대기';
+      const hasHp = it.hp != null && it.maxHp != null && it.maxHp > 0;
+      const frac = hasHp ? Math.max(0, Math.min(1, it.hp! / it.maxHp!)) : 1;
+      const hpColor = it.dead ? '#7a1c1c' : frac > 0.5 ? 'var(--el-grass)' : frac > 0.25 ? 'var(--gold)' : 'var(--hp-ruby)';
+      const hpBar = hasHp
+        ? `<div class="unit-hp"><div class="unit-hp-fill" style="width:${Math.round(frac * 100)}%;background:${hpColor}"></div><span class="unit-hp-txt">${it.dead ? '쓰러짐' : `${it.hp}/${it.maxHp}`}</span></div>`
+        : '';
+      const card = el('div', `unit-card el-${it.element}${it.placed ? ' placed' : ''}${it.dead ? ' dead' : ''}`, `
         <div class="unit-lv" style="position:absolute;top:4px;left:6px;font-size:11px;font-weight:800;color:#f2ce6b;text-shadow:0 1px 2px #000;z-index:2">Lv${it.level ?? 1}</div>
         <div class="unit-state">${stateLabel}</div>
         <div class="unit-art">${icon}</div>
-        <div class="unit-name">${it.name}</div>`);
+        <div class="unit-name">${it.name}</div>
+        ${hpBar}`);
       applyUnitPortrait(card.querySelector('.unit-art') as HTMLElement, it);
       card.addEventListener('pointerdown', (e) => this.onUnitCardGrab(it.id, e as PointerEvent));
       this.shelf.appendChild(card);
@@ -536,7 +548,8 @@ export class UI {
     const row = scroll.querySelector('.choice-row')!;
     for (const elm of elements) {
       const s1 = MONSTERS[elm].stages[0];
-      const card = el('div', `choice draft-card el-${elm}`, `<div class="dc-el">${ELEMENT_NAME_KO[elm]}</div><div class="dc-ico">${ELEMENT_ICON[elm]}</div><div class="ct">${s1.name}</div><div class="cd">${s1.role}</div>`);
+      const bloom = MONSTERS[elm].lateBloom ? '<div class="dc-bloom">🌱 대기만성 · 초반 약하지만 후반 강함</div>' : '';
+      const card = el('div', `choice draft-card el-${elm}`, `<div class="dc-el">${ELEMENT_NAME_KO[elm]}</div><div class="dc-ico">${ELEMENT_ICON[elm]}</div><div class="ct">${s1.name}</div><div class="cd">${s1.role}</div>${bloom}`);
       applyPortrait(card.querySelector('.dc-ico') as HTMLElement, elm, 1);
       card.onclick = () => { this.clearModal(); this.onDraftPick(elm); };
       row.appendChild(card);
@@ -639,7 +652,7 @@ export class UI {
         <button class="btn" id="shop-reroll"${data.canReroll ? '' : ' disabled'}>🔄 새로고침 (🪙 ${data.rerollCost})</button>
         <button class="btn primary" id="shop-ok">닫기</button>
       </div>`);
-    scroll.querySelectorAll('.shop-item:not(.disabled)').forEach((row) => {
+    scroll.querySelectorAll('.shop-item:not(.disabled):not(.sold)').forEach((row) => {
       (row as HTMLElement).onclick = () => { playSfx('coin'); this.onShopBuy((row as HTMLElement).dataset.id!); };
     });
     (scroll.querySelector('#shop-reroll') as HTMLButtonElement).onclick = () => { playSfx('select'); this.onShopReroll(); };
@@ -678,7 +691,7 @@ export class UI {
   toast(text: string, kind: 'good' | 'bad' | 'info' = 'info'): void {
     const t = el('div', `toast ${kind}`, text);
     this.toastLayer.appendChild(t);
-    setTimeout(() => t.remove(), 2500);
+    setTimeout(() => t.remove(), 3700); // 페이드아웃(3.2s 시작+0.4s) 완료 후 제거 — 안내 문구 읽을 시간 확보
   }
 
   /** 사용자 동작 실패 알림: 에러 효과음 + 붉은 시스템 메시지(간결). */

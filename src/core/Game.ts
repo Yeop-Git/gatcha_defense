@@ -175,6 +175,7 @@ export class Game {
   private lastTapId = '';
   private lastTapAt = 0;
   private tapHintShown = false;
+  private captureHintShown = false;
 
   /** 하단 카드 선반 높이(px) — 그 위쪽이 전장. isOverField 판정용. */
   private static readonly SHELF_H = 220;
@@ -656,7 +657,9 @@ export class Game {
     // 난이도 점프는 단계적(가산)으로 — 기존 Math.pow는 복리로 S10 ×4.7까지 폭주해 클리어 불가.
     // 후반(3점프 누적)이 ×3까지 치솟아 벽이 됨 → 스테이지당 증가율 완화(0.08→0.06).
     const hpScale = (1 + index * 0.06) * (1 + (DIFFICULTY_JUMP_MULT - 1) * jumps);
-    this.battle = new Battle(this.scene, state, def, hpScale);
+    // 공격력 스케일: 점프에만 완만히 반응(+8%/점프). 유닛이 순삭되지 않게 완화 — 위협은 주되 죽음은 아니게.
+    const atkScale = 1 + 0.08 * jumps;
+    this.battle = new Battle(this.scene, state, def, hpScale, atkScale);
     this.paused = false;
     this.speed = settings.speed; // 설정의 기본 전투 속도 적용
     this.lastPhase = this.battle.phase;
@@ -897,7 +900,8 @@ export class Game {
       case 'roulette': {
         const bet = Math.floor(state.gold / 2);
         if (bet <= 0) { this.ui.toast('룰렛: 걸 골드가 없다…', 'info'); break; }
-        if (Math.random() < 0.55) { state.gold += bet; this.ui.toast(`🎰 룰렛 대성공! 골드 +${bet}`, 'good'); }
+        // 승률 0.5 = 기댓값 중립. (기존 0.55는 무손실 양의 기댓값이라 '무조건 걸기'가 정답이 되는 익스플로잇이었음)
+        if (Math.random() < 0.5) { state.gold += bet; this.ui.toast(`🎰 룰렛 대성공! 골드 +${bet}`, 'good'); }
         else { state.gold -= bet; this.ui.toast(`🎰 룰렛 실패… 골드 -${bet}`, 'bad'); }
         break;
       }
@@ -992,9 +996,15 @@ export class Game {
       this.updateHUD();
       this.checkBattlePhase();
       if (this.battle && this.battle.phase !== this.lastPhase) {
+        const prev = this.lastPhase;
         this.lastPhase = this.battle.phase;
         this.refreshHand();
         this.refreshPlacement();
+        // 첫 전투 시작 시 1회 포획 안내 (핵심 루프 온보딩)
+        if (prev === 'placement' && this.battle.phase !== 'placement' && !this.captureHintShown) {
+          this.captureHintShown = true;
+          this.ui.toast('빛나는 포획구 카드를 적에게 드래그하면 포획! 보스는 기절했을 때만 잡을 수 있어요', 'info');
+        }
       }
     }
 

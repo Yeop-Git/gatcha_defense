@@ -75,7 +75,8 @@ const WAVES: Record<number, SpawnGroup[][]> = {
   10: [
     [{ enemy: 'tribal', count: 5, interval: 0.9 }, { enemy: 'ninja', count: 3, interval: 1.2 }, { enemy: 'wizard', count: 2, interval: 1.5 }],
     [{ enemy: 'alien', count: 3, interval: 1.3 }, { enemy: 'drake', count: 3, interval: 1.2 }, { enemy: 'spirit', count: 2, interval: 1.6 }],
-    [{ enemy: 'tyrant', count: 1, interval: 1 }],
+    // 최종 시련: 폭룡 단독은 허무 → 소수 호위(드레이크·에일리언)를 곁들여 긴장만 준다(과하지 않게).
+    [{ enemy: 'tyrant', count: 1, interval: 1 }, { enemy: 'drake', count: 2, interval: 1.8 }, { enemy: 'alien', count: 2, interval: 2.0 }],
   ],
 };
 

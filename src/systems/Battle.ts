@@ -71,7 +71,7 @@ export class Battle {
   private comboTimer = 0;
   private unitGhost: THREE.Group | null = null; // 배치 드래그 반투명 미리보기 모델
 
-  constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number) {
+  constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number, private atkScale = 1) {
     setStageLayout(stage.id - 1); // 스테이지별 경로/슬롯 적용 (FIELD.path·UNIT_SLOTS 인플레이스 교체)
     scene.setStage(stage.id, stage.theme); // 스테이지 고유 팔레트/장식 밀도
     scene.rebuildMap();
@@ -140,18 +140,27 @@ export class Battle {
     if (slot >= 0) this.placeUnit(unit, slot);
   }
 
-  placeablesState(): { id: string; name: string; element: ElementOrNeutral; placed: boolean; dead: boolean; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3; level: number }[] {
-    return this.state.roster.map((u) => ({
-      id: u.uid,
-      name: displayName(u),
-      element: u.element,
-      placed: this.units.some((m) => m.unit.uid === u.uid),
-      dead: false,
-      kind: u.kind,
-      species: u.species,
-      stage: u.stage,
-      level: u.level,
-    }));
+  placeablesState(): { id: string; name: string; element: ElementOrNeutral; placed: boolean; dead: boolean; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3; level: number; hp: number; maxHp: number }[] {
+    return this.state.roster.map((u) => {
+      const live = this.units.find((m) => m.unit.uid === u.uid);
+      const down = this.downedUids.has(u.uid);
+      // 배치된 유닛은 필드의 실시간 HP, 그 외(미배치·미다운)는 최대 HP. 다운은 HP 0.
+      const maxHp = live ? Math.round(live.maxHp) : Math.round(deriveStats(u).hp);
+      const hp = live ? Math.max(0, Math.round(live.hp)) : down ? 0 : maxHp;
+      return {
+        id: u.uid,
+        name: displayName(u),
+        element: u.element,
+        placed: !!live,
+        dead: down,
+        kind: u.kind,
+        species: u.species,
+        stage: u.stage,
+        level: u.level,
+        hp,
+        maxHp,
+      };
+    });
   }
 
   placeableRange(id: string): number {
@@ -325,7 +334,7 @@ export class Battle {
   private spawn(ev: SpawnEvent): void {
     const def = ENEMIES[ev.enemy] ?? ENEMIES.slime;
     if (!def.creatureStage) unlockEnemy(def.id); // 도감: 조우한 적 해금(야생 크리처 변종 제외)
-    const e = new Enemy(def, this.hpScale);
+    const e = new Enemy(def, this.hpScale, this.atkScale);
     this.scene.entities.add(e.view);
     this.enemies.push(e);
   }
@@ -372,14 +381,15 @@ export class Battle {
   }
 
   private onWaveClear(): void {
-    this.reviveUnitsForNextWave();
     bus.emit('wave:clear', { stage: this.stage.id, wave: this.waveIndex + 1 });
     this.waveIndex++;
     if (this.waveIndex >= this.totalWaves) {
+      // 스테이지 클리어: 다음 스테이지 Battle이 로스터를 풀피로 재생성하므로 회복·부활이 자동 이뤄진다.
       this.phase = this.stage.boss === 'final' ? 'won' : 'stageClear';
       if (this.stage.boss === 'final') bus.emit('run:win', {});
       else bus.emit('stage:clear', { stage: this.stage.id });
     } else {
+      // 웨이브 사이: 회복·부활 없음 — HP와 다운 상태가 스테이지 내내 그대로 이어진다(웨이브 간 소모전).
       this.phase = 'placement';
     }
   }
@@ -451,8 +461,9 @@ export class Battle {
       return;
     }
     if (tier === 'healer') {
-      this.repairBase(power * 0.1, 0xf2ce6b);
-      if (Math.random() < 0.18) m.bless(1);
+      // 기존 power*0.1은 성 205HP 기준 ~1HP로 노이즈 → *0.4로 상향해 힐러 포획이 실효를 갖게.
+      this.repairBase(power * 0.4, 0xf2ce6b);
+      if (Math.random() < 0.3) m.bless(1);
       return;
     }
     if (tier === 'elite' || tier === 'miniboss' || tier === 'boss') {
@@ -492,6 +503,12 @@ export class Battle {
       e.engaging = !!foe;
 
       e.update(dt, t);
+      if (e.justStunned) {
+        // 보스/미니보스 포획 창 개방 — 놓치면 영구 실패라 확실히 알린다(핵심 루프의 정점).
+        e.justStunned = false;
+        bus.emit('toast', { text: `⚡ ${e.def.name} 기절! 지금 포획구를 던지세요!`, kind: 'good' });
+        this.scene.vfx.ring(e.pos.x, e.pos.z, 0xf2ce6b, 3.5, 0.5);
+      }
       if (foe && e.alive) {
         e.unitAtkCd -= dt;
         if (e.unitAtkCd <= 0) {
@@ -563,7 +580,7 @@ export class Battle {
   private enemyStrikeUnit(e: Enemy, m: Monster): void {
     e.playAttackAnim();
     e.view.rotation.y = Math.atan2(m.pos.x - e.pos.x, m.pos.z - e.pos.z);
-    const dealt = m.takeDamage(e.def.attack);
+    const dealt = m.takeDamage(e.attack);
     playSfx('hit', { vary: 0.08 });
     this.scene.vfx.floatText(m.pos.x, m.pos.z + 0.4, `-${dealt}`, '#ff6a6a');
     this.scene.vfx.burst(m.pos.x, m.pos.z, 0xff5a4a, 7, 2.0, 0.9);
@@ -582,19 +599,10 @@ export class Battle {
     this.removeUnitByUid(m.unit.uid);
   }
 
-  /** 웨이브 종료 시: 생존 유닛 완전 회복 + 쓰러진 유닛 부활 재배치. */
-  private reviveUnitsForNextWave(): void {
-    for (const m of this.units) m.restoreFull();
-    if (this.downedUids.size) {
-      this.autoPlace(); // 쓰러진(로스터엔 남은) 유닛을 빈 슬롯에 부활 배치
-      this.downedUids.clear();
-      bus.emit('toast', { text: '쓰러진 동료가 전열에 복귀했습니다.', kind: 'good' });
-    }
-  }
 
   /** 성문 공성 타격: 일반 적이 성에 도달해 자기 attack 값으로 성을 때린다(반복). attack 값을 의미있게. */
   private siegeStrike(e: Enemy): void {
-    const amt = Math.max(1, Math.round(e.def.attack * SIEGE.attackMult));
+    const amt = Math.max(1, Math.round(e.attack * SIEGE.attackMult));
     this.state.baseHp = Math.max(0, this.state.baseHp - amt);
     playSfx('leak');
     bus.emit('base:damage', { amount: amt, hp: this.state.baseHp });
@@ -621,7 +629,8 @@ export class Battle {
     this.combo++;
     this.comboTimer = 2.2;
     if (this.combo >= 5 && this.combo % 5 === 0) {
-      const bonus = Math.floor(this.combo / 5) * 2;
+      // 콤보 보상: 기존 floor(c/5)*2는 20콤보에 +8G로 반올림 오차 수준 → *5로 상향(20콤보 +20G)해 손맛을 준다.
+      const bonus = Math.floor(this.combo / 5) * 5;
       this.state.gold += bonus;
       this.scene.vfx.floatText(e.pos.x, e.pos.z + 1.5, `${this.combo} 콤보! +${bonus}G`, '#f2ce6b');
       this.scene.vfx.ring(e.pos.x, e.pos.z, 0xf2ce6b, 3, 0.4);
@@ -947,21 +956,32 @@ export class Battle {
   }
 
   captureHint(x: number, z: number): { status: 'catch' | 'bossWait' | 'none'; radius: number; label: string } {
+    // resolveCapture와 동일 규칙으로 '실제 잡히는 대상'을 먼저 고른다(기절 안 된 보스는 후보에서 제외).
+    // 이렇게 해야 프리뷰 링이 가리키는 대상 = 실제 포획 대상이 되어 "왜 저게 잡히지?" 불일치가 없다.
     let best: Enemy | null = null;
     let bd = Infinity;
+    let nearBoss: Enemy | null = null; // 근처의 기절 안 된 보스(안내용)
+    let nbd = Infinity;
     for (const e of this.enemies) {
       if (!e.alive || e.dying) continue;
       const d = Math.hypot(e.pos.x - x, e.pos.z - z);
+      if ((e.isBoss || e.isMini) && !e.stunned) {
+        if (d < nbd) { nbd = d; nearBoss = e; }
+        continue;
+      }
       if (d < bd) { bd = d; best = e; }
     }
-    if (!best) return { status: 'none', radius: 1.4, label: '대상 없음' };
-    const radius = CAPTURE_RADIUS[best.def.tier] ?? 1.4;
-    const bossy = best.isBoss || best.isMini;
-    if (bd <= radius) {
-      if (bossy && !best.stunned) return { status: 'bossWait', radius, label: `${best.def.name}: 기절 필요` };
-      return { status: 'catch', radius, label: `${best.def.name}: 포획 가능` };
+    if (best) {
+      const radius = CAPTURE_RADIUS[best.def.tier] ?? 1.4;
+      if (bd <= radius) return { status: 'catch', radius, label: `${best.def.name}: 포획 가능` };
     }
-    return { status: 'none', radius, label: `${best.def.name}: 범위 밖` };
+    // 잡을 대상이 사거리 내에 없고, 근처에 기절 안 된 보스가 있으면 기절 안내를 준다.
+    if (nearBoss) {
+      const br = CAPTURE_RADIUS[nearBoss.def.tier] ?? 1.4;
+      if (nbd <= br) return { status: 'bossWait', radius: br, label: `${nearBoss.def.name}: 기절 필요` };
+    }
+    if (best) return { status: 'none', radius: CAPTURE_RADIUS[best.def.tier] ?? 1.4, label: `${best.def.name}: 범위 밖` };
+    return { status: 'none', radius: 1.4, label: '대상 없음' };
   }
 
   private resolveCapture(p: Vec2, nominalRadius: number): void {

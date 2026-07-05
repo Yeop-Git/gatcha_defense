@@ -178,7 +178,7 @@ export const SIEGE = { interval: 1.2, attackMult: 1 } as const;
 // ally stops marching and strikes it every `interval` seconds for the enemy's own `attack`. Units
 // have HP and are downed at 0 (out for the wave, revived next placement phase). This is the core
 // "my character is under attack" risk — placement near the lane trades DPS for danger.
-export const ENEMY_ATTACK = { range: 2.2, interval: 1.3 } as const;
+export const ENEMY_ATTACK = { range: 2.2, interval: 1.6 } as const;
 
 /** ??諛섍꺽: 洹쇱쿂 諛⑹뼱???좊떅/二쇱씤怨?瑜?二쇨린 ?寃????뷀렂???깅┰(??蹂댄샇留?遺??移대뱶媛 ?섎?瑜?媛吏?. */
 // 적→아군 교전 파라미터는 위 ENEMY_ATTACK 참조. 아군 유닛은 이제 피해를 받고 쓰러질 수 있다
@@ -257,7 +257,11 @@ export const DARK_KILL_STACK_MAX = 0.5;
 export const FIXED_DT = 1 / 60;
 
 /** ?쒖씠???먰봽 ?ㅽ뀒?댁??먯꽌 ???ㅽ꺈 諛곗쑉 (짠10) ??踰쎌씠 ?덈Т 媛?붾씪 ?꾪솕 */
-export const DIFFICULTY_JUMP_MULT = 1.28;
+export const DIFFICULTY_JUMP_MULT = 1.24;
+
+/** 유닛 생존 바닥: 스테이지가 오를수록 아군 최대 HP를 +5%/스테이지 보정.
+ *  (적 공격력·HP는 스테이지마다 오르는데 유닛 HP는 레벨/진화로만 올라, 뒤처진 유닛이 순삭되던 문제 완화) */
+export const STAGE_HP_FLOOR_PER = 0.05;
 
 /**
  * ?ы쉷 ??李⑹? ?뺥솗??湲곕컲 寃곗젙濡??먯젙(泥대젰 臾닿?). 蹂댁뒪/誘몃땲蹂댁뒪??HP0 ??湲곗젅 李쎌뿉?쒕쭔.
