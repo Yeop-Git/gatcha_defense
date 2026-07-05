@@ -3,16 +3,29 @@
   "version": "0.1.0",
   "description": "탑뷰 디펜스 × 덱빌딩 로그라이크 × 몬스터 수집 (MVP)",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron": "electron .",
+    "exe": "vite build && electron-builder --dir"
+  },
+  "build": {
+    "appId": "com.monsterkeepers.game",
+    "productName": "MonsterKeepers",
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "electron/**/*"],
+    "asar": false,
+    "win": { "target": "dir" }
   },
   "dependencies": {
     "three": "^0.169.0"
   },
   "devDependencies": {
     "@types/three": "^0.169.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.6.3",
     "vite": "^5.4.10"
   }
