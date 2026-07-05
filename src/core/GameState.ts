@@ -506,6 +506,13 @@ export class GameState {
     this.baseHp = Math.min(this.baseHpMax, this.baseHp + amount);
   }
 
+  /** 골드 차감(상점). 잔액 부족이면 false, 성공 시 차감 후 true. */
+  spendGold(cost: number): boolean {
+    if (this.gold < cost) return false;
+    this.gold -= cost;
+    return true;
+  }
+
   get manaRegen(): number {
     return MANA_REGEN * this.manaRegenMult;
   }

@@ -70,19 +70,29 @@ export type SfxName =
   | 'evolve' | 'levelup' | 'gain' | 'lose' | 'win' | 'coin' | 'error'
   | 'wave' | 'leak' | 'select';
 
-/** 효과음 재생. settings.sfx=false면 무음. */
-export function playSfx(name: SfxName): void {
+/**
+ * 효과음 재생. settings.sfx=false면 무음.
+ * opts.pitch: 주파수 배율(카드 속성별 살짝 차별화 등). opts.vary: 소폭 랜덤 피치(반복음 단조로움 완화).
+ */
+export function playSfx(name: SfxName, opts?: { pitch?: number; vary?: number }): void {
   if (!settings.sfx || settings.volume <= 0) return;
+  const vary = opts?.vary ? 1 + (Math.random() * 2 - 1) * opts.vary : 1;
+  const p = (opts?.pitch ?? 1) * vary;
+  // pitch를 적용해 tone을 감싸는 헬퍼 (멜로디성 효과음에만 사용).
+  const t = (o: Parameters<typeof tone>[0]): void => tone({ ...o, freq: o.freq * p, to: o.to !== undefined ? o.to * p : undefined });
   switch (name) {
-    case 'click': tone({ freq: 420, to: 520, dur: 0.06, type: 'triangle', gain: 0.14 }); break;
-    case 'select': tone({ freq: 620, to: 760, dur: 0.07, type: 'triangle', gain: 0.16 }); break;
-    case 'card': tone({ freq: 300, to: 200, dur: 0.1, type: 'sawtooth', gain: 0.12 }); noise(0.05, 0.06, 1200); break;
-    case 'attack': tone({ freq: 520, to: 900, dur: 0.08, type: 'square', gain: 0.08 }); break;
-    case 'hit': noise(0.08, 0.16, 600); tone({ freq: 180, to: 90, dur: 0.09, type: 'square', gain: 0.1 }); break;
-    case 'capture': tone({ freq: 660, to: 990, dur: 0.14, type: 'sine', gain: 0.18 }); tone({ freq: 880, to: 1320, dur: 0.18, type: 'sine', gain: 0.12, delay: 0.08 }); break;
-    case 'captureFail': tone({ freq: 300, to: 140, dur: 0.22, type: 'sawtooth', gain: 0.16 }); break;
+    case 'click': t({ freq: 420, to: 520, dur: 0.06, type: 'triangle', gain: 0.14 }); break;
+    case 'select': t({ freq: 620, to: 760, dur: 0.07, type: 'triangle', gain: 0.16 }); break;
+    // 카드 시전: 짧은 하강음 + 반짝임. pitch로 속성별 음색 차별화.
+    case 'card': t({ freq: 320, to: 210, dur: 0.1, type: 'sawtooth', gain: 0.12 }); t({ freq: 720, dur: 0.08, type: 'triangle', gain: 0.06, delay: 0.02 }); noise(0.05, 0.05, 1200); break;
+    case 'attack': t({ freq: 520, to: 900, dur: 0.08, type: 'square', gain: 0.08 }); break;
+    case 'hit': noise(0.08, 0.16, 600); t({ freq: 180, to: 90, dur: 0.09, type: 'square', gain: 0.1 }); break;
+    case 'capture': t({ freq: 660, to: 990, dur: 0.14, type: 'sine', gain: 0.18 }); t({ freq: 880, to: 1320, dur: 0.18, type: 'sine', gain: 0.12, delay: 0.08 }); break;
+    case 'captureFail': t({ freq: 300, to: 140, dur: 0.22, type: 'sawtooth', gain: 0.16 }); break;
+    // 진화: 상승 아르페지오 + 낮은 루트음으로 무게감.
     case 'evolve':
-      [523, 659, 784, 1047].forEach((f, i) => tone({ freq: f, dur: 0.22, type: 'triangle', gain: 0.16, delay: i * 0.1 }));
+      tone({ freq: 131, dur: 0.6, type: 'sine', gain: 0.1 });
+      [523, 659, 784, 1047, 1319].forEach((f, i) => tone({ freq: f, dur: 0.24, type: 'triangle', gain: 0.15, delay: i * 0.09 }));
       break;
     case 'levelup': [523, 784].forEach((f, i) => tone({ freq: f, to: f * 1.5, dur: 0.16, type: 'triangle', gain: 0.16, delay: i * 0.08 })); break;
     case 'gain': tone({ freq: 700, to: 1050, dur: 0.14, type: 'triangle', gain: 0.16 }); break;
@@ -91,6 +101,10 @@ export function playSfx(name: SfxName): void {
     case 'leak': noise(0.18, 0.2, 300); tone({ freq: 140, to: 70, dur: 0.2, type: 'square', gain: 0.14 }); break;
     case 'error': tone({ freq: 200, to: 160, dur: 0.14, type: 'square', gain: 0.14 }); break;
     case 'lose': [392, 330, 262, 196].forEach((f, i) => tone({ freq: f, dur: 0.3, type: 'triangle', gain: 0.18, delay: i * 0.18 })); break;
-    case 'win': [523, 659, 784, 1047, 1319].forEach((f, i) => tone({ freq: f, dur: 0.28, type: 'triangle', gain: 0.18, delay: i * 0.12 })); break;
+    // 승리: 팡파르 + 상단 옥타브 반짝임 마무리.
+    case 'win':
+      [523, 659, 784, 1047, 1319].forEach((f, i) => tone({ freq: f, dur: 0.28, type: 'triangle', gain: 0.18, delay: i * 0.12 }));
+      [1568, 2093].forEach((f, i) => tone({ freq: f, dur: 0.3, type: 'sine', gain: 0.1, delay: 0.6 + i * 0.1 }));
+      break;
   }
 }

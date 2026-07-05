@@ -379,7 +379,7 @@ export class Battle {
   private fireUnitShot(m: Monster, target: Enemy): void {
     const color = ELEMENT_COLOR[m.element];
     // 아군 평타 효과음 (여러 유닛 동시 발사 시 스로틀로 과다 재생 방지)
-    if (this.time - this.atkSfxAt > 0.11) { playSfx('attack'); this.atkSfxAt = this.time; }
+    if (this.time - this.atkSfxAt > 0.11) { playSfx('attack', { vary: 0.06 }); this.atkSfxAt = this.time; }
     let power = m.attackPower();
     if (m.element === 'dark' && this.hasDarkS3) power *= 1 + this.state.darkKillStacks;
     // 치명타 판정 (평타). 발사 시점 스탯 기준.
@@ -641,7 +641,10 @@ export class Battle {
     if (this.deck.hand.length === 0) this.deck.refillTo(this.waveDeck, 5);
     if (def.effect.kind === 'baseHeal') this.deck.setCooldown(id, BASE_HEAL_CD);
     if (def.effect.kind === 'capture') this.deck.setCooldown(id, CAPTURE.cooldown);
-    playSfx(def.effect.kind === 'capture' ? 'select' : 'card');
+    // 카드 속성별로 음높이를 살짝 달리해 시전음 차별화 (불=높게, 어둠=낮게).
+    const CARD_PITCH: Record<string, number> = { fire: 1.16, water: 1.0, grass: 1.08, light: 1.22, dark: 0.85, normal: 1.0, neutral: 1.0 };
+    if (def.effect.kind === 'capture') playSfx('select');
+    else playSfx('card', { pitch: CARD_PITCH[def.element] ?? 1 });
     bus.emit('card:played', { id });
     return true;
   }

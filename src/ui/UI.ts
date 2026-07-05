@@ -130,6 +130,8 @@ export class UI {
   onToTitle = () => {};
   onManageSelectHolder = (_id: string) => {};
   onManageToggle = (_holderId: string, _cardId: string) => {};
+  onShop = () => {};
+  onShopBuy = (_id: string) => {};
 
   private hudTop!: HTMLElement;
   private actions!: HTMLElement;
@@ -613,6 +615,25 @@ export class UI {
     (scroll.querySelector('#ev-ok') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onEventPick(node.id); };
   }
 
+  /** 상점 모달 — 골드로 성 회복/영구 강화 구매. 구매마다 Game이 다시 열어 잔액/상태 갱신. */
+  showShop(data: { gold: number; items: { id: string; icon: string; label: string; desc: string; cost: number; disabled?: boolean; note?: string }[] }): void {
+    const rows = data.items.map((it) => {
+      const affordable = !it.disabled && data.gold >= it.cost;
+      return `<div class="shop-item${affordable ? '' : ' disabled'}" data-id="${it.id}">
+        <div class="si-ico">${it.icon}</div>
+        <div class="si-text"><div class="si-label">${it.label}</div><div class="si-desc">${it.note ?? it.desc}</div></div>
+        <div class="si-cost">🪙 ${it.cost}</div>
+      </div>`;
+    }).join('');
+    const scroll = this.modal(`<h1>🛒 상점</h1><p class="shop-gold">보유 골드 <b>${data.gold}</b></p>
+      <div class="shop-list">${rows}</div>
+      <div class="choice-row"><button class="btn primary" id="shop-ok">닫기</button></div>`);
+    scroll.querySelectorAll('.shop-item:not(.disabled)').forEach((row) => {
+      (row as HTMLElement).onclick = () => { playSfx('coin'); this.onShopBuy((row as HTMLElement).dataset.id!); };
+    });
+    (scroll.querySelector('#shop-ok') as HTMLButtonElement).onclick = () => { playSfx('click'); this.clearModal(); };
+  }
+
   showWin(finalBossName: string): void {
     const scroll = this.modal(`<h1>승리!</h1><p>최종 보스 ${finalBossName}을(를) 쓰러뜨리고 성을 지켜냈습니다.</p><div class="choice-row"><button class="btn primary" id="again">새 모험</button></div>`);
     (scroll.querySelector('#again') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onRestart(); };
@@ -663,10 +684,11 @@ export class UI {
     this.lobbyUI = el('div');
     this.lobbyUI.id = 'lobby';
     this.lobbyUI.style.display = 'none';
-    this.lobbyUI.innerHTML = `<div class="lobby-head"><button class="btn lobby-title-btn" id="lobby-title">☰ 타이틀</button><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div><div class="menu-card" id="lobby-dex"><div class="mc-ico">📖</div><div class="mc-title">도감</div><div class="mc-sub">수집 컬렉션</div></div></div></div><button class="btn primary lobby-cta" id="lobby-battle"><span class="lc-ico">⚔️</span><span class="lc-title">출정</span><span class="lc-sub" id="lobby-next-stage"></span></button>`;
+    this.lobbyUI.innerHTML = `<div class="lobby-head"><button class="btn lobby-title-btn" id="lobby-title">☰ 타이틀</button><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-shop"><div class="mc-ico">🛒</div><div class="mc-title">상점</div><div class="mc-sub">골드로 강화 구매</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div><div class="menu-card" id="lobby-dex"><div class="mc-ico">📖</div><div class="mc-title">도감</div><div class="mc-sub">수집 컬렉션</div></div></div></div><button class="btn primary lobby-cta" id="lobby-battle"><span class="lc-ico">⚔️</span><span class="lc-title">출정</span><span class="lc-sub" id="lobby-next-stage"></span></button>`;
     this.root.appendChild(this.lobbyUI);
     (this.lobbyUI.querySelector('#lobby-battle') as HTMLElement).onclick = () => this.onEnterBattle();
     (this.lobbyUI.querySelector('#lobby-manage') as HTMLElement).onclick = () => this.onManage();
+    (this.lobbyUI.querySelector('#lobby-shop') as HTMLElement).onclick = () => { playSfx('click'); this.onShop(); };
     (this.lobbyUI.querySelector('#lobby-viewer') as HTMLElement).onclick = () => this.onOpenViewer();
     (this.lobbyUI.querySelector('#lobby-dex') as HTMLElement).onclick = () => { playSfx('click'); this.onDex(); };
     (this.lobbyUI.querySelector('#lobby-title') as HTMLElement).onclick = () => { playSfx('click'); this.onToTitle(); };

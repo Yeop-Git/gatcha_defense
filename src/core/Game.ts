@@ -89,6 +89,8 @@ export class Game {
     this.ui.onManageSelectHolder = (id) => { this.manageHolder = id; this.renderManage(); };
     this.ui.onManageToggle = (holderId, cardId) => this.toggleEquip(holderId, cardId);
     this.ui.onCaptureDiscardPick = (id) => this.onCaptureDiscardPick(id);
+    this.ui.onShop = () => this.openShop();
+    this.ui.onShopBuy = (id) => this.buyShopItem(id);
   }
 
   private lastPhase = '';
@@ -466,6 +468,39 @@ export class Game {
     state.setEquipped(holderId, eq);
     saveRun();
     this.renderManage();
+  }
+
+  // ── 상점 (골드 사용처) ──
+  /** 상점 품목 정의. cost=골드 가격, apply=효과 키. heal은 만피면 비활성. */
+  private static readonly SHOP_ITEMS: { id: string; icon: string; label: string; desc: string; cost: number }[] = [
+    { id: 'heal', icon: '❤️', label: '성 수리', desc: '성 HP를 모두 회복합니다.', cost: 30 },
+    { id: 'maxhp', icon: '🏰', label: '성벽 보강', desc: '성 최대 HP +25 (즉시 회복).', cost: 55 },
+    { id: 'atk', icon: '⚔️', label: '무기 연마', desc: '모든 유닛 공격력 +12%.', cost: 60 },
+    { id: 'aspd', icon: '⚡', label: '민첩 훈련', desc: '모든 유닛 공격속도 +0.12.', cost: 55 },
+    { id: 'range', icon: '🎯', label: '조준 훈련', desc: '모든 유닛 사거리 +0.6.', cost: 55 },
+    { id: 'crit', icon: '💥', label: '급소 간파', desc: '모든 유닛 치명타 확률 +6%.', cost: 50 },
+  ];
+
+  private openShop(): void {
+    const full = state.baseHp >= state.baseHpMax;
+    const items = Game.SHOP_ITEMS.map((it) => ({
+      ...it,
+      disabled: it.id === 'heal' && full,
+      note: it.id === 'heal' && full ? '성이 이미 온전합니다.' : undefined,
+    }));
+    this.ui.showShop({ gold: state.gold, items });
+  }
+
+  private buyShopItem(id: string): void {
+    const item = Game.SHOP_ITEMS.find((it) => it.id === id);
+    if (!item) return;
+    if (id === 'heal' && state.baseHp >= state.baseHpMax) { this.openShop(); return; }
+    if (!state.spendGold(item.cost)) { this.ui.toast('골드가 부족합니다.', 'bad'); this.openShop(); return; }
+    if (id === 'heal') { state.heal(state.baseHpMax); this.ui.toast('성을 완전히 수리했습니다.', 'good'); }
+    else if (id === 'maxhp') { state.baseHpMax += 25; state.baseHp += 25; this.ui.toast('성벽을 보강했습니다. 최대 HP +25', 'good'); }
+    else { state.applyBuff(id); this.ui.toast(`${item.label} 완료!`, 'good'); }
+    saveRun();
+    this.openShop(); // 잔액/상태 갱신하며 다시 열기 (연속 구매)
   }
 
   private startStage(index: number): void {

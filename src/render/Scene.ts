@@ -13,6 +13,15 @@ const THEME_GROUND: Record<Theme, number> = {
   temple: 0x8a7f66,
 };
 
+/** 테마별 하늘/배경색 — 지면 밖 여백을 테마 분위기로 물들여 몰입감. */
+const THEME_BG: Record<Theme, number> = {
+  grassland: 0x2a3a1e,
+  forest: 0x1c2a1c,
+  cave: 0x161320,
+  volcano: 0x2a140e,
+  temple: 0x2b241a,
+};
+
 /** 색을 어둡게 (unlit 타일의 옆면 — 격자 구분용) */
 function darken(hex: number, f: number): number {
   return new THREE.Color(hex).multiplyScalar(f).getHex();
@@ -266,12 +275,19 @@ export class Scene {
     this.theme = theme;
     this.grassTopMat.color.setHex(THEME_GROUND[theme]);
     this.grassSideMat.color.setHex(darken(THEME_GROUND[theme], SIDE_SHADE));
+    (this.scene.background as THREE.Color).setHex(THEME_BG[theme]);
   }
 
-  /** 성(거점) 위에 뜬 HP 바 갱신 (0~1). */
+  /** 성 HP를 수호 코어(crystal) 색으로 표현 (0~1). 낮을수록 청록→붉게. */
   setBaseHp(frac: number): void {
-    const bar = this.base.userData.hpbar as { set: (f: number) => void } | undefined;
-    bar?.set(frac);
+    const crystal = this.base.userData.crystal as THREE.Mesh | undefined;
+    const mat = crystal?.material as THREE.MeshBasicMaterial | undefined;
+    if (!mat) return;
+    const f = Math.max(0, Math.min(1, frac));
+    // 청록(0x6fd0e8) → 위험 시 루비(0xc0392b) 로 보간
+    const healthy = new THREE.Color(0x6fd0e8);
+    const danger = new THREE.Color(0xc0392b);
+    mat.color.copy(danger).lerp(healthy, f);
   }
 
   /** 화면 좌표 → 지면(y=0) 월드 좌표 */

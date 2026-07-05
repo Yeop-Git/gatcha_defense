@@ -1,16 +1,16 @@
 element,stage,name,role,evolve1,evolve2,lateBloom,traits
-water,1,방울북,물방울탄·약감속·미세 넉백,8,18,0,knockback;slow;shield
-water,2,산호북,파동 범위감속·확률 넉백·인접 아군 약보호막,8,18,0,knockback;slow;shield
-water,3,해수호,강넉백 파도·광역 감속 장판·아군 보호막,8,18,0,knockback;slow;shield
-grass,1,새싹록,씨앗탄·작은 풀 장판·약도트,8,18,0,zone;root;heal
-grass,2,숲사슴,덩굴 속박·씨앗 폭발·약회복,8,18,0,zone;root;heal
-grass,3,수호록,광역 속박·지속 회복·씨앗 장판 강화,8,18,0,zone;root;heal
-fire,1,불꼬미,불씨탄·약화상·빠른 공속,8,18,0,burn;rapid;burst
-fire,2,화염호,화염구 연사·화상 중첩·소범위 폭발,8,18,0,burn;rapid;burst
-fire,3,구미염,강화상 중첩·다중 타겟·폭발·화염 장판,8,18,0,burn;rapid;burst
-dark,1,루나비,그림자탄·약저주 표식,12,24,1,curse;drain;killstack
-dark,2,월희,저주 중첩·방깎·둔화·표식 추가피해,12,24,1,curse;drain;killstack
-dark,3,이클립사,저주 폭발·흡수·처치 시 자기강화·광역 디버프,12,24,1,curse;drain;killstack
-light,1,별비,약빛탄·소회복·약보호막,12,24,1,shield;heal;bless
-light,2,루멘,아군 보호막·정화·약광역 회복·축복 표식,12,24,1,shield;heal;bless
-light,3,세라핌,강보호막·광역 회복+정화·아군 강화·광역 심판,12,24,1,shield;heal;bless
+water,1,방울북,물방울 공격·감속·넉백,8,18,0,knockback;slow;shield
+water,2,산호북,파동 감속·넉백·아군 보호막,8,18,0,knockback;slow;shield
+water,3,해수호,파도 넉백·광역 감속·아군 보호막,8,18,0,knockback;slow;shield
+grass,1,새싹록,씨앗 공격·풀숲 장판·지속 피해,8,18,0,zone;root;heal
+grass,2,숲사슴,덩굴 속박·씨앗 폭발·회복,8,18,0,zone;root;heal
+grass,3,수호록,광역 속박·지속 회복·풀숲 강화,8,18,0,zone;root;heal
+fire,1,불꼬미,불씨 공격·화상·빠른 공격,8,18,0,burn;rapid;burst
+fire,2,화염호,화염구 연사·화상 중첩·폭발,8,18,0,burn;rapid;burst
+fire,3,구미염,화상 중첩·다중 공격·화염 장판,8,18,0,burn;rapid;burst
+dark,1,루나비,그림자 공격·저주 표식,12,24,1,curse;drain;killstack
+dark,2,월희,저주 중첩·방어 약화·둔화,12,24,1,curse;drain;killstack
+dark,3,이클립사,저주 폭발·흡수·광역 약화,12,24,1,curse;drain;killstack
+light,1,별비,빛 공격·회복·보호막,12,24,1,shield;heal;bless
+light,2,루멘,아군 보호막·정화·광역 회복,12,24,1,shield;heal;bless
+light,3,세라핌,강한 보호막·광역 회복·심판,12,24,1,shield;heal;bless

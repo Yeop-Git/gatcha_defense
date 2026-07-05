@@ -233,10 +233,7 @@ export function makeBase(): THREE.Group {
   g.userData.crystal = crystal;
   // 금색 깃대
   addPart(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 6), toonMat(GOLD)), 0, 6.0, 0);
-  // 떠 있는 HP 바
-  const bar = makeBarSprite(4.2);
-  bar.sprite.position.set(0, 7.3, 0);
-  g.add(bar.sprite);
-  g.userData.hpbar = bar;
+  // 성 HP는 상단 HUD 🏰 게이지로 표시(#hud-actions와 겹침 방지 — 성 위 3D 바 제거).
+  // 대신 수호 코어(crystal)를 HP 피드백에 사용: setBaseHp에서 낮을수록 붉게 물든다.
   return g;
 }
