@@ -102,7 +102,8 @@ export class Scene {
   private pathSideMat!: THREE.MeshBasicMaterial;
   private decorDensity = 12;
   private raycaster = new THREE.Raycaster();
-  private slotMeshes: THREE.Mesh[] = [];
+  private slotMeshes: THREE.Mesh[] = []; // 배치 슬롯 테두리 링(하이라이트 대상)
+  private slotPads: THREE.Mesh[] = []; // 배치 슬롯 채움 패드(가시성 강조)
   private capRing!: THREE.Mesh;
   private capLabel!: THREE.Sprite;
   private capLabelText = '';
@@ -191,6 +192,7 @@ export class Scene {
       c.traverse((o) => (o as THREE.Mesh).geometry?.dispose()); // 지오메트리만 해제(머티리얼 공유/재사용)
     }
     this.slotMeshes = [];
+    this.slotPads = [];
     this.buildGrid();
     this.buildSlots();
     const last = FIELD.path[FIELD.path.length - 1];
@@ -225,21 +227,34 @@ export class Scene {
 
   private buildSlots(): void {
     for (const s of UNIT_SLOTS) {
+      // 배치 자리 강조: 밝은 금색 채움 패드 + 두꺼운 테두리 링으로 "여기 놓으세요"가 또렷하게 보이게.
+      const pad = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.82, 1.82),
+        new THREE.MeshBasicMaterial({ color: COLORS.goldBright, transparent: true, opacity: 0.46, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      pad.rotation.x = -Math.PI / 2;
+      pad.position.set(s.x, 0.04, s.z);
+      pad.renderOrder = 1;
+      this.mapGroup.add(pad);
+      this.slotPads.push(pad);
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.85, 1.0, 4), // 사각 링 (격자 룩)
-        new THREE.MeshBasicMaterial({ color: COLORS.gold, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+        new THREE.RingGeometry(0.78, 1.0, 4), // 사각 링 (격자 룩), 종전보다 두껍게
+        new THREE.MeshBasicMaterial({ color: COLORS.goldBright, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }),
       );
       ring.rotation.x = -Math.PI / 2;
       ring.rotation.z = Math.PI / 4;
       ring.position.set(s.x, 0.06, s.z);
+      ring.renderOrder = 2;
       this.mapGroup.add(ring);
       this.slotMeshes.push(ring);
     }
   }
 
   setSlotHighlight(index: number, on: boolean): void {
-    const mat = this.slotMeshes[index]?.material as THREE.MeshBasicMaterial;
-    if (mat) mat.opacity = on ? 0.95 : 0.5;
+    const ringMat = this.slotMeshes[index]?.material as THREE.MeshBasicMaterial;
+    if (ringMat) ringMat.opacity = on ? 1.0 : 0.9;
+    const padMat = this.slotPads[index]?.material as THREE.MeshBasicMaterial;
+    if (padMat) padMat.opacity = on ? 0.68 : 0.46;
   }
 
   /** 포획 조준 미리보기 링 (드래그 중 착지 지점의 포획 판정 반경 표시). */

@@ -107,8 +107,9 @@ export const FIELD = {
 };
 
 /** 성(城)과 유닛 배치 슬롯이 렌더상 겹치지 않도록 두는 최소 간격(월드 단위).
- *  성 받침 반경 ≈3.2 + 유닛 몸통 여유. 이 반경 안의 경로 인접 셀은 배치 슬롯에서 제외. */
-export const CASTLE_CLEARANCE = 4.4;
+ *  성 발판 반경(≈2.5) + 넉넉한 여유. 이 반경 안의 경로 인접 셀은 배치 슬롯에서 제외해
+ *  모든 스테이지에서 배치 슬롯이 성에 가려지지 않게 한다. */
+export const CASTLE_CLEARANCE = 5.8;
 
 /** 경로 인접(비경로) 셀에 배치 슬롯 자동 생성 — 경로를 따라 고르게 count개. 성 주변은 제외. */
 function genSlots(cells: Set<string>, castleCell: [number, number], count = PARTY_SIZE): { x: number; z: number }[] {
@@ -174,10 +175,10 @@ export const MODEL_OUTLINE_THICKNESS = 0.012;
 export const CASTLE_MODEL_HEIGHT = 6.5;
 /**
  * 성 모델 최대 가로 크기(발판) — 높이보다 폭이 큰 넓적한 성채가 필드를 넘어 퍼지지 않게
- * max(x,z)를 이 값 이하로 제한한다(높이/폭 중 더 제한적인 쪽으로 축소). TILE=2 기준 ~3.25칸.
- * 폴백 성채 발판(지름 약 6.4)과 비슷한 크기.
+ * max(x,z)를 이 값 이하로 제한한다(높이/폭 중 더 제한적인 쪽으로 축소). TILE=2 기준 ~2.5칸.
+ * 성이 배치 슬롯을 가리지 않도록 컴팩트하게. CASTLE_CLEARANCE가 이 반경(≈2.5)보다 커야 슬롯이 안 겹친다.
  */
-export const CASTLE_MODEL_FOOTPRINT = 6.5;
+export const CASTLE_MODEL_FOOTPRINT = 5.0;
 
 /** ?ы듃?덉씠??PNG) ?뺢퇋???뺤궗媛곹삎 ??蹂 px + ?щ갚 鍮꾩쑉 */
 export const PORTRAIT_SIZE = 256;
