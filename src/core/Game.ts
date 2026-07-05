@@ -103,8 +103,8 @@ export class Game {
     // 숫자키 = 손패 카드 스마트 시전.
     window.addEventListener('keydown', (e) => {
       if (this.mode !== 'battle' || !this.battle) return;
+      if (this.paused) return; // 모달(성장/보너스/포획/클리어) 표시 중엔 ESC 포함 모든 입력 무시
       if (e.code === 'Escape') { this.exitBattle(); return; }
-      if (this.paused) return;
       if (e.code.startsWith('Digit')) {
         const idx = parseInt(e.code.slice(5)) - 1;
         const id = this.battle.deck.hand[idx];
@@ -324,6 +324,13 @@ export class Game {
       if (evolved) this.evolveQueue.push({ uid, from, to, element });
       this.gainQueue.push(...gains);
       saveRun();
+      // 전투 중 흡수-진화: 대기열을 즉시 소진(진화 연출·시그니처 학습)하고 전투를 재개한다.
+      // 방치하면 다음 스테이지 클리어까지 미뤄져 연출이 어긋나고, 도중 이탈 시 획득 카드가 유실됨.
+      if (this.mode === 'battle' && !this.paused) {
+        this.paused = true;
+        this.growthDest = 'battle';
+        this.continueGrowthFlow();
+      }
     });
   }
 
@@ -344,7 +351,8 @@ export class Game {
   private onCaptureDiscardPick(id: string): void {
     const species = this.pendingCaptureSpecies;
     this.pendingCaptureSpecies = null;
-    if (species && id !== '__new__') {
+    // ENEMIES[species] 유효성 확인 후에만 기존 동료 제거 — 무효 시 동료만 잃는 사고 방지.
+    if (species && ENEMIES[species] && id !== '__new__') {
       const dropped = state.roster.find((u) => u.uid === id);
       state.roster = state.roster.filter((u) => u.uid !== id);
       this.battle?.removeUnitByUid(id);
@@ -578,8 +586,8 @@ export class Game {
   private gainQueue: CardGain[] = [];
   /** 현재 교체 선택 중인 획득 이벤트 */
   private currentGain: CardGain | null = null;
-  /** 성장 플로우(카드 획득) 종료 후 목적지 */
-  private growthDest: 'node' | 'lobby' = 'node';
+  /** 성장 플로우(카드 획득) 종료 후 목적지. 'battle' = 전투 중 흡수-진화 후 전투 재개. */
+  private growthDest: 'node' | 'lobby' | 'battle' = 'node';
 
   private onStageClearedDetected(): void {
     this.paused = true;
@@ -627,6 +635,13 @@ export class Game {
     if (this.processEvolveQueue()) return;
     if (this.processGainQueue()) return;
     saveRun();
+    if (this.growthDest === 'battle') { // 전투 중 흡수-진화 소진 완료 → 전투 재개
+      this.growthDest = 'node';
+      this.paused = false;
+      this.refreshHand();
+      this.refreshPlacement();
+      return;
+    }
     if (this.growthDest === 'lobby') { this.growthDest = 'node'; this.backToLobby(); return; }
     this.showNodeChoice();
   }
@@ -777,6 +792,7 @@ export class Game {
   private exitBattle(): void {
     if (this.mode !== 'battle' || !this.battle) return;
     this.ui.clearModal();
+    this.pendingCaptureSpecies = null; // 포획-가득 선택 도중 이탈해도 상태가 남지 않게 정리
     this.paused = false;
     this.battle.finish();
     this.battle = null;

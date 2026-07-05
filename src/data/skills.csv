@@ -39,7 +39,7 @@ light_smite,light,심판의 빛,light,12,3,enemy-area,judgment,amount=26;radius=
 light_prayer,light,정화의 기도,light,16,3,ally-all,cleanseHeal,amount=30,,성 HP를 30 회복하고 전장을 정화합니다.
 light_haste,light,성스러운 가속,light,20,3,self,haste,mult=1.35;duration=6,,잠시 모든 유닛의 공격 속도를 높입니다.
 light_sunfire,light,태양의 심판,light,24,6,enemy-area,judgment,amount=36;radius=99;darkBonus=2,,맵 전체의 적에게 36 빛 피해를 줍니다. 어둠 적에게 매우 강합니다.
-fire_ignite,fire,점화,fire,10,2,enemy-area,markArea,mark=burn;stacks=3;radius=2.6,,범위 안의 적에게 화상 3중첩을 남깁니다. 도트 극대화.
+fire_ignite,fire,점화,fire,10,2,enemy-area,markArea,mark=burn;stacks=3;radius=2.6,,범위 안의 적에게 화상 3중첩을 남겨 지속 화상 피해를 크게 늘립니다.
 water_mana,water,밀물의 축복,water,10,3,self,manaGain,amount=4,,밀려드는 물결로 마나를 4 회복합니다.
 grass_grow,grass,자라나기,grass,10,2,self,draw,n=2,,새싹이 자라나 카드 2장을 뽑습니다.
 grass_wall,grass,덩굴 벽,grass,15,3,point,block,radius=2.6;duration=5;slow=0.9;dps=3,,덩굴 벽을 세워 5초간 적의 이동을 막습니다.

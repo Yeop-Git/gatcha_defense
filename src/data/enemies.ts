@@ -71,8 +71,8 @@ export const ENEMIES: Record<string, EnemyDef> = {
   goleling: { id: 'goleling', name: '꼬마골렘', element: 'grass', hp: 80, speed: 1.1, attack: 7, leak: 'normal', radius: 0.82, model: 'Flying/Goleling.gltf', tier: 'tank', desc: '바위로 빚어진 작은 골렘. 단단하고 우직하다.', evolvesTo: 'golem' },
   fishman: { id: 'fishman', name: '심해어', element: 'water', hp: 60, speed: 1.3, attack: 7, leak: 'normal', radius: 0.78, model: 'Blob/Fish.gltf', tier: 'normal', desc: '지하 호수에서 올라온 물고기 인간. 미끄럽고 질기다.' },
   squidle: { id: 'squidle', name: '먹물오징어', element: 'water', hp: 92, speed: 1.05, attack: 8, leak: 'normal', radius: 0.84, model: 'Flying/Squidle.gltf', tier: 'tank', desc: '먹물을 뿜으며 촉수를 휘두르는 심해의 파수꾼.' },
-  glub: { id: 'glub', name: '글러브', element: 'water', hp: 26, speed: 2.2, attack: 3, leak: 'normal', radius: 0.6, model: 'Flying/Glub.gltf', tier: 'swarm', desc: '물방울처럼 통통 튀는 작은 물의 정령.', evolvesTo: 'glubking' },
-  glubking: { id: 'glubking', name: '글러브 장로', element: 'water', hp: 150, speed: 1.1, attack: 10, leak: 'normal', radius: 0.96, model: 'Flying/Glub_Evolved.gltf', tier: 'elite', desc: '수백 년을 산 물의 원로. 파도를 부린다.' },
+  glub: { id: 'glub', name: '방울정령', element: 'water', hp: 26, speed: 2.2, attack: 3, leak: 'normal', radius: 0.6, model: 'Flying/Glub.gltf', tier: 'swarm', desc: '물방울처럼 통통 튀는 작은 물의 정령.', evolvesTo: 'glubking' },
+  glubking: { id: 'glubking', name: '방울정령 장로', element: 'water', hp: 150, speed: 1.1, attack: 10, leak: 'normal', radius: 0.96, model: 'Flying/Glub_Evolved.gltf', tier: 'elite', desc: '수백 년을 산 물의 원로. 파도를 부린다.' },
   dog: { id: 'dog', name: '들개', element: 'dark', hp: 22, speed: 2.7, attack: 4, leak: 'normal', radius: 0.58, model: 'Blob/Dog.gltf', tier: 'swarm', desc: '무리를 이뤄 달려드는 사나운 들개.' },
 
   // ── 화산 / 불 ──────────────────────────────────────────────

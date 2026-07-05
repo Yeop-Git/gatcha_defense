@@ -9,6 +9,10 @@ export function saveRun(): void {
       baseHpMax: state.baseHpMax, baseHp: state.baseHp, gold: state.gold, stageIndex: state.stageIndex,
       roster: state.roster, heroEquipped: state.heroEquipped, placementCap: state.placementCap,
       unitAtkMult: state.unitAtkMult, manaRegenMult: state.manaRegenMult,
+      // 스탯 강화(강화 노드·상점)로 오르는 보너스 — 누락 시 이어하기에서 초기화되던 버그.
+      rangeBonus: state.rangeBonus, aspdBonus: state.aspdBonus,
+      critChanceBonus: state.critChanceBonus, critDmgBonus: state.critDmgBonus,
+      manaMax: state.manaMax,
       darkKillStacks: state.darkKillStacks,
       captured: state.captured,
     };

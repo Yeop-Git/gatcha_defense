@@ -93,8 +93,9 @@ function stageForLevel(element: Element, level: number): 1 | 2 | 3 {
  * 포획 유닛 tier별 플레이 기준 스탯. 원본 도감 HP(보스 1200·미니보스 520 등)를 그대로 쓰면
  * 포획 보스가 만렙 크리처를 2~3배 압도해 밸런스가 붕괴하므로, tier 기반 기준치로 정규화한다.
  */
-const PLAY_BASE_HP: Record<EnemyTier, number> = { swarm: 46, flyer: 44, normal: 62, tank: 92, healer: 56, elite: 92, miniboss: 122, boss: 150 };
-const PLAY_BASE_ATK: Record<EnemyTier, number> = { swarm: 9, flyer: 9, normal: 10, tank: 9, healer: 7, elite: 13, miniboss: 15, boss: 18 };
+const PLAY_BASE_HP: Record<EnemyTier, number> = { swarm: 46, flyer: 44, normal: 62, tank: 92, healer: 56, elite: 96, miniboss: 128, boss: 158 };
+// 포획체가 원정대 슬롯값을 하도록 상위 tier 공격력 상향(포획=핵심 루프). 정예/보스는 크리처와 대략 동급.
+const PLAY_BASE_ATK: Record<EnemyTier, number> = { swarm: 9, flyer: 9, normal: 11, tank: 11, healer: 7, elite: 17, miniboss: 22, boss: 28 };
 
 /** 포획 enemy 유닛 파생 스탯 — tier 기준 스탯 × 레벨/유대 성장(도감 원본 HP 미사용). */
 function deriveEnemyStats(unit: OwnedUnit): DerivedStats {
@@ -107,7 +108,8 @@ function deriveEnemyStats(unit: OwnedUnit): DerivedStats {
     hp: Math.round(PLAY_BASE_HP[def.tier] * growth),
     attack: Math.round(PLAY_BASE_ATK[def.tier] * growth * state.unitAtkMult),
     range: UNIT_BASE.range + (def.flying ? 0.6 : 0) + (unit.stage - 1) * 0.4 + (unit.level - 1) * 0.015 + state.rangeBonus,
-    attackSpeed: UNIT_BASE.attackSpeed + (unit.level - 1) * 0.008 + state.aspdBonus,
+    // 크리처와 동일하게 진화 단계(stage) 공속 보너스를 부여 — 누락 시 포획체가 상시 열세.
+    attackSpeed: UNIT_BASE.attackSpeed + (unit.stage - 1) * 0.15 + (unit.level - 1) * 0.008 + state.aspdBonus,
     critChance: Math.min(0.6, c.critChance + state.critChanceBonus),
     critDmg: c.critDmg + state.critDmgBonus,
     bond,
