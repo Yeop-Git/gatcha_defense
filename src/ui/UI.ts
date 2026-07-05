@@ -124,6 +124,8 @@ export class UI {
   onSettings = () => {};
   onSettingsChange = () => {};
   onDex = () => {};
+  onDexView = (_d: { kind: 'creature' | 'enemy'; element?: string; stage?: number; species?: string; name: string }) => {};
+  onDexViewClose = () => {};
   onExit = () => {};
   onToTitle = () => {};
   onManageSelectHolder = (_id: string) => {};
@@ -163,6 +165,7 @@ export class UI {
     this.buildLobby();
     this.probeLobbyBg();
     this.buildManage();
+    this.buildDexView();
     bus.on('base:damage', () => this.pulseHp());
     bus.on('toast', ({ text, kind }) => this.toast(text, kind));
     this.setGameplayVisible(false);
@@ -256,8 +259,37 @@ export class UI {
       const id = elm.getAttribute('data-enemy') ?? '';
       if (Dex.hasEnemy(id)) { const d = ENEMIES[id]; applyEnemyPortrait(elm as HTMLElement, d.element, id, d.name); }
     });
+    // 해금된 셀 클릭 → 3D 감상
+    scroll.querySelectorAll('.dex-cell:not(.locked)').forEach((cellEl) => {
+      const pic = cellEl.querySelector('.dex-pic');
+      const cre = pic?.getAttribute('data-cre'); const en = pic?.getAttribute('data-enemy');
+      (cellEl as HTMLElement).style.cursor = 'pointer';
+      (cellEl as HTMLElement).onclick = () => {
+        playSfx('select');
+        if (cre) { const [el, st] = cre.split(':'); this.onDexView({ kind: 'creature', element: el, stage: Number(st), name: MONSTERS[el as Element].stages[Number(st) - 1].name }); }
+        else if (en) this.onDexView({ kind: 'enemy', species: en, name: ENEMIES[en]?.name ?? en });
+      };
+    });
     (scroll.querySelector('#dex-ok') as HTMLButtonElement).onclick = () => { playSfx('click'); this.clearModal(); };
   }
+
+  private dexViewUI!: HTMLElement;
+  private buildDexView(): void {
+    this.dexViewUI = el('div');
+    this.dexViewUI.id = 'dexview-ui';
+    this.dexViewUI.style.display = 'none';
+    this.dexViewUI.innerHTML = `<div class="dexview-top panel"><span class="dexview-name" id="dexview-name"></span><button class="btn" id="dexview-close">← 도감</button></div><div class="dexview-hint">🖱️ 드래그로 회전 · 휠로 확대</div>`;
+    this.root.appendChild(this.dexViewUI);
+    (this.dexViewUI.querySelector('#dexview-close') as HTMLButtonElement).onclick = () => { playSfx('click'); this.onDexViewClose(); };
+  }
+  /** 도감 3D 감상 오버레이 표시(3D는 메인 캔버스가 뷰어 씬을 렌더). */
+  showDexView(name: string): void {
+    this.clearModal();
+    this.setGameplayVisible(false);
+    this.dexViewUI.style.display = 'flex';
+    (this.dexViewUI.querySelector('#dexview-name') as HTMLElement).textContent = name;
+  }
+  hideDexView(): void { this.dexViewUI.style.display = 'none'; }
   hideTitle(): void { this.title.classList.add('hidden'); }
 
   private setGameplayVisible(on: boolean): void {

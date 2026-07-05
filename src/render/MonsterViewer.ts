@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type OwnedUnit } from '../core/GameState';
+import type { Element } from '../core/types';
 import { ENEMIES } from '../data/enemies';
 import { CAPTURED_BOSS_SCALE, unitHeight } from '../data/constants';
 import { makeCreature, makeEnemy, disposeCreatureView } from './fallback';
@@ -78,6 +79,18 @@ export class MonsterViewer {
 
   setActive(on: boolean): void {
     this.controls.enabled = on;
+  }
+
+  /** 도감 감상용: 소유 여부와 무관하게 크리처(속성·단계) 3D 표시. */
+  viewCreature(element: Element, stage: 1 | 2 | 3): void {
+    this.setUnit({ uid: 'dex', kind: 'creature', element, level: 1, stage, xp: 0, equipped: [], discarded: [], bond: 0 });
+  }
+
+  /** 도감 감상용: 적 species 3D 표시. */
+  viewEnemy(species: string): void {
+    const def = ENEMIES[species];
+    if (!def) return;
+    this.setUnit({ uid: 'dex', kind: 'enemy', species, element: (def.element === 'neutral' ? 'grass' : def.element) as Element, level: 1, stage: 1, xp: 0, equipped: [], discarded: [], bond: 0 });
   }
 
   update(dt: number): void {

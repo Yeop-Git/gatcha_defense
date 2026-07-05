@@ -82,6 +82,8 @@ export class Game {
     this.ui.onSettings = () => this.ui.showSettings();
     this.ui.onSettingsChange = () => { this.speed = settings.speed; };
     this.ui.onDex = () => this.ui.showDex();
+    this.ui.onDexView = (d) => this.openDexView(d);
+    this.ui.onDexViewClose = () => this.closeDexView();
     this.ui.onExit = () => this.exitBattle();
     this.ui.onToTitle = () => this.toTitle();
     this.ui.onManageSelectHolder = (id) => { this.manageHolder = id; this.renderManage(); };
@@ -515,6 +517,23 @@ export class Game {
     this.ui.closeViewer();
     if (this.viewerFrom === 'lobby') this.showLobby();
     else this.mode = 'battle';
+  }
+
+  // ── 도감 3D 감상 (소유 여부 무관, OrbitControls) ──
+  private openDexView(d: { kind: 'creature' | 'enemy'; element?: string; stage?: number; species?: string; name: string }): void {
+    this.ui.hideLobby(); // 로비 DOM이 3D 캔버스를 가리지 않게 숨김
+    if (d.kind === 'creature' && d.element && d.stage) this.viewer.viewCreature(d.element as Element, d.stage as 1 | 2 | 3);
+    else if (d.kind === 'enemy' && d.species) this.viewer.viewEnemy(d.species);
+    this.viewer.setActive(true);
+    this.mode = 'viewer';
+    this.ui.showDexView(d.name);
+  }
+  private closeDexView(): void {
+    this.viewer.setActive(false);
+    this.ui.hideDexView();
+    this.mode = 'lobby';
+    this.showLobby();
+    this.ui.showDex();
   }
 
   // ── 스테이지 클리어 → 보상/진화/카드 획득/갈림길 ──

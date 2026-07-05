@@ -820,3 +820,9 @@ body { font-family: 'Gothic A1', 'Jua', sans-serif; font-weight: 500; color: var
 /* HUD 우측 액션: 스크린 위에 확실히 뜨고 배경 위로 겹쳐 보이지 않게 */
 #hud-actions { z-index: 13; }
 #hud-actions .btn { box-shadow: 0 3px 0 var(--wood-dark), 0 4px 12px rgba(0,0,0,0.45); }
+
+/* ── 도감 3D 감상 오버레이 (드래그/휠은 아래 캔버스로 전달) ── */
+#dexview-ui { position: absolute; inset: 0; z-index: 32; display: none; pointer-events: none; }
+#dexview-ui .dexview-top { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 16px; padding: 8px 16px; pointer-events: auto; }
+#dexview-ui .dexview-name { font-family: 'Jua'; font-size: 20px; color: var(--gold-bright); text-shadow: 0 1px 2px #000; }
+#dexview-ui .dexview-hint { position: absolute; bottom: 24px; left: 0; right: 0; text-align: center; color: var(--parchment); opacity: 0.82; font-size: 14px; text-shadow: 0 1px 3px #000; }
