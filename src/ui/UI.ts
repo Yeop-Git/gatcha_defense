@@ -230,26 +230,37 @@ export class UI {
   showDex(): void {
     const els: Element[] = ['fire', 'water', 'grass', 'light', 'dark'];
     const cell = (unlocked: boolean, element: string, name: string, attr: string): string =>
-      `<div class="dex-cell${unlocked ? '' : ' locked'} el-${element}" style="width:78px;display:flex;flex-direction:column;align-items:center;gap:3px;${unlocked ? '' : 'opacity:0.5;filter:grayscale(1)'}">
-        <div class="dex-pic" ${attr} style="width:60px;height:60px;font-size:34px;display:flex;align-items:center;justify-content:center;background-size:contain;background-repeat:no-repeat;background-position:center;border-radius:12px;background-color:rgba(0,0,0,0.18)">${unlocked ? '' : '❔'}</div>
-        <div class="dex-nm" style="font-size:11px;text-align:center;line-height:1.1">${unlocked ? name : '???'}</div>
+      `<div class="dex-cell${unlocked ? '' : ' locked'} el-${element}" style="width:74px;display:flex;flex-direction:column;align-items:center;gap:3px;${unlocked ? '' : 'opacity:0.55;filter:grayscale(1)'}">
+        <div class="dex-pic" ${attr} style="width:58px;height:58px;font-size:32px;display:flex;align-items:center;justify-content:center;background-size:contain;background-repeat:no-repeat;background-position:center;border-radius:12px;background-color:rgba(20,14,8,0.35)">${unlocked ? '' : '❔'}</div>
+        <div class="dex-nm" style="font-size:11px;text-align:center;line-height:1.1;color:var(--ink)">${unlocked ? name : '???'}</div>
       </div>`;
-    let cCount = 0, creHtml = '';
-    for (const el of els) for (const st of [1, 2, 3] as const) {
-      const u = Dex.hasCreature(el, st); if (u) cCount++;
-      creHtml += cell(u, el, u ? MONSTERS[el].stages[st - 1].name : '', `data-cre="${el}:${st}"`);
+    // 진화계통(라인)별로 묶어서 한꺼번에 표시. 크리처 5속성×3단 + 적 진화체인.
+    const lines: string[] = [];
+    let collected = 0, total = 0;
+    for (const el of els) {
+      let inner = '';
+      for (const st of [1, 2, 3] as const) {
+        const u = Dex.hasCreature(el, st); if (u) collected++; total++;
+        inner += cell(u, el, u ? MONSTERS[el].stages[st - 1].name : '', `data-cre="${el}:${st}"`);
+      }
+      lines.push(`<div class="dex-line el-${el}">${inner}</div>`);
     }
     const enemyIds = Object.keys(ENEMIES).filter((id) => !ENEMIES[id].creatureStage);
-    let eCount = 0, enHtml = '';
+    const targets = new Set(enemyIds.map((id) => ENEMIES[id].evolvesTo).filter(Boolean));
     for (const id of enemyIds) {
-      const d = ENEMIES[id]; const u = Dex.hasEnemy(id); if (u) eCount++;
-      enHtml += cell(u, d.element, u ? d.name : '', `data-enemy="${id}"`);
+      if (targets.has(id)) continue; // 진화형은 base 라인에 포함
+      const chain: string[] = [id];
+      let nxt: string | undefined = ENEMIES[id].evolvesTo;
+      while (nxt && ENEMIES[nxt]) { chain.push(nxt); nxt = ENEMIES[nxt].evolvesTo; }
+      let inner = '';
+      for (const sp of chain) {
+        const d = ENEMIES[sp]; const u = Dex.hasEnemy(sp); if (u) collected++; total++;
+        inner += cell(u, d.element, u ? d.name : '', `data-enemy="${sp}"`);
+      }
+      lines.push(`<div class="dex-line el-${ENEMIES[id].element}">${inner}</div>`);
     }
-    const total = els.length * 3 + enemyIds.length;
-    const gridCss = 'display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:6px 0 14px';
-    const scroll = this.modal(`<h1>도감</h1><p>수집 <b>${cCount + eCount}</b> / ${total}</p>
-      <h2 style="margin:8px 0 2px">몬스터 ${cCount}/${els.length * 3}</h2><div class="dex-grid" style="${gridCss}">${creHtml}</div>
-      <h2 style="margin:8px 0 2px">적 ${eCount}/${enemyIds.length}</h2><div class="dex-grid" style="${gridCss}">${enHtml}</div>
+    const scroll = this.modal(`<h1>도감</h1><p class="dex-count">수집 <b>${collected}</b> / ${total} · 같은 진화계통끼리 묶었습니다</p>
+      <div class="dex-grid" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:10px 0 14px;align-items:flex-start">${lines.join('')}</div>
       <div class="choice-row"><button class="btn primary" id="dex-ok">닫기</button></div>`);
     scroll.querySelectorAll('.dex-pic[data-cre]').forEach((elm) => {
       const [el, st] = (elm.getAttribute('data-cre') ?? '').split(':');
