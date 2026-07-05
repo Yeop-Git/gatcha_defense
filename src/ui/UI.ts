@@ -114,9 +114,8 @@ export class UI {
   onEvolveAck = () => {};
   onCardReplacePick = (_discardId: string) => {};
   onCaptureDiscardPick = (_id: string) => {};
-  onNode = (_kind: string) => {};
-  onBuffPick = (_id: string) => {};
-  onBonusPick = (_id: string) => {};
+  onCaptureReject = () => {};
+  onSpecialEnter = () => {};
   onDraftPick = (_element: string) => {};
   onEventPick = (_id: string) => {};
   onNext = () => {};
@@ -184,6 +183,7 @@ export class UI {
     this.buildDexView();
     bus.on('base:damage', () => this.pulseHp());
     bus.on('toast', ({ text, kind }) => this.toast(text, kind));
+    bus.on('warn', ({ text }) => this.warn(text));
     this.setGameplayVisible(false);
   }
 
@@ -339,11 +339,11 @@ export class UI {
         <div class="bar-wrap"><div class="bar hp" id="hp-bar" style="width:100%"></div></div>
         <span class="val" id="hp-val">0</span>
       </div>
-      <div class="chip">웨이브 <span id="wave-val">-</span></div>
-      <div class="chip" title="드로우 더미 / 버린 더미">덱 <span id="deck-val">0/0</span></div>
-      <div class="chip" title="남은 적">적 <span id="enemy-val">0</span></div>
-      <div class="chip">골드 <span id="gold-val">0</span></div>
-      <div class="chip stage-label"><span id="stage-val">스테이지</span></div>`;
+      <div class="chip" title="웨이브"><span class="chip-ico">🌊</span><span id="wave-val">-</span></div>
+      <div class="chip" title="드로우 더미 / 버린 더미"><span class="chip-ico">🎴</span><span id="deck-val">0/0</span></div>
+      <div class="chip" title="남은 적"><span class="chip-ico">👹</span><span id="enemy-val">0</span></div>
+      <div class="chip" title="골드"><span class="chip-ico">🪙</span><span id="gold-val">0</span></div>
+      <div class="chip stage-label" title="현재 스테이지"><span class="chip-ico">📍</span><span id="stage-val">스테이지</span></div>`;
     this.root.appendChild(this.hudTop);
     ['hp-bar','hp-val','wave-val','deck-val','enemy-val','gold-val','stage-val'].forEach((id) => {
       this.refs[id] = this.hudTop.querySelector('#' + id) as HTMLElement;
@@ -574,17 +574,37 @@ export class UI {
     }
   }
 
-  showCaptureDiscard(data: { newName: string; newElement: string; newSpecies?: string; options: { id: string; name: string; sub: string; element: string; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3 }[] }): void {
-    const scroll = this.modal(`<h1>원정대가 가득 찼습니다</h1><p>최대 ${MAX_MONSTERS}마리까지 함께할 수 있습니다. 보낼 동료를 고르거나 새 포획체를 놓아주세요.</p><div class="replace-row"></div>`);
-    const row = scroll.querySelector('.replace-row')!;
-    const mk = (id: string, name: string, sub: string, element: string, kind: 'creature' | 'enemy', species: string | undefined, stage: 1 | 2 | 3, isNew: boolean): void => {
-      const wrap = el('div', 'replace-slot', `${isNew ? '<div class="rs-tag new">새 포획체</div>' : '<div class="rs-tag old">동료</div>'}<div class="big-card el-${element}"><div class="card-elem">${cardElemIcon(element)}</div><div class="art">${cardElemIcon(element)}</div><div class="name">${name}</div><div class="desc">${sub}</div></div>`);
-      applyUnitPortrait(wrap.querySelector('.art') as HTMLElement, { name, element, kind, species, stage });
-      wrap.onclick = () => { this.clearModal(); this.onCaptureDiscardPick(id); };
-      row.appendChild(wrap);
+  /**
+   * 원정대 만석 상태에서 새 포획 발생 → 2단계 흐름.
+   *  1) 편입할지 / 놓아줄지 확인.
+   *  2) 편입 시, 자리를 비울 동료 1명을 선택(전체 원정대에서).
+   */
+  showCaptureFull(data: { newName: string; newElement: string; newSpecies?: string; options: { id: string; name: string; sub: string; element: string; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3 }[] }): void {
+    const newCard = `<div class="replace-slot"><div class="rs-tag new">새 포획체</div><div class="big-card el-${data.newElement}"><div class="card-elem">${cardElemIcon(data.newElement)}</div><div class="art" id="cap-new-art">${cardElemIcon(data.newElement)}</div><div class="name">${data.newName}</div><div class="desc">방금 포획한 개체</div></div></div>`;
+    const scroll = this.modal(`<h1>원정대가 가득 찼습니다</h1>
+      <p>원정대는 최대 ${MAX_MONSTERS}마리까지 함께할 수 있습니다.<br/>방금 포획한 <b>${data.newName}</b>을(를) 원정대에 편입시킬까요?</p>
+      <div class="replace-row">${newCard}</div>
+      <div class="choice-row"><button class="btn primary" id="cap-accept">편입한다</button><button class="btn" id="cap-reject">놓아준다</button></div>`);
+    // 야생 크리처면 크리처 포트레이트(단계 반영), 아니면 적 포트레이트.
+    const newDef = data.newSpecies ? ENEMIES[data.newSpecies] : undefined;
+    const newKind: 'creature' | 'enemy' = newDef?.creatureStage ? 'creature' : 'enemy';
+    const newStage = (newDef?.creatureStage ?? 1) as 1 | 2 | 3;
+    applyUnitPortrait(scroll.querySelector('#cap-new-art') as HTMLElement, { name: data.newName, element: data.newElement, kind: newKind, species: data.newSpecies, stage: newStage });
+    (scroll.querySelector('#cap-reject') as HTMLButtonElement).onclick = () => { playSfx('select'); this.clearModal(); this.onCaptureReject(); };
+    (scroll.querySelector('#cap-accept') as HTMLButtonElement).onclick = () => {
+      playSfx('click');
+      // 2단계: 자리를 비울 동료 선택
+      scroll.innerHTML = `<h1>동료를 한 명 보내주세요</h1>
+        <p><b>${data.newName}</b>이(가) 들어갈 자리를 만들려면, 원정대에서 내보낼 동료를 고르세요.</p>
+        <div class="replace-row"></div>`;
+      const row = scroll.querySelector('.replace-row')!;
+      for (const o of data.options) {
+        const wrap = el('div', 'replace-slot', `<div class="rs-tag old">동료</div><div class="big-card el-${o.element}"><div class="card-elem">${cardElemIcon(o.element)}</div><div class="art">${cardElemIcon(o.element)}</div><div class="name">${o.name}</div><div class="desc">${o.sub}</div></div>`);
+        applyUnitPortrait(wrap.querySelector('.art') as HTMLElement, { name: o.name, element: o.element, kind: o.kind, species: o.species, stage: o.stage });
+        wrap.onclick = () => { playSfx('select'); this.clearModal(); this.onCaptureDiscardPick(o.id); };
+        row.appendChild(wrap);
+      }
     };
-    for (const o of data.options) mk(o.id, o.name, o.sub, o.element, o.kind, o.species, o.stage, false);
-    mk('__new__', data.newName, '방금 포획한 개체', data.newElement, 'enemy', data.newSpecies, 1, true);
   }
 
   showStageClear(stageLabel: string, rewards: string[]): void {
@@ -592,36 +612,6 @@ export class UI {
     (scroll.querySelector('#next-btn') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onNext(); };
   }
 
-  showNodeChoice(nodes: { kind: string; label: string; desc: string }[]): void {
-    const scroll = this.modal('<h1>다음 길</h1><p>다음 목적지를 선택하세요.</p><div class="choice-row"></div>');
-    const row = scroll.querySelector('.choice-row')!;
-    for (const n of nodes) {
-      const c = el('div', 'choice', `<div class="ct">${n.label}</div><div class="cd">${n.desc}</div>`);
-      c.onclick = () => { this.clearModal(); this.onNode(n.kind); };
-      row.appendChild(c);
-    }
-  }
-
-  showBuffChoice(options: { id: string; label: string }[]): void {
-    const scroll = this.modal('<h1>강화 선택</h1><p>하나를 선택하세요.</p><div class="choice-row"></div>');
-    const row = scroll.querySelector('.choice-row')!;
-    for (const o of options) {
-      const c = el('div', 'choice', `<div class="ct">${o.label}</div>`);
-      c.onclick = () => { this.clearModal(); this.onBuffPick(o.id); };
-      row.appendChild(c);
-    }
-  }
-
-  /** 스테이지 중간 보너스 강화 3택1 (갈림길 대체). */
-  showBonus(options: { id: string; label: string }[]): void {
-    const scroll = this.modal('<h1>✦ 보너스 강화 ✦</h1><p>다음 웨이브가 몰려오기 전에, 강화 하나를 챙기세요.</p><div class="choice-row"></div>');
-    const row = scroll.querySelector('.choice-row')!;
-    for (const o of options) {
-      const c = el('div', 'choice', `<div class="ct">${o.label}</div>`);
-      c.onclick = () => { playSfx('select'); this.clearModal(); this.onBonusPick(o.id); };
-      row.appendChild(c);
-    }
-  }
 
   showEvent(node: { id: string; label: string; desc: string }): void {
     const scroll = this.modal(`<h1>${node.label}</h1><p>${node.desc}</p><div class="choice-row"><button class="btn primary" id="ev-ok">선택</button></div>`);
@@ -643,7 +633,7 @@ export class UI {
       <div class="si-text"><div class="si-label">${it.label}</div><div class="si-desc">${it.note ?? it.desc}</div></div>
       <div class="si-cost">${it.sold ? '품절' : `🪙 ${it.cost}`}</div>
     </div>`).join('');
-    const scroll = this.modal(`<h1>🛒 상점</h1><p class="shop-gold">보유 골드 <b>${data.gold}</b> · 마음에 드는 게 없으면 새로고침</p>
+    const scroll = this.modal(`<h1>🛒 상점</h1><p class="shop-gold"><span class="stat" title="보유 골드"><span class="st-ico">🪙</span><b>${data.gold}</b></span><span class="shop-gold-hint">마음에 드는 게 없으면 새로고침</span></p>
       <div class="shop-list">${rows}</div>
       <div class="choice-row">
         <button class="btn" id="shop-reroll"${data.canReroll ? '' : ' disabled'}>🔄 새로고침 (🪙 ${data.rerollCost})</button>
@@ -689,6 +679,12 @@ export class UI {
     const t = el('div', `toast ${kind}`, text);
     this.toastLayer.appendChild(t);
     setTimeout(() => t.remove(), 2500);
+  }
+
+  /** 사용자 동작 실패 알림: 에러 효과음 + 붉은 시스템 메시지(간결). */
+  warn(text: string): void {
+    playSfx('error');
+    this.toast(text, 'bad');
   }
 
   private buildViewer(): void {
@@ -738,7 +734,10 @@ export class UI {
     this.setGameplayVisible(false);
     this.hideManage();
     this.lobbyUI.style.display = 'flex';
-    (this.lobbyUI.querySelector('#lobby-stage') as HTMLElement).innerHTML = `골드 ${info.gold} · 원정대 ${info.roster.length}/${MAX_MONSTERS} · 포획 도감 ${info.capturedCount}`;
+    (this.lobbyUI.querySelector('#lobby-stage') as HTMLElement).innerHTML =
+      `<span class="stat" title="골드"><span class="st-ico">🪙</span><b>${info.gold}</b></span>`
+      + `<span class="stat" title="원정대 인원"><span class="st-ico">👥</span><b>${info.roster.length}</b><span class="st-sep">/${MAX_MONSTERS}</span></span>`
+      + `<span class="stat" title="포획 도감"><span class="st-ico">📖</span><b>${info.capturedCount}</b></span>`;
     (this.lobbyUI.querySelector('#lobby-next-stage') as HTMLElement).textContent = `스테이지 ${info.stageNo} · ${info.stageLabel}`;
     const r = this.lobbyUI.querySelector('#lobby-roster') as HTMLElement;
     r.innerHTML = '';
@@ -761,38 +760,45 @@ export class UI {
   }
 
   /**
-   * 마리오식 노드 지도. 클리어=체크·현재=반짝(진입 가능)·미래=자물쇠.
-   * 현재 노드만 클릭해 진입. 굽이치는 경로로 10개 스테이지를 한눈에.
+   * 마리오식 노드 지도. 스테이지 + 사이사이 특수 노드(상점🛒/사건❓/야영⛺)를 한 트랙에 렌더.
+   * 클리어=체크·현재=반짝(진입/방문 가능)·미래=자물쇠. 현재 노드만 클릭 가능.
+   * 현재 노드가 스테이지면 onStageEnter, 특수 노드면 onSpecialEnter.
    */
-  showStageMap(data: { stages: { no: number; label: string; theme: string; boss?: 'mini' | 'final'; state: 'cleared' | 'current' | 'locked' }[] }): void {
+  showStageMap(data: { nodes: { kind: 'stage' | 'shop' | 'event' | 'rest'; no?: number; label: string; theme?: string; boss?: 'mini' | 'final'; state: 'cleared' | 'current' | 'locked' }[] }): void {
     this.setGameplayVisible(false);
     this.hideLobby();
     this.clearModal();
-    const W = 1000, H = 460, padX = 70, padY = 84;
-    const N = data.stages.length;
-    const pts = data.stages.map((s, i) => {
+    const SPECIAL_ICON: Record<string, string> = { shop: '🛒', event: '❓', rest: '⛺' };
+    const W = 1000, H = 460, padX = 56, padY = 84;
+    const N = data.nodes.length;
+    const pts = data.nodes.map((s, i) => {
       const x = padX + (N > 1 ? i * ((W - 2 * padX) / (N - 1)) : 0);
-      const y = H / 2 - Math.sin(i * 0.8) * (H / 2 - padY); // 굽이치는 경로
+      const y = H / 2 - Math.sin(i * 0.66) * (H / 2 - padY); // 굽이치는 경로
       return { x, y, s };
     });
     let segs = '';
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1];
-      const on = data.stages[i + 1].state !== 'locked'; // 도달한 구간 = 금색 실선
+      const on = data.nodes[i + 1].state !== 'locked'; // 도달한 구간 = 금색 실선
       segs += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="smap-seg ${on ? 'on' : 'off'}"/>`;
     }
-    const nodes = pts.map(({ x, y, s }) => {
-      const icon = THEME_ICON[s.theme] ?? '❔';
-      const badge = s.state === 'cleared' ? '✓' : s.state === 'locked' ? '🔒' : icon;
+    const nodes = pts.map(({ x, y, s }, i) => {
+      const isStage = s.kind === 'stage';
+      const baseIcon = isStage ? (THEME_ICON[s.theme ?? ''] ?? '❔') : (SPECIAL_ICON[s.kind] ?? '❔');
+      const badge = s.state === 'cleared' ? '✓' : s.state === 'locked' ? '🔒' : baseIcon;
       const boss = s.boss === 'final' ? '<span class="smap-boss">👑</span>' : s.boss === 'mini' ? '<span class="smap-boss">💀</span>' : '';
       const dis = s.state === 'current' ? '' : 'disabled';
-      return `<button class="smap-node ${s.state}${s.boss ? ' boss' : ''}" data-no="${s.no}" title="${s.label}" ${dis}
+      const cls = `smap-node ${s.state}${isStage ? '' : ' smap-special'}${s.boss ? ' boss' : ''}`;
+      const num = isStage ? `<span class="smap-num">${s.no}</span>` : '';
+      return `<button class="${cls}" data-kind="${s.kind}" data-idx="${i}" title="${s.label}" ${dis}
         style="left:${(x / W) * 100}%;top:${(y / H) * 100}%">
-        <span class="smap-badge">${badge}</span><span class="smap-num">${s.no}</span>${boss}
+        <span class="smap-badge">${badge}</span>${num}${boss}
       </button>`;
     }).join('');
-    const cur = data.stages.find((s) => s.state === 'current');
-    const subText = cur ? `${cur.no}. ${cur.label} — 진입하려면 반짝이는 노드를 누르세요` : '모든 스테이지를 정복했습니다!';
+    const cur = data.nodes.find((s) => s.state === 'current');
+    const subText = cur
+      ? (cur.kind === 'stage' ? `${cur.no}. ${cur.label} — 반짝이는 노드를 눌러 진입` : `${cur.label} — 반짝이는 노드를 눌러 방문`)
+      : '모든 스테이지를 정복했습니다!';
     this.stageMapUI.innerHTML = `
       <div class="smap-head">
         <button class="btn smap-back" id="smap-back">← 원정대</button>
@@ -806,7 +812,8 @@ export class UI {
     this.stageMapUI.style.display = 'flex';
     (this.stageMapUI.querySelector('#smap-back') as HTMLButtonElement).onclick = () => { playSfx('click'); this.onStageMapBack(); };
     this.stageMapUI.querySelectorAll('.smap-node.current').forEach((n) => {
-      (n as HTMLButtonElement).onclick = () => { playSfx('select'); this.onStageEnter(); };
+      const kind = (n as HTMLElement).dataset.kind;
+      (n as HTMLButtonElement).onclick = () => { playSfx('select'); if (kind === 'stage') this.onStageEnter(); else this.onSpecialEnter(); };
     });
   }
   hideStageMap(): void { this.stageMapUI.style.display = 'none'; }

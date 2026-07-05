@@ -28,6 +28,9 @@ export function bumpUidAbove(uids: string[]): void {
 /** 덱에 장착 가능한 카드 수 (포켓몬식: 배운 것 중 5개만 들고 감) */
 export const EQUIP_CAP = 5;
 
+/** 모험 지도의 스테이지 사이(갭) 특수 노드 종류. */
+export type SpecialKind = 'shop' | 'event' | 'rest';
+
 /** 보유 유닛 — 런 동안 유지되는 육성 모델. creature=드래프트, enemy=포획. */
 export interface OwnedUnit {
   uid: string;
@@ -202,6 +205,14 @@ export class GameState {
   /** 포획 도감/카운트: 적 species id → 누적 포획 수 (중복 포획 = XP 가속 재료). */
   captured: Record<string, number> = {};
 
+  /**
+   * 모험 지도 트랙: 스테이지 사이 갭(0..N-2)마다의 특수 노드 종류(상점/사건/야영).
+   * 런 시작 시 1회 생성·저장(재현 안정). 인덱스 g = 스테이지 g와 g+1 사이.
+   */
+  gapSpecials: SpecialKind[] = [];
+  /** 직전 스테이지 클리어 후 아직 방문하지 않은 특수 노드가 있는가(그 노드가 현재 위치). */
+  specialPending = false;
+
   reset(): void {
     Object.assign(this, new GameState());
     this.heroEquipped = this.defaultEquip('hero', 1);
@@ -227,16 +238,16 @@ export class GameState {
     const kind = card.effect.kind;
     if (tier === 'swarm' || tier === 'flyer') {
       if (card.cost <= 2) score += 4;
-      if (kind === 'chain' || kind === 'damage' || kind === 'judgment') score += 3;
+      if (kind === 'chain' || kind === 'damage') score += 3;
       if (kind === 'markArea') score += 2;
     } else if (tier === 'tank') {
       if (kind === 'zone' || kind === 'defDown' || kind === 'markArea') score += 4;
       if (kind === 'damage' && card.cost >= 2) score += 1.5;
     } else if (tier === 'healer') {
-      if (kind === 'healAll' || kind === 'shieldAll' || kind === 'cleanseHeal' || kind === 'blessOne' || kind === 'drain') score += 5;
+      if (kind === 'blessOne' || kind === 'blessAll' || kind === 'healUnits' || kind === 'shieldUnits' || kind === 'reviveUnit' || kind === 'drain') score += 5;
       if (kind === 'markArea' || kind === 'defDown') score += 1.5;
     } else if (tier === 'elite' || tier === 'miniboss' || tier === 'boss') {
-      if (kind === 'damage' || kind === 'judgment' || kind === 'drain') score += 4;
+      if (kind === 'damage' || kind === 'drain') score += 4;
       if (card.cost >= 3) score += 2;
       if (card.effect.kind === 'zone') score += 1.5;
     } else {
@@ -507,6 +518,8 @@ export class GameState {
       case 'aspd': this.aspdBonus += 0.12; break;
       case 'crit': this.critChanceBonus += 0.06; break;
       case 'critdmg': this.critDmgBonus += 0.25; break;
+      // 도박 이벤트(피의 계약): 전 유닛 공격력 영구 +18%.
+      case 'pact_atk': this.unitAtkMult *= 1.18; break;
       // 하위호환 (구버전 노드/세이브)
       case 'atk10': this.unitAtkMult *= 1.1; break;
       case 'basehp20': this.baseHpMax += 20; this.baseHp += 20; break;

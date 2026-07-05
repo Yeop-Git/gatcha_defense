@@ -7,12 +7,12 @@
 
 ## 남은 작업 (우선순위)
 
-### A. [모험 지도] 특수 노드를 지도 위에 직접 렌더 (현재는 클리어 후 '다음 길' 모달)
-- 현재: 스테이지 클리어 → 모달 갈림길(🛒상점/❓사건/⛺야영) → 다음 스테이지. (`Game.showNodeChoice`/`chooseNode`)
-- 목표: 마리오식 노드 지도(`UI.showStageMap`) 위에 스테이지 노드 **사이**에 특수 노드를 실제 노드로 배치.
-  진행 트랙 = [스테이지1, 특수?, 스테이지2, 특수?, …]. 현재 위치가 특수 노드면 그 자리에서 상점/사건 해결 후 다음 스테이지 노드 개방.
-- 구현 힌트: `state`에 런 시작 시 갭별 특수노드 종류 생성·저장(안정적 재현), `showStageMap` 데이터에 특수 노드 포함, 진행 마커 추가. save.ts에 특수노드 진행 상태 저장.
-- 위치: `src/ui/UI.ts`(showStageMap), `src/core/Game.ts`(openStageMap/진행), `src/core/GameState.ts`+`save.ts`(트랙 상태).
+### A. [모험 지도] 특수 노드를 지도 위에 직접 렌더 — ✅ 완료
+- 구현: 트랙 = [스테이지1, 특수, 스테이지2, 특수, …] 인터리브(스테이지 10 + 갭 9 = 19 노드).
+  갭별 특수 종류는 런 시작 시 1회 생성(`GameState.gapSpecials`, save 영속), 진행은 `stageIndex`+`specialPending`로 표현.
+  스테이지 클리어 → 지도의 그 갭 특수 노드가 '현재'로 반짝임 → 클릭 시 상점/사건/야영을 그 자리에서 해결 → 다음 스테이지 개방.
+  구 '다음 길' 모달(`showNodeChoice`/`chooseNode`) 제거, `UI.showStageMap`이 혼합 트랙 렌더(`smap-special` 스타일), `Game.enterSpecialNode`/`onSpecialEnter`.
+- 위치: `src/ui/UI.ts`(showStageMap), `src/core/Game.ts`(openStageMap/enterSpecialNode/ensureMapTrack), `GameState.ts`(gapSpecials/specialPending)+`save.ts`.
 
 ### B. [도구(held item) 시스템] 확장 (이번 세션 최소 구현 완료)
 - 완료: `src/data/items.ts` 5종, `OwnedUnit.item`, deriveStats 합산, 상점 '도구' 섹션 구매→장착 대상 선택, 뷰어 표시, roster 저장으로 영속.
@@ -23,13 +23,24 @@
 - rAF 스로틀로 이번엔 풀런 실측을 못 함 → **다음 세션 첫 작업으로 실제 1→10 플레이스루** 하며 골드 곡선/가격 균형, 도구 파워 확인.
 - 위치: `Game.SHOP_ITEMS`(가격), `items.ts`(도구 효과/가격), `Battle`(처치 골드), `stages.csv`/`Game.applyEvent`(사건).
 
-### D. [갈림길 정리] 웨이브 중간 무료 강화(`showMidBonus`) 존치 여부
-- 현재 마지막 웨이브 직전 무료 5스탯 3택1(`showMidBonus`/`showBonus`)이 여전히 있음. 유료 상점과 병존.
-- 결정 필요: 유지 / 제거 / 유료화. `showBuffChoice`·`onBuffPick`은 지금 미사용(死코드) — 방향 정해지면 정리.
+### D. [갈림길 정리] 웨이브 중간 무료 강화 — ✅ 제거 완료
+- 마지막 웨이브 직전 무료 5스탯 3택1(`showMidBonus`/`showBonus`/`onBonusPick`) 및 `bonus` 페이즈 제거.
+  강화는 이제 상점(유료)·특수노드로 일원화. `showBuffChoice`/`onBuffPick` 死코드도 제거됨.
+- (참고) `stages.ts`의 `BUFF_NODES` 데이터는 남아있으나 현재 미사용(추후 재활용 여지로 존치).
 
 ### E. [맵 완성도] 선택 다듬기
 - 완료: 스테이지 10개 고유 팔레트(`Scene.STAGE_VISUAL`), 경로 레이아웃 10종, 테마 배경색, 장식이 배치 슬롯 위에 안 생김.
 - 남음(선택): 안개, 경로 타일 텍스처 변주, 테마별 accent 장식(설산 눈·화산 용암 등), 신규 경로 5종의 난이도 실측.
+
+## 최근 세션 완료 (포획 UX · UI 아이콘 · 공성)
+- **포획/영입 개선**: 원정대 만석 시 편입/놓아주기 2단계 모달(적·야생 크리처 공통, 인원 상관없이 교체 편입) `showCaptureFull`; 포획 즉시 필드 배치 `Battle.deployCaptured`(여러 마리 영입 스킵 버그 해소).
+- **야생 크리처 희귀화**: 미보유 속성만·1웨이브에 1마리·전부 보유 시 미등장(`Battle.beginWave`).
+- **전투 종료 → 스테이지 선택 지도**(`backToStageMap`, 로비는 지도 '← 원정대'로). 
+- **아이콘-수치 일괄 UI**: 로비 상단(🪙/👥/📖)·상점 보유골드·전투 HUD 칩·스테이지 클리어 골드. `.stat` 칩.
+- **예외 알림 통일**: `UI.warn`(에러음+붉은 토스트) + `warn` 이벤트 — 골드 부족·빈 원정대·배치 상한 등.
+- **거북이(물 크리처) 축소**: `CREATURE_DISPLAY_SCALE.water=0.6`.
+- **공성(SIEGE)**: 일반 적이 성문 도달 시 소멸 대신 정지해 자기 attack으로 주기 타격(`Enemy.atBase`/`Battle.siegeStrike`, 피해숫자·사운드·공격모션·넉백 해제까지). 보스/미니보스는 기존 루프백 유지.
+- **정리**: `showBuffChoice`/`onBuffPick` 死코드 제거.
 
 ## 이번 세션(이어서) 완료된 것 (참고)
 - **적대적 검증 2라운드**: 저장 유실(스탯 보너스), 전투 중 흡수-진화 대기열 방치, ESC 소프트락, 포획-교체 안전, 포획체 밸런스 상향, 상점 후 로비 골드 갱신, setBaseHp 매틱 할당 — 모두 수정.

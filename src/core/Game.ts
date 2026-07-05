@@ -1,11 +1,12 @@
 import { Scene } from '../render/Scene';
 import { MonsterViewer } from '../render/MonsterViewer';
 import { UI, type HandCard } from '../ui/UI';
-import { state, unitName, displayName, EQUIP_CAP, type CardGain } from './GameState';
+import { state, unitName, displayName, EQUIP_CAP, type CardGain, type SpecialKind } from './GameState';
 import { saveRun, loadRun, clearRun, hasRun } from './save';
 import { Battle } from '../systems/Battle';
-import { STAGES, BUFF_NODES, EVENT_NODES } from '../data/stages';
+import { STAGES, EVENT_NODES, BUFF_NODES } from '../data/stages';
 import { ENEMIES } from '../data/enemies';
+import { MONSTERS } from '../data/monsters';
 import { cardsOfCharacter, CARDS, CARD_BY_ID, cardIcon, cardRole } from '../data/cards';
 import { ITEMS, ITEM_BY_ID } from '../data/items';
 import type { Element } from './types';
@@ -52,7 +53,7 @@ export class Game {
     this.ui.onCardGrab = (id, ev) => this.beginCardDrag(id, ev);
     this.ui.onUnitCardGrab = (id, ev) => this.beginUnitCardDrag(id, ev);
     this.ui.onSpeedChange = (speed) => { this.speed = speed; this.ui.toast(`전투 속도 ${speed}배`, 'info'); };
-    this.ui.onCardBlocked = (reason) => this.ui.toast(reason, 'bad');
+    this.ui.onCardBlocked = (reason) => this.ui.warn(reason);
     this.ui.onOpenViewer = () => this.openViewer();
     this.ui.onCloseViewer = () => this.closeViewer();
     this.ui.onViewerSelect = (uid) => {
@@ -66,9 +67,7 @@ export class Game {
       if (u) this.ui.toast(`이름 확정: ${displayName(u)}`, 'good');
       if (this.mode === 'viewer') this.ui.openViewer(state.roster, uid); // 선택 유닛 유지하며 갱신
     };
-    this.ui.onNode = (kind) => this.chooseNode(kind);
-    this.ui.onBuffPick = (id) => { state.applyBuff(id); this.backToLobby(); };
-    this.ui.onBonusPick = (id) => { state.applyBuff(id); this.battle?.refreshUnitStats(); saveRun(); this.paused = false; this.ui.toast('강화를 획득했습니다.', 'good'); this.refreshHand(); this.refreshPlacement(); };
+    this.ui.onSpecialEnter = () => this.enterSpecialNode();
     this.ui.onDraftPick = (el) => this.pickDraft(el);
     this.ui.onEventPick = (id) => { this.applyEvent(id); this.afterEvent(); };
     this.ui.onNext = () => this.afterStageClear();
@@ -92,9 +91,10 @@ export class Game {
     this.ui.onManageSelectHolder = (id) => { this.manageHolder = id; this.renderManage(); };
     this.ui.onManageToggle = (holderId, cardId) => this.toggleEquip(holderId, cardId);
     this.ui.onCaptureDiscardPick = (id) => this.onCaptureDiscardPick(id);
+    this.ui.onCaptureReject = () => this.onCaptureReject();
     this.ui.onShopBuy = (id) => this.buyShopItem(id);
     this.ui.onShopReroll = () => this.rerollShop();
-    this.ui.onShopClose = () => this.backToLobby(); // 상점(특수 노드) 닫으면 전투 정리 후 로비로
+    this.ui.onShopClose = () => this.backToStageMap(); // 상점(특수 노드) 닫으면 전투 정리 후 스테이지 지도로
     this.ui.onItemAssign = (uid) => this.assignItem(uid);
   }
 
@@ -345,26 +345,43 @@ export class Game {
     this.pendingCaptureSpecies = species;
     this.paused = true; // 전투 일시정지 후 선택
     const def = ENEMIES[species];
-    // 오버플로 교체 통일: 오래된 3 + 신규 1 중에서 버리기 (카드 교체와 동일 규칙).
-    const oldest = state.roster.slice(0, 3).map((u) => ({
+    // 편입을 택하면 원정대 전원 중에서 내보낼 동료 1명을 고른다(오래된 순).
+    const options = state.roster.map((u) => ({
       id: u.uid, name: displayName(u), sub: `Lv${u.level} · ${unitName(u)}`, element: u.element as string,
       kind: u.kind, species: u.species, stage: u.stage,
     }));
-    this.ui.showCaptureDiscard({ newName: name, newElement: def?.element ?? 'neutral', newSpecies: species, options: oldest });
+    this.ui.showCaptureFull({ newName: name, newElement: def?.element ?? 'neutral', newSpecies: species, options });
+  }
+
+  /** 만석 포획: '놓아주기' 선택 — 새 포획체를 받지 않고 전투 재개. */
+  private onCaptureReject(): void {
+    this.pendingCaptureSpecies = null;
+    this.ui.toast('새 포획체를 놓아주었다', 'info');
+    this.paused = false;
+    this.refreshPlacement();
   }
 
   private onCaptureDiscardPick(id: string): void {
     const species = this.pendingCaptureSpecies;
     this.pendingCaptureSpecies = null;
     // ENEMIES[species] 유효성 확인 후에만 기존 동료 제거 — 무효 시 동료만 잃는 사고 방지.
-    if (species && ENEMIES[species] && id !== '__new__') {
+    if (species && ENEMIES[species]) {
+      const def = ENEMIES[species];
       const dropped = state.roster.find((u) => u.uid === id);
       state.roster = state.roster.filter((u) => u.uid !== id);
       this.battle?.removeUnitByUid(id);
-      const joined = state.giveEnemyUnit(species, state.stageIndex + 1);
-      this.ui.toast(joined
-        ? `${dropped ? displayName(dropped) : '동료'}을(를) 보내고 새 포획체가 합류`
-        : '새 포획체 합류에 실패했습니다.', joined ? 'info' : 'bad');
+      // 야생 크리처는 크리처로, 일반 적은 포획체로 편입 (giveUnit vs giveEnemyUnit).
+      let joined;
+      if (def.creatureStage) {
+        const el = def.element as Element;
+        const evo = MONSTERS[el].evolveLevels;
+        const lvl = def.creatureStage >= 3 ? evo[1] : def.creatureStage === 2 ? evo[0] : 1;
+        joined = state.giveUnit(el, lvl);
+      } else {
+        joined = state.giveEnemyUnit(species, state.stageIndex + 1);
+      }
+      if (joined) { this.battle?.deployCaptured(joined); this.ui.toast(`${dropped ? displayName(dropped) : '동료'}을(를) 보내고 새 포획체가 합류`, 'info'); }
+      else this.ui.warn('새 포획체 합류에 실패했습니다.');
     } else {
       this.ui.toast('새 포획체를 놓아주었다', 'info');
     }
@@ -376,6 +393,7 @@ export class Game {
   // ── 런/로비/스테이지 ──
   private startRun(): void {
     state.reset();
+    this.ensureMapTrack(); // 런 시작 시 갭별 특수 노드 생성
     this.ui.hideTitle();
     this.showLobby();
   }
@@ -383,6 +401,7 @@ export class Game {
   /** 저장된 런 이어하기 (localStorage 스냅샷 1개) */
   private continueRun(): void {
     if (!loadRun()) { this.startRun(); return; }
+    this.ensureMapTrack(); // 구버전 저장 방어: 트랙 없으면 생성
     this.ui.hideTitle();
     this.ui.toast('저장된 모험을 이어서 시작합니다', 'good');
     this.showLobby();
@@ -405,15 +424,38 @@ export class Game {
   }
 
   /** 로비 '출정' → 노드식 모험 지도를 열어 현재 스테이지를 선택하게 한다. */
+  private static readonly SPECIAL_LABEL: Record<SpecialKind, string> = { shop: '상점', event: '사건', rest: '야영' };
+
+  /** 런 시작 시 갭별 특수 노드 종류를 1회 생성(재현 안정, save에 영속). 비어있을 때만. */
+  private ensureMapTrack(): void {
+    if (state.gapSpecials.length >= STAGES.length - 1) return;
+    const pool: SpecialKind[] = ['shop', 'shop', 'event', 'event', 'rest'];
+    const track: SpecialKind[] = [];
+    for (let i = 0; i < STAGES.length - 1; i++) track.push(pool[Math.floor(Math.random() * pool.length)]);
+    state.gapSpecials = track;
+    saveRun();
+  }
+
   private openStageMap(): void {
     this.mode = 'stagemap';
     this.ui.hideLobby();
+    this.ensureMapTrack();
     const cur = state.stageIndex;
-    const stages = STAGES.map((s, i) => ({
-      no: s.id, label: s.label, theme: s.theme, boss: s.boss,
-      state: (i < cur ? 'cleared' : i === cur ? 'current' : 'locked') as 'cleared' | 'current' | 'locked',
-    }));
-    this.ui.showStageMap({ stages });
+    const pending = state.specialPending;
+    const nodes: { kind: 'stage' | SpecialKind; no?: number; label: string; theme?: string; boss?: 'mini' | 'final'; state: 'cleared' | 'current' | 'locked' }[] = [];
+    for (let i = 0; i < STAGES.length; i++) {
+      const s = STAGES[i];
+      const stState: 'cleared' | 'current' | 'locked' = i < cur ? 'cleared' : (i === cur && !pending) ? 'current' : 'locked';
+      nodes.push({ kind: 'stage', no: s.id, label: s.label, theme: s.theme, boss: s.boss, state: stState });
+      if (i < STAGES.length - 1) {
+        const kind = state.gapSpecials[i] ?? 'shop';
+        // 갭 i는 스테이지 i 클리어(cur=i+1) 후 방문 대상.
+        const gState: 'cleared' | 'current' | 'locked' =
+          cur < i + 1 ? 'locked' : (cur === i + 1 && pending) ? 'current' : 'cleared';
+        nodes.push({ kind, label: Game.SPECIAL_LABEL[kind], state: gState });
+      }
+    }
+    this.ui.showStageMap({ nodes });
   }
 
   private enterBattle(): void {
@@ -487,8 +529,8 @@ export class Game {
       eq.splice(i, 1);
     } else {
       const learned = state.learnedIdsFor(state.holderCharacter(holderId), state.holderLevel(holderId), state.holderDiscarded(holderId));
-      if (!learned.includes(cardId)) { this.ui.toast('아직 배우지 않은 스킬입니다', 'bad'); return; }
-      if (eq.length >= EQUIP_CAP) { this.ui.toast(`덱은 최대 ${EQUIP_CAP}장까지`, 'bad'); return; }
+      if (!learned.includes(cardId)) { this.ui.warn('아직 배우지 않은 스킬입니다'); return; }
+      if (eq.length >= EQUIP_CAP) { this.ui.warn(`덱은 최대 ${EQUIP_CAP}장까지`); return; }
       eq.push(cardId);
     }
     state.setEquipped(holderId, eq);
@@ -553,7 +595,7 @@ export class Game {
   /** 골드로 진열 새로고침. 리롤할수록 비용 증가(무한 리롤 방지). */
   private rerollShop(): void {
     const cost = this.shopRerollCost();
-    if (!state.spendGold(cost)) { this.ui.toast('골드가 부족합니다.', 'bad'); this.openShop(); return; }
+    if (!state.spendGold(cost)) { this.ui.warn('골드가 부족합니다.'); this.openShop(); return; }
     this.shopRerolls++;
     this.rollShop();
     saveRun();
@@ -567,7 +609,7 @@ export class Game {
     const item = Game.SHOP_ITEMS.find((it) => it.id === id);
     if (!item) return;
     if (id === 'heal' && state.baseHp >= state.baseHpMax) { this.openShop(); return; }
-    if (!state.spendGold(item.cost)) { this.ui.toast('골드가 부족합니다.', 'bad'); this.openShop(); return; }
+    if (!state.spendGold(item.cost)) { this.ui.warn('골드가 부족합니다.'); this.openShop(); return; }
     if (id === 'heal') { state.heal(state.baseHpMax); this.ui.toast('성을 완전히 수리했습니다.', 'good'); }
     else if (id === 'maxhp') { state.baseHpMax += 25; state.baseHp += 25; this.ui.toast('성벽을 보강했습니다. 최대 HP +25', 'good'); }
     else { state.applyBuff(id); this.ui.toast(`${item.label} 완료!`, 'good'); }
@@ -581,8 +623,8 @@ export class Game {
   private startBuyItem(itemId: string): void {
     const def = ITEM_BY_ID[itemId];
     if (!def) { this.openShop(); return; }
-    if (state.roster.length === 0) { this.ui.toast('도구를 지닐 동료가 없습니다.', 'bad'); this.openShop(); return; }
-    if (state.gold < def.cost) { this.ui.toast('골드가 부족합니다.', 'bad'); this.openShop(); return; }
+    if (state.roster.length === 0) { this.ui.warn('도구를 지닐 동료가 없습니다.'); this.openShop(); return; }
+    if (state.gold < def.cost) { this.ui.warn('골드가 부족합니다.'); this.openShop(); return; }
     this.pendingItem = itemId;
     this.ui.showItemAssign(def, state.roster.map((u) => ({
       uid: u.uid, name: displayName(u), element: u.element, kind: u.kind, species: u.species, stage: u.stage,
@@ -596,7 +638,7 @@ export class Game {
     this.pendingItem = null;
     if (!uid || !itemId) { this.openShop(); return; } // 취소
     const def = ITEM_BY_ID[itemId];
-    if (!def || !state.spendGold(def.cost)) { this.ui.toast('골드가 부족합니다.', 'bad'); this.openShop(); return; }
+    if (!def || !state.spendGold(def.cost)) { this.ui.warn('골드가 부족합니다.'); this.openShop(); return; }
     const prev = state.giveItem(uid, itemId);
     const u = state.roster.find((x) => x.uid === uid);
     const slot = this.shopStock.find((s) => s.id === `item:${itemId}`);
@@ -644,7 +686,7 @@ export class Game {
   // ── 뷰어 ──
   private viewerFrom: Mode = 'battle';
   private openViewer(): void {
-    if (state.roster.length === 0) { this.ui.toast('보유한 몬스터가 없습니다', 'bad'); return; }
+    if (state.roster.length === 0) { this.ui.warn('보유한 몬스터가 없습니다'); return; }
     this.viewerFrom = this.mode;
     if (this.mode === 'lobby') this.ui.hideLobby();
     this.mode = 'viewer';
@@ -683,13 +725,13 @@ export class Game {
   /** 현재 교체 선택 중인 획득 이벤트 */
   private currentGain: CardGain | null = null;
   /** 성장 플로우(카드 획득) 종료 후 목적지. 'battle' = 전투 중 흡수-진화 후 전투 재개. */
-  private growthDest: 'node' | 'lobby' | 'battle' = 'node';
+  private growthDest: 'node' | 'stagemap' | 'battle' = 'node';
 
   private onStageClearedDetected(): void {
     this.paused = true;
     const def = this.battle!.stage;
     // 유닛 경험치 지급
-    const rewards: string[] = [`현재 골드 ${state.gold}`];
+    const rewards: string[] = [`🪙 ${state.gold}`];
     const xpGain = 120 + def.id * 90; // 만렙 30 곡선에 맞춘 스테이지 XP (레벨업 완만화)
     for (const u of state.roster) {
       const before = unitName(u);
@@ -709,24 +751,20 @@ export class Game {
     if (state.roster.length) rewards.push('동료 유대 상승. HP와 공격 보너스가 증가합니다.');
     // 클리어 즉시 다음 스테이지로 전진시켜 저장 — "보상만 받고 종료 → 같은 스테이지 반복" 파밍 방지
     state.stageIndex += 1;
+    // 방금 건넌 갭(stageIndex-1)의 특수 노드를 지도에서 방문 대상으로 표시.
+    this.ensureMapTrack();
+    state.specialPending = state.stageIndex - 1 < state.gapSpecials.length;
     this.ui.showStageClear(def.label, rewards);
     saveRun();
   }
 
-  /** '다음으로' 버튼 → 성장 플로우(카드 획득) → 로비 (갈림길은 스테이지 중간 보너스로 이동) */
+  /** '다음으로' 버튼 → 성장 연출(카드 획득) → 모험 지도(특수 노드가 현재 위치로 표시). */
   private afterStageClear(): void {
-    this.growthDest = 'node'; // 성장 연출 후 특수 노드(상점/사건/야영) 갈림길로
+    this.growthDest = 'stagemap'; // 성장 연출 후 지도로 (특수 노드는 지도에서 방문)
     this.continueGrowthFlow();
   }
 
-  /** 스테이지 중간(마지막 웨이브 직전) 보너스 강화 3택1. */
-  private showMidBonus(): void {
-    this.paused = true;
-    const picks = BUFF_NODES.slice().sort(() => Math.random() - 0.5).slice(0, 3);
-    this.ui.showBonus(picks.map((b) => ({ id: b.apply, label: b.label })));
-  }
-
-  /** 진화 연출 → 카드 획득/교체 → 끝나면 목적지(갈림길/로비)로. */
+  /** 진화 연출 → 카드 획득/교체 → 끝나면 목적지(전투/지도)로. */
   private continueGrowthFlow(): void {
     if (this.processEvolveQueue()) return;
     if (this.processGainQueue()) return;
@@ -738,8 +776,9 @@ export class Game {
       this.refreshPlacement();
       return;
     }
-    if (this.growthDest === 'lobby') { this.growthDest = 'node'; this.backToLobby(); return; }
-    this.showNodeChoice();
+    // 그 외(스테이지 클리어/이벤트 성장) → 모험 지도로 복귀.
+    this.growthDest = 'node';
+    this.backToStageMap();
   }
 
   /** 진화 연출 대기열 처리. 띄웠으면 true. 현재 유닛 단계/종류로 포트레이트 정합. */
@@ -801,30 +840,26 @@ export class Game {
     this.continueGrowthFlow();
   }
 
-  /** 스테이지 사이 특수 노드 갈림길(상점/사건/야영) — 골드 소모처가 진행 중 자연스럽게 등장. */
-  private showNodeChoice(): void {
-    if (state.stageIndex >= STAGES.length) { this.backToLobby(); return; }
-    this.ui.showNodeChoice([
-      { kind: 'shop', label: '🛒 상점', desc: '골드로 강화와 도구를 구매합니다.' },
-      { kind: 'event', label: '❓ 사건', desc: '예상 밖의 사건을 만납니다. 보상이나 대가가 따릅니다.' },
-      { kind: 'rest', label: '⛺ 야영', desc: '성을 수리하고 잠시 휴식합니다. (무료)' },
-    ]);
-  }
-
-  private chooseNode(kind: string): void {
+  /**
+   * 지도에서 현재 특수 노드를 방문(클릭). 갭 종류(상점/사건/야영)를 그 자리에서 해결.
+   * 방문 즉시 소비(specialPending=false) → 해결 후 지도로 복귀하면 다음 스테이지가 열린다.
+   */
+  private enterSpecialNode(): void {
+    const gap = state.stageIndex - 1;
+    const kind = state.gapSpecials[gap] ?? 'shop';
+    state.specialPending = false; // 방문 = 소비
+    saveRun();
     if (kind === 'shop') {
-      this.enterShop();
+      this.enterShop(); // 상점 모달 — onShopClose가 지도로 복귀
     } else if (kind === 'event') {
       const node = EVENT_NODES[Math.floor(Math.random() * EVENT_NODES.length)];
-      this.ui.showEvent(node);
-    } else if (kind === 'rest') {
+      this.ui.showEvent(node); // onEventPick → applyEvent → afterEvent → 지도로 복귀
+    } else { // rest(야영)
       const heal = Math.round(state.baseHpMax * 0.25);
       state.heal(heal);
       this.ui.toast(`야영으로 성을 정비했습니다. 성 HP +${heal}`, 'good');
       saveRun();
-      this.backToLobby();
-    } else {
-      this.backToLobby();
+      this.openStageMap();
     }
   }
 
@@ -859,22 +894,45 @@ export class Game {
         state.baseHp = Math.max(1, state.baseHp - 15); state.gold += 50;
         this.ui.toast('제단: 성 HP -15, 골드 +50', 'bad');
         break;
+      case 'roulette': {
+        const bet = Math.floor(state.gold / 2);
+        if (bet <= 0) { this.ui.toast('룰렛: 걸 골드가 없다…', 'info'); break; }
+        if (Math.random() < 0.55) { state.gold += bet; this.ui.toast(`🎰 룰렛 대성공! 골드 +${bet}`, 'good'); }
+        else { state.gold -= bet; this.ui.toast(`🎰 룰렛 실패… 골드 -${bet}`, 'bad'); }
+        break;
+      }
+      case 'pact':
+        state.baseHp = Math.max(1, state.baseHp - 40);
+        state.applyBuff('pact_atk');
+        this.ui.toast('🩸 피의 계약: 성 HP -40, 전 유닛 공격력 영구 +18%', 'bad');
+        break;
+      case 'dice': {
+        const roll = 1 + Math.floor(Math.random() * 6);
+        if (roll === 6) {
+          const pick = BUFF_NODES[Math.floor(Math.random() * BUFF_NODES.length)];
+          state.applyBuff(pick.apply);
+          this.ui.toast(`🎲 주사위 6! ${pick.label} 영구 획득!`, 'good');
+        } else if (roll >= 4) { state.gold += 50; this.ui.toast(`🎲 주사위 ${roll}! 골드 +50`, 'good'); }
+        else { state.gold = Math.max(0, state.gold - 20); this.ui.toast(`🎲 주사위 ${roll}… 골드 -20`, 'bad'); }
+        break;
+      }
     }
   }
 
   /** 이벤트 종료 → (온천 성장 시) 분기/카드 획득 플로우 → 로비 */
   private afterEvent(): void {
-    this.growthDest = 'lobby';
+    this.growthDest = 'stagemap';
     this.continueGrowthFlow();
   }
 
-  /** 갈림길까지 마치면 로비로 복귀. (stageIndex는 클리어 시점에 이미 전진됨) */
-  private backToLobby(): void {
+  /** 갈림길까지 마치면 스테이지 선택 지도로 복귀. (stageIndex는 클리어 시점에 이미 전진됨)
+   *  로비(원정대 허브)는 지도의 '← 원정대' 버튼으로 이동. */
+  private backToStageMap(): void {
     this.battle?.finish();
     this.battle = null;
     if (state.stageIndex >= STAGES.length) { this.win(); return; }
     saveRun();
-    this.showLobby();
+    this.openStageMap();
   }
 
   /** 로비 → 타이틀 화면으로. 진행 상황은 저장돼 있어 '이어하기'로 복귀 가능. */
@@ -956,9 +1014,6 @@ export class Game {
     if (phase === 'stageClear') {
       this.battle.phase = 'placement'; // 중복 방지 (이미 처리)
       this.onStageClearedDetected();
-    } else if (phase === 'bonus') {
-      this.battle.phase = 'placement'; // 보너스 처리 후 마지막 웨이브 배치 페이즈로
-      this.showMidBonus();
     } else if (phase === 'won') {
       this.battle.finish(); this.battle = null; this.win();
     } else if (phase === 'lost') {

@@ -40,6 +40,12 @@ export class Enemy {
   pos = new THREE.Vector3();
   alive = true;
   reachedBase = false;
+  /** 성문 공성 중(일반 적): 경로 끝에 도달해 제자리에서 성을 주기 공격한다. Battle이 타격을 구동. */
+  atBase = false;
+  siegeTimer = 0;
+  /** 아군 유닛과 교전 중(일반 적): 사거리 내 아군을 만나 진격을 멈추고 공격한다. Battle이 구동. */
+  engaging = false;
+  unitAtkCd = 0;
   isBoss: boolean;
   isMini: boolean;
 
@@ -159,6 +165,20 @@ export class Enemy {
       if (this.stunTimer <= 0) { this.stunned = false; this.alive = false; }
       return;
     }
+    if (this.atBase) {
+      // 공성: 전진 없이 제자리. 표식(도트)·내장 애니메이션만 갱신. 성 타격 주기는 Battle이 구동.
+      this.marks.update(dt, t);
+      const mixer = this.view.userData.mixer as THREE.AnimationMixer | undefined;
+      if (mixer) mixer.update(dt * 0.6);
+      return;
+    }
+    if (this.engaging) {
+      // 아군 유닛과 교전: 전진 정지, 표식·애니메이션만 갱신(유닛 타격은 Battle이 구동).
+      this.marks.update(dt, t);
+      const mixer = this.view.userData.mixer as THREE.AnimationMixer | undefined;
+      if (mixer) mixer.update(dt);
+      return;
+    }
     if (this.rootTimer > 0) this.rootTimer -= dt;
     if (this.slowTimer > 0) { this.slowTimer -= dt; if (this.slowTimer <= 0) this.slowPct = 0; }
     if (this.defDownTimer > 0) this.defDownTimer -= dt;
@@ -192,8 +212,17 @@ export class Enemy {
       }
     }
     if (this.seg >= PATH.length - 1) {
-      this.reachedBase = true;
-      this.alive = false;
+      if (this.isBoss || this.isMini) {
+        // 보스/미니보스: 기존 루프백(Battle이 leak + resetToPathStart 처리).
+        this.reachedBase = true;
+        this.alive = false;
+      } else {
+        // 일반 적: 소멸하지 않고 성문 공성 상태로 전환(제자리 정지, Battle이 주기 타격 구동).
+        this.atBase = true;
+        const end = PATH[PATH.length - 1];
+        this.pos.set(end.x, 0, end.z);
+        this.view.position.copy(this.pos);
+      }
       return;
     }
     // (보스 루프백은 Battle이 resetToPathStart로 처리)
@@ -244,6 +273,7 @@ export class Enemy {
     this.segT = 0;
     this.reachedBase = false;
     this.alive = true;
+    this.atBase = false;
     // 상태 초기화 — 부활 보스가 이전 기절/속박/감속/표식을 안고 되살아나 좀비/스톨/도트순삭되던 버그 방지.
     this.stunned = false;
     this.stunTimer = 0;
@@ -260,6 +290,8 @@ export class Enemy {
 
   /** 넉백: 경로를 따라 뒤로 dist만큼 밀려남. 보스/미니보스는 반감(CC 저항) — 무한 스톨 방지. */
   knockback(dist: number): void {
+    // 공성 중 밀려나면 성문에서 이탈 → 다시 진격(공성 재개는 재도달 시).
+    this.atBase = false;
     // 마지막 waypoint(기지)에 도달한 상태면 마지막 세그먼트로 클램프 (PATH[seg+1] 안전)
     if (this.seg >= PATH.length - 1) { this.seg = PATH.length - 2; this.segT = 1; }
     let back = dist * this.ccFactor;

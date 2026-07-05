@@ -8,15 +8,15 @@ export type CardEffect =
   | { kind: 'damage'; amount: number; radius: number; element: ElementOrNeutral; mark?: MarkType; markStacks?: number; knockback?: number }
   | { kind: 'chain'; amount: number; targets: number; element: ElementOrNeutral; mark?: MarkType; markStacks?: number }
   | { kind: 'zone'; zone: 'slow' | 'fire' | 'thorn' | 'overgrowth'; radius: number; duration: number; element: Element; slow?: number; dps?: number; root?: number }
-  | { kind: 'shieldAll'; pct: number }
-  | { kind: 'healAll'; amount: number }
   | { kind: 'markArea'; mark: MarkType; stacks: number; radius: number; element: Element }
   | { kind: 'defDown'; pct: number; duration: number; radius: number; element: Element }
   | { kind: 'drain'; amount: number; radius: number; element: Element; drainPct: number }
   | { kind: 'eclipseVerdict'; radius: number; executePct: number }
   | { kind: 'blessOne'; stacks: number }
-  | { kind: 'cleanseHeal'; amount: number }
-  | { kind: 'judgment'; amount: number; radius: number; darkBonus: number }
+  | { kind: 'blessAll'; stacks: number }
+  | { kind: 'healUnits'; amount: number; base: number }
+  | { kind: 'shieldUnits'; amount: number }
+  | { kind: 'reviveUnit'; hpPct: number; max: number; fallbackDraw: number }
   | { kind: 'rally' }
   | { kind: 'baseHeal'; amount: number }
   | { kind: 'overheat'; mult: number; duration: number }
@@ -25,7 +25,6 @@ export type CardEffect =
   | { kind: 'bind'; radius: number; duration: number }
   | { kind: 'haste'; mult: number; duration: number }
   | { kind: 'manaGain'; amount: number }
-  | { kind: 'fear'; radius: number; duration: number }
   | { kind: 'block'; radius: number; duration: number; element: Element; slow?: number; dps?: number }
   | { kind: 'capture'; radius: number };
 
@@ -65,15 +64,15 @@ function buildEffect(kind: string, p: Params, cardEl: CardElement): CardEffect {
     case 'damage': return { kind, amount: num(p, 'amount'), radius: num(p, 'radius', 1), element: el, mark, markStacks: opt(p, 'markStacks'), knockback: opt(p, 'knockback') };
     case 'chain': return { kind, amount: num(p, 'amount'), targets: num(p, 'targets', 3), element: el, mark, markStacks: opt(p, 'markStacks') };
     case 'zone': return { kind, zone: p.zone as 'slow' | 'fire' | 'thorn' | 'overgrowth', radius: num(p, 'radius', 2), duration: num(p, 'duration', 5), element: realEl, slow: opt(p, 'slow'), dps: opt(p, 'dps'), root: opt(p, 'root') };
-    case 'shieldAll': return { kind, pct: num(p, 'pct', 0.1) };
-    case 'healAll': return { kind, amount: num(p, 'amount') };
     case 'markArea': return { kind, mark: mark ?? 'curse', stacks: num(p, 'stacks', 1), radius: num(p, 'radius', 2), element: realEl };
     case 'defDown': return { kind, pct: num(p, 'pct', 0.3), duration: num(p, 'duration', 6), radius: num(p, 'radius', 2), element: realEl };
     case 'drain': return { kind, amount: num(p, 'amount'), radius: num(p, 'radius', 2), element: realEl, drainPct: num(p, 'drainPct', 0.5) };
     case 'eclipseVerdict': return { kind, radius: num(p, 'radius', 3), executePct: num(p, 'executePct', 0.2) };
     case 'blessOne': return { kind, stacks: num(p, 'stacks', 2) };
-    case 'cleanseHeal': return { kind, amount: num(p, 'amount') };
-    case 'judgment': return { kind, amount: num(p, 'amount'), radius: num(p, 'radius', 2), darkBonus: num(p, 'darkBonus', 1.5) };
+    case 'blessAll': return { kind, stacks: num(p, 'stacks', 1) };
+    case 'healUnits': return { kind, amount: num(p, 'amount', 20), base: num(p, 'base', 0) };
+    case 'shieldUnits': return { kind, amount: num(p, 'amount', 22) };
+    case 'reviveUnit': return { kind, hpPct: num(p, 'hpPct', 0.5), max: num(p, 'max', 0), fallbackDraw: num(p, 'fallbackDraw', 0) };
     case 'rally': return { kind };
     case 'baseHeal': return { kind, amount: num(p, 'amount', 25) };
     case 'overheat': return { kind, mult: num(p, 'mult', 2), duration: num(p, 'duration', 8) };
@@ -82,7 +81,6 @@ function buildEffect(kind: string, p: Params, cardEl: CardElement): CardEffect {
     case 'bind': return { kind, radius: num(p, 'radius', 2.6), duration: num(p, 'duration', 2.5) };
     case 'haste': return { kind, mult: num(p, 'mult', 1.3), duration: num(p, 'duration', 6) };
     case 'manaGain': return { kind, amount: num(p, 'amount', 4) };
-    case 'fear': return { kind, radius: num(p, 'radius', 2.6), duration: num(p, 'duration', 2) };
     case 'block': return { kind, radius: num(p, 'radius', 2.4), duration: num(p, 'duration', 5), element: realEl, slow: opt(p, 'slow'), dps: opt(p, 'dps') };
     case 'capture': return { kind, radius: num(p, 'radius', 1.4) };
     default: return { kind: 'damage', amount: 10, radius: 1, element: el };
@@ -130,12 +128,12 @@ const ELEMENT_BADGE: Record<CardElement, string> = {
 
 export function cardIcon(def: CardDef): string {
   switch (def.effect.kind) {
-    case 'cleanseHeal': return '💚';
-    case 'healAll':
     case 'baseHeal': return '🩹';
-    case 'shieldAll': return '🛡️';
     case 'blessOne': return '🌟';
-    case 'judgment': return '☀️';
+    case 'blessAll': return '🌟';
+    case 'healUnits': return '💚';
+    case 'shieldUnits': return '🛡️';
+    case 'reviveUnit': return '🕊️';
     case 'rally': return '🔄';
     case 'draw': return '🃏';
     case 'coinflip': return '🪙';
@@ -143,7 +141,6 @@ export function cardIcon(def: CardDef): string {
     case 'capture': return '🔮';
     case 'haste': return '💨';
     case 'manaGain': return '🌊';
-    case 'fear': return '😱';
     case 'block': return '🧱';
     case 'overheat': return '♨️';
     case 'drain': return '🩸';
@@ -161,20 +158,19 @@ export function cardRole(def: CardDef): string {
   switch (def.effect.kind) {
     case 'damage':
     case 'chain':
-    case 'judgment':
     case 'eclipseVerdict': return '공격';
     case 'zone':
     case 'markArea':
     case 'defDown':
-    case 'fear':
     case 'block':
     case 'bind': return '제어';
     case 'manaGain': return '운영';
-    case 'healAll':
-    case 'cleanseHeal':
-    case 'shieldAll':
     case 'baseHeal':
     case 'blessOne':
+    case 'blessAll':
+    case 'healUnits':
+    case 'shieldUnits':
+    case 'reviveUnit':
     case 'haste':
     case 'overheat': return '지원';
     case 'draw':

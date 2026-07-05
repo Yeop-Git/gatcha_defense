@@ -15,6 +15,7 @@ export function saveRun(): void {
       manaMax: state.manaMax,
       darkKillStacks: state.darkKillStacks,
       captured: state.captured,
+      gapSpecials: state.gapSpecials, specialPending: state.specialPending,
     };
     localStorage.setItem(KEY, JSON.stringify(snap));
   } catch {
@@ -41,6 +42,8 @@ export function loadRun(): boolean {
     // 구버전 스냅샷 방어: 새 필드 기본값 보장
     state.captured = state.captured ?? {};
     state.darkKillStacks = state.darkKillStacks ?? 0;
+    state.gapSpecials = state.gapSpecials ?? [];
+    state.specialPending = state.specialPending ?? false;
     for (const u of state.roster) {
       u.discarded = u.discarded ?? [];
       u.kind = u.kind ?? 'creature';

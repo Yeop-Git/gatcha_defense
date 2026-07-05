@@ -38,6 +38,8 @@ export class VFX {
   private particles: Particle[] = [];
   private rings: Ring[] = [];
   private texts: { sprite: THREE.Sprite; life: number; maxLife: number }[] = [];
+  /** 임팩트 코어 팝(타격 순간 번쩍) — 제자리에서 커지며 빠르게 사라지는 밝은 스프라이트. */
+  private pops: { sprite: THREE.Sprite; life: number; maxLife: number; from: number; to: number }[] = [];
 
   constructor(parent: THREE.Object3D) {
     parent.add(this.group);
@@ -62,6 +64,23 @@ export class VFX {
         size: 0.4 + Math.random() * 0.5,
       });
     }
+  }
+
+  /**
+   * 타격 임팩트: 흰빛 코어 팝 + 색 스파크 + 얇은 밝은 링을 한 번에. 평타/스킬 명중의 "타격감"용.
+   * scale로 세기 조절(평타 0.8, 스킬 1.4, 궁극 2+). crit=true면 흰 스파크를 덧뿌린다.
+   */
+  impact(x: number, z: number, color: number, scale = 1, crit = false): void {
+    // 흰빛 코어 팝
+    const mat = new THREE.SpriteMaterial({ map: this.glow, color: 0xffffff, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
+    const sp = new THREE.Sprite(mat);
+    sp.position.set(x, 0.9, z);
+    this.group.add(sp);
+    this.pops.push({ sprite: sp, life: 0, maxLife: 0.18 + scale * 0.05, from: 0.6 * scale, to: 2.4 * scale });
+    // 색 스파크 + 밝은 링
+    this.burst(x, z, color, Math.round(6 + scale * 6), 3 + scale * 2, 0.9);
+    if (crit) this.burst(x, z, 0xffe8b0, 8, 5, 1.0);
+    this.ring(x, z, color, 1.4 * scale, 0.22);
   }
 
   /** 확장 링 (넉백 파도/폭발/협동기) */
@@ -132,6 +151,21 @@ export class VFX {
       const s = 1 + t * r.maxR;
       r.mesh.scale.set(s, s, s);
       (r.mesh.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - t);
+    }
+    // 임팩트 코어 팝 (커지며 페이드)
+    for (let i = this.pops.length - 1; i >= 0; i--) {
+      const p = this.pops[i];
+      p.life += dt;
+      const t = p.life / p.maxLife;
+      if (t >= 1) {
+        this.group.remove(p.sprite);
+        p.sprite.material.dispose();
+        this.pops.splice(i, 1);
+        continue;
+      }
+      const s = p.from + (p.to - p.from) * t;
+      p.sprite.scale.set(s, s, s);
+      p.sprite.material.opacity = 1 - t;
     }
     // 텍스트
     for (let i = this.texts.length - 1; i >= 0; i--) {

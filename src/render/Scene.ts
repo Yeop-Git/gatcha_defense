@@ -83,6 +83,9 @@ export class Scene {
   renderer: THREE.WebGLRenderer;
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
+  /** 카메라 셰이크 (궁극기급 스킬 전용) — camBase 기준 감쇠 랜덤 오프셋. */
+  private camBase = new THREE.Vector3();
+  private shakeAmt = 0;
   vfx: VFX;
 
   /** 엔티티/장판/이펙트 컨테이너 */
@@ -116,6 +119,7 @@ export class Scene {
     this.camera = new THREE.PerspectiveCamera(48, 1, 0.1, 300);
     this.camera.position.set(2, 31.5, 23);
     this.camera.lookAt(2, 0, 1);
+    this.camBase.copy(this.camera.position);
 
     // 라이팅: 따뜻한 키 + 앰비언트
     const key = new THREE.DirectionalLight(0xfff1d0, 1.1);
@@ -348,7 +352,24 @@ export class Scene {
     this.camera.updateProjectionMatrix();
   }
 
+  /** 카메라 셰이크 요청 (궁극기급 스킬에서만 호출). amount≈0.2~0.6 권장. */
+  shake(amount: number): void {
+    this.shakeAmt = Math.min(0.8, this.shakeAmt + amount);
+  }
+
   render(): void {
+    if (this.shakeAmt > 0.002) {
+      const a = this.shakeAmt;
+      this.camera.position.set(
+        this.camBase.x + (Math.random() * 2 - 1) * a,
+        this.camBase.y + (Math.random() * 2 - 1) * a * 0.5,
+        this.camBase.z + (Math.random() * 2 - 1) * a,
+      );
+      this.shakeAmt *= 0.85;
+    } else if (this.shakeAmt !== 0) {
+      this.camera.position.copy(this.camBase);
+      this.shakeAmt = 0;
+    }
     this.renderer.render(this.scene, this.camera);
   }
 }

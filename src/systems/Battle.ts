@@ -13,6 +13,8 @@ import {
   BASE_LEAK_NORMAL,
   BASE_LEAK_MINIBOSS,
   BASE_LEAK_BOSS,
+  SIEGE,
+  ENEMY_ATTACK,
   BURN_DPS_PER_STACK,
   OVERGROWTH_DPS,
   ELEMENTS,
@@ -38,7 +40,7 @@ import { bus } from '../core/events';
 import { playSfx } from '../audio/Sfx';
 import { unlockEnemy } from '../core/Dex';
 
-type Phase = 'placement' | 'wave' | 'bonus' | 'stageClear' | 'lost' | 'won';
+type Phase = 'placement' | 'wave' | 'stageClear' | 'lost' | 'won';
 interface SpawnEvent { t: number; enemy: string }
 
 const colorOf = (el: ElementOrNeutral): number => (el === 'neutral' ? NEUTRAL_COLOR : ELEMENT_COLOR[el]);
@@ -62,6 +64,11 @@ export class Battle {
   private time = 0;
   private castleCd = 0;
   private atkSfxAt = -1; // 평타 효과음 스로틀
+  /** 이번 웨이브에 쓰러진(필드 이탈) 유닛 uid — 다음 배치 페이즈에 부활 재배치. */
+  private downedUids = new Set<string>();
+  /** 연속 처치 콤보 (2.2초 윈도우). 5의 배수마다 골드 보너스 + 화려한 표시. */
+  private combo = 0;
+  private comboTimer = 0;
   private unitGhost: THREE.Group | null = null; // 배치 드래그 반투명 미리보기 모델
 
   constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number) {
@@ -122,6 +129,17 @@ export class Battle {
     }
   }
 
+  /**
+   * 포획 직후 로스터에 합류한 유닛을 빈 슬롯에 즉시 배치(전투 중 영입 가시화).
+   * 슬롯이 없으면 로스터에만 남고 다음 배치 페이즈에서 배치. (전투 중이 아니어도 안전.)
+   */
+  deployCaptured(unit: OwnedUnit): void {
+    if (this.units.some((m) => m.unit.uid === unit.uid)) return;
+    if (this.units.length >= this.state.placementCap) return;
+    const slot = this.firstFreeSlot();
+    if (slot >= 0) this.placeUnit(unit, slot);
+  }
+
   placeablesState(): { id: string; name: string; element: ElementOrNeutral; placed: boolean; dead: boolean; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3; level: number }[] {
     return this.state.roster.map((u) => ({
       id: u.uid,
@@ -150,7 +168,7 @@ export class Battle {
     const unit = this.state.roster.find((u) => u.uid === id);
     if (!unit) return;
     if (this.units.length >= this.state.placementCap) {
-      bus.emit('toast', { text: `유닛은 최대 ${this.state.placementCap}마리까지 배치할 수 있습니다.`, kind: 'bad' });
+      bus.emit('warn', { text: `유닛은 최대 ${this.state.placementCap}마리까지 배치할 수 있습니다.` });
       return;
     }
     const slot = this.firstFreeSlot();
@@ -165,7 +183,7 @@ export class Battle {
     const unit = this.state.roster.find((u) => u.uid === id);
     if (!unit) return false;
     if (this.units.length >= this.state.placementCap) {
-      bus.emit('toast', { text: `유닛은 최대 ${this.state.placementCap}마리까지 배치할 수 있습니다.`, kind: 'bad' });
+      bus.emit('warn', { text: `유닛은 최대 ${this.state.placementCap}마리까지 배치할 수 있습니다.` });
       return false;
     }
     const occupant = this.units.find((m) => m.slot === slot);
@@ -288,14 +306,17 @@ export class Battle {
     for (const g of groups) {
       for (let k = 0; k < g.count; k++) this.spawnQueue.push({ t: k * g.interval, enemy: g.enemy });
     }
-    // 야생 크리처 1마리 삽입 (스테이지↑ → 진화형 1→2→3). 웨이브 중반 등장.
-    const creStage: 1 | 2 | 3 = this.stage.id <= 3 ? 1 : this.stage.id <= 8 ? 2 : 3;
-    // 초반(스테이지 1~3)엔 보유 크리처와 같은 속성의 야생은 제외(본인 캐릭터 중복 회피).
-    const owned = new Set(this.state.roster.filter((u) => u.kind === 'creature').map((u) => u.element));
-    let pool = ELEMENTS.slice();
-    if (this.stage.id <= 3) { const f = pool.filter((el) => !owned.has(el)); if (f.length) pool = f; }
-    const creEl = pool[(this.stage.id + this.waveIndex) % pool.length];
-    this.spawnQueue.push({ t: 2.5, enemy: creatureEnemyId(creEl, creStage) });
+    // 야생 크리처는 희귀 등장: 미보유 속성만, 스테이지당 1마리(1웨이브에서만).
+    // 5속성을 모두 보유하면 더는 등장하지 않는다.
+    if (this.waveIndex === 0) {
+      const owned = new Set(this.state.roster.filter((u) => u.kind === 'creature').map((u) => u.element));
+      const unowned = ELEMENTS.filter((el) => !owned.has(el));
+      if (unowned.length) {
+        const creStage: 1 | 2 | 3 = this.stage.id <= 3 ? 1 : this.stage.id <= 8 ? 2 : 3;
+        const creEl = unowned[this.stage.id % unowned.length];
+        this.spawnQueue.push({ t: 2.5, enemy: creatureEnemyId(creEl, creStage) });
+      }
+    }
     this.spawnQueue.sort((a, b) => a.t - b.t);
     playSfx('wave');
     bus.emit('wave:start', { stage: this.stage.id, wave: this.waveIndex + 1, total: this.totalWaves });
@@ -311,6 +332,7 @@ export class Battle {
 
   update(dt: number): void {
     this.time += dt;
+    if (this.comboTimer > 0) { this.comboTimer -= dt; if (this.comboTimer <= 0) this.combo = 0; }
     this.deck.bonusRegen = this.units.filter((m) => m.alive && m.element === 'grass').length * GRASS_MANA_REGEN;
     this.deck.regenMana(dt);
     this.deck.updateCooldowns(dt);
@@ -350,15 +372,13 @@ export class Battle {
   }
 
   private onWaveClear(): void {
+    this.reviveUnitsForNextWave();
     bus.emit('wave:clear', { stage: this.stage.id, wave: this.waveIndex + 1 });
     this.waveIndex++;
     if (this.waveIndex >= this.totalWaves) {
       this.phase = this.stage.boss === 'final' ? 'won' : 'stageClear';
       if (this.stage.boss === 'final') bus.emit('run:win', {});
       else bus.emit('stage:clear', { stage: this.stage.id });
-    } else if (this.waveIndex === this.totalWaves - 1 && this.totalWaves >= 3) {
-      // 마지막 웨이브 직전(2~3 사이) = 갈림길 보너스(강화 3택1). Game이 처리 후 배치 페이즈로.
-      this.phase = 'bonus';
     } else {
       this.phase = 'placement';
     }
@@ -391,10 +411,10 @@ export class Battle {
     const p = new Projectile(m.view.position, target, color, 15, false, (hit) => {
       if (!hit) return;
       const dealt = this.hitEnemy(hit, power, m.element, stage);
-      if (crit) { this.scene.vfx.floatText(hit.pos.x, hit.pos.z + 0.5, `⚡${dealt}`, '#ff5a3c'); this.scene.vfx.burst(hit.pos.x, hit.pos.z, 0xffcf3c, 10, 2.6, 0.9); }
       this.applyCapturedAttackPassive(m, hit, power, stage);
-      this.scene.vfx.burst(hit.pos.x, hit.pos.z, color, 8, 2.2, 1.0);
-      this.scene.vfx.ring(hit.pos.x, hit.pos.z, color, 1.1, 0.22);
+      // 타격감: 명중 순간 임팩트 팝(코어 플래시 + 색 스파크 + 링). 치명타는 더 크고 흰 스파크.
+      this.scene.vfx.impact(hit.pos.x, hit.pos.z, color, crit ? 1.5 : 0.85, crit);
+      if (crit) this.scene.vfx.floatText(hit.pos.x, hit.pos.z + 0.5, `⚡${dealt}`, '#ff5a3c');
       if (m.element === 'fire') hit.marks.add('burn', 1, stage);
       else if (m.element === 'water') { hit.marks.add('wet', 1, stage); hit.knockback(0.4); }
       else if (m.element === 'dark') hit.marks.add('curse', 1, stage);
@@ -466,8 +486,21 @@ export class Battle {
       if (burn > 0) this.damageDot(e, burn * BURN_DPS_PER_STACK * dt, 'fire');
       if (e.marks.has('overgrowth') && !e.def.flying) this.damageDot(e, OVERGROWTH_DPS * dt, 'grass');
 
+      // 아군 유닛 교전: 일반 적이 사거리 내 아군을 만나면 진격을 멈추고 공격한다(보스/미니보스 제외).
+      const foe = (!e.isBoss && !e.isMini && !e.stunned && !e.atBase && e.fearTimer <= 0)
+        ? this.nearestUnitInRange(e, ENEMY_ATTACK.range) : null;
+      e.engaging = !!foe;
+
       e.update(dt, t);
+      if (foe && e.alive) {
+        e.unitAtkCd -= dt;
+        if (e.unitAtkCd <= 0) {
+          e.unitAtkCd = ENEMY_ATTACK.interval;
+          this.enemyStrikeUnit(e, foe);
+        }
+      }
       if (e.reachedBase) {
+        // 일반 적은 atBase 공성으로 전환하므로 여기엔 보스/미니보스만 도달한다. 기존 루프백 유지.
         this.leak(e);
         if (e.isBoss || e.isMini) {
           e.resetToPathStart();
@@ -476,6 +509,15 @@ export class Battle {
         }
         this.despawn(i);
         continue;
+      }
+      if (e.atBase && e.alive) {
+        // 성문 공성: 제자리에서 자기 attack 값으로 성을 주기 타격(첫 타는 도달 즉시). 처치해야 멈춘다.
+        e.siegeTimer -= dt;
+        if (e.siegeTimer <= 0) {
+          e.siegeTimer = SIEGE.interval;
+          e.playAttackAnim();
+          this.siegeStrike(e);
+        }
       }
       if (!e.alive) {
         if (!e.dying) {
@@ -505,6 +547,62 @@ export class Battle {
     }
   }
 
+  /** 적 사거리 내 가장 가까운 살아있는 아군 유닛. */
+  private nearestUnitInRange(e: Enemy, range: number): Monster | null {
+    let best: Monster | null = null;
+    let bd = range * range;
+    for (const m of this.units) {
+      if (!m.alive) continue;
+      const d = (m.pos.x - e.pos.x) ** 2 + (m.pos.z - e.pos.z) ** 2;
+      if (d <= bd) { bd = d; best = m; }
+    }
+    return best;
+  }
+
+  /** 적 → 아군 유닛 타격: 붉은 피격 숫자·플래시로 "맞고 있다"를 확실히 전달. 0이면 다운. */
+  private enemyStrikeUnit(e: Enemy, m: Monster): void {
+    e.playAttackAnim();
+    e.view.rotation.y = Math.atan2(m.pos.x - e.pos.x, m.pos.z - e.pos.z);
+    const dealt = m.takeDamage(e.def.attack);
+    playSfx('hit', { vary: 0.08 });
+    this.scene.vfx.floatText(m.pos.x, m.pos.z + 0.4, `-${dealt}`, '#ff6a6a');
+    this.scene.vfx.burst(m.pos.x, m.pos.z, 0xff5a4a, 7, 2.0, 0.9);
+    this.scene.vfx.ring(m.pos.x, m.pos.z, 0xd23b3b, 1.2, 0.2);
+    this.scene.vfx.ring(e.pos.x, e.pos.z, 0xff8a4a, 0.8, 0.14);
+    if (!m.alive) this.downUnit(m);
+  }
+
+  /** 유닛 다운: 회색 폭발 + 경고 토스트 + 타격음. 필드에서 이탈, 다음 배치 페이즈에 부활. */
+  private downUnit(m: Monster): void {
+    playSfx('leak');
+    bus.emit('warn', { text: `${displayName(m.unit)}이(가) 쓰러졌습니다!` });
+    this.scene.vfx.burst(m.pos.x, m.pos.z, 0x9a9a9a, 16, 3, 1.2);
+    this.scene.vfx.ring(m.pos.x, m.pos.z, 0xc0392b, 3, 0.5);
+    this.downedUids.add(m.unit.uid);
+    this.removeUnitByUid(m.unit.uid);
+  }
+
+  /** 웨이브 종료 시: 생존 유닛 완전 회복 + 쓰러진 유닛 부활 재배치. */
+  private reviveUnitsForNextWave(): void {
+    for (const m of this.units) m.restoreFull();
+    if (this.downedUids.size) {
+      this.autoPlace(); // 쓰러진(로스터엔 남은) 유닛을 빈 슬롯에 부활 배치
+      this.downedUids.clear();
+      bus.emit('toast', { text: '쓰러진 동료가 전열에 복귀했습니다.', kind: 'good' });
+    }
+  }
+
+  /** 성문 공성 타격: 일반 적이 성에 도달해 자기 attack 값으로 성을 때린다(반복). attack 값을 의미있게. */
+  private siegeStrike(e: Enemy): void {
+    const amt = Math.max(1, Math.round(e.def.attack * SIEGE.attackMult));
+    this.state.baseHp = Math.max(0, this.state.baseHp - amt);
+    playSfx('leak');
+    bus.emit('base:damage', { amount: amt, hp: this.state.baseHp });
+    const base = this.scene.base.position;
+    this.scene.vfx.floatText(base.x, base.z, `-${amt}`, '#ff6a6a');
+    this.scene.vfx.ring(base.x, base.z, 0xc0392b, 2.6, 0.28);
+  }
+
   private leak(e: Enemy): void {
     const amt = e.def.leak === 'boss' ? BASE_LEAK_BOSS : e.def.leak === 'miniboss' ? BASE_LEAK_MINIBOSS : BASE_LEAK_NORMAL;
     this.state.baseHp = Math.max(0, this.state.baseHp - amt);
@@ -519,6 +617,16 @@ export class Battle {
     this.scene.vfx.burst(e.pos.x, e.pos.z, ELEMENT_COLOR[e.element === 'neutral' ? 'light' : e.element] ?? 0xffffff, 10);
     this.state.gold += e.isBoss ? 100 : e.isMini ? 30 : 3;
     if (this.hasDarkS3) this.state.darkKillStacks = Math.min(DARK_KILL_STACK_MAX, this.state.darkKillStacks + DARK_KILL_STACK);
+    // 연속 처치 콤보: 5의 배수마다 골드 보너스 + 화려한 표시(간단한 손맛 요소).
+    this.combo++;
+    this.comboTimer = 2.2;
+    if (this.combo >= 5 && this.combo % 5 === 0) {
+      const bonus = Math.floor(this.combo / 5) * 2;
+      this.state.gold += bonus;
+      this.scene.vfx.floatText(e.pos.x, e.pos.z + 1.5, `${this.combo} 콤보! +${bonus}G`, '#f2ce6b');
+      this.scene.vfx.ring(e.pos.x, e.pos.z, 0xf2ce6b, 3, 0.4);
+      playSfx('coin');
+    }
   }
 
   private despawn(i: number): void {
@@ -530,7 +638,10 @@ export class Battle {
     let mult = affinity(element, e.element);
     if (opts.darkBonus && e.element === 'dark') mult *= opts.darkBonus;
     const dealt = e.applyDamage(amount * mult, opts.ignoreDef);
-    this.scene.vfx.floatText(e.pos.x, e.pos.z, String(dealt), mult > 1.1 ? '#ffd84f' : '#ffffff');
+    this.scene.vfx.floatText(e.pos.x, e.pos.z, String(dealt), mult > 1.1 ? '#ffd84f' : mult < 0.9 ? '#9fb4c4' : '#ffffff');
+    // 상성 피드백(간헐 표시로 스팸 방지) — 숨겨져 있던 속성 상성을 플레이 중에 학습시킨다.
+    if (mult > 1.1 && Math.random() < 0.12) this.scene.vfx.floatText(e.pos.x, e.pos.z + 0.95, '효과적!', '#ffd84f');
+    else if (mult < 0.9 && Math.random() < 0.12) this.scene.vfx.floatText(e.pos.x, e.pos.z + 0.95, '약함…', '#9fb4c4');
     return dealt;
   }
 
@@ -664,7 +775,8 @@ export class Battle {
           if (fx.knockback) e.knockback(fx.knockback);
         }
         this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), Math.min(fx.radius, 9), 0.4);
-        this.scene.vfx.burst(p.x, p.z, colorOf(fx.element), 14);
+        this.scene.vfx.impact(p.x, p.z, colorOf(fx.element), Math.min(2.2, 1 + fx.radius * 0.18), fx.radius >= 5);
+        if (fx.radius >= 5) this.scene.shake(0.35); // 초신성급 광역 폭발만 화면 흔들림
         break;
       case 'chain': {
         const d2 = (e: Enemy) => (e.pos.x - p.x) ** 2 + (e.pos.z - p.z) ** 2;
@@ -678,14 +790,6 @@ export class Battle {
       case 'zone':
         this.addZone(fx.zone, fx.element, p.x, p.z, fx.radius, fx.duration, { slow: fx.slow, dps: fx.dps, root: fx.root });
         this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), fx.radius, 0.4);
-        break;
-      case 'shieldAll':
-        this.repairBase(this.state.baseHpMax * fx.pct, 0x9fd8ff);
-        bus.emit('toast', { text: `성 HP +${Math.round(this.state.baseHpMax * fx.pct)}`, kind: 'good' });
-        break;
-      case 'healAll':
-        this.repairBase(fx.amount);
-        bus.emit('toast', { text: `성 HP +${fx.amount}`, kind: 'good' });
         break;
       case 'markArea':
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) e.marks.add(fx.mark, fx.stacks, stage);
@@ -712,26 +816,79 @@ export class Battle {
       case 'eclipseVerdict':
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
           const cs = e.marks.stacks('curse');
-          if (cs >= 5) { e.applyDamage(cs * 25, true); e.marks.remove('curse'); }
+          // 저주 스택이 높을수록 치명적 — 쌓인 저주를 모두 터뜨려 스택당 큰 피해로 환산.
+          if (cs >= 1) { e.applyDamage(cs * 30, true); e.marks.remove('curse'); }
           if (!e.isBoss && !e.isMini && e.hp / e.maxHp <= fx.executePct) e.applyDamage(e.hp + 1, true);
           this.scene.vfx.burst(e.pos.x, e.pos.z, 0x4a4e9e, 12);
         }
         this.scene.vfx.ring(p.x, p.z, 0x4a4e9e, Math.min(fx.radius, 9), 0.6);
+        this.scene.vfx.impact(p.x, p.z, 0x4a4e9e, 2.2, true);
+        this.scene.shake(0.5); // 일식선고(어둠 궁극)
         break;
       case 'blessOne': {
         const target = this.units.filter((m) => m.alive).sort((a, b) => b.stats.attack - a.stats.attack)[0];
-        if (target) target.bless(fx.stacks);
+        if (target) { target.bless(fx.stacks); this.scene.vfx.burst(target.pos.x, target.pos.z, 0xf2ce6b, 8); }
         break;
       }
-      case 'cleanseHeal':
-        this.repairBase(fx.amount);
-        bus.emit('toast', { text: `성 HP +${fx.amount}`, kind: 'good' });
+      case 'blessAll': {
+        // 빛: 전군에 축복(공격력 버프) 부여.
+        const allies = this.units.filter((m) => m.alive);
+        allies.forEach((m) => { m.bless(fx.stacks); this.scene.vfx.burst(m.pos.x, m.pos.z, 0xf2ce6b, 6); });
+        if (allies.length) bus.emit('toast', { text: '전군이 빛의 축복을 받았습니다.', kind: 'good' });
         break;
-      case 'judgment':
-        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) this.hitEnemy(e, fx.amount, 'light', stage, { darkBonus: fx.darkBonus });
-        this.scene.vfx.ring(p.x, p.z, 0xf2ce6b, Math.min(fx.radius, 9), 0.5);
-        this.scene.vfx.burst(p.x, p.z, 0xf2ce6b, 16);
+      }
+      case 'healUnits': {
+        // 빛(주)·풀/물(보조): 살아있는 아군 유닛 HP 회복. base>0이면 성도 함께 수리.
+        let healed = 0;
+        for (const m of this.units) {
+          if (!m.alive) continue;
+          const before = m.hp;
+          m.heal(fx.amount);
+          if (m.hp > before) { healed++; this.scene.vfx.floatText(m.pos.x, m.pos.z + 0.6, `+${Math.round(m.hp - before)}`, '#6fae4c'); this.scene.vfx.burst(m.pos.x, m.pos.z, 0x8fe06a, 6); }
+        }
+        if (fx.base > 0) this.repairBase(fx.base);
+        if (healed || fx.base > 0) bus.emit('toast', { text: '아군을 치유했습니다.', kind: 'good' });
         break;
+      }
+      case 'shieldUnits': {
+        // 물: 살아있는 아군 유닛에 보호막 부여(피격 시 HP보다 먼저 흡수).
+        let count = 0;
+        for (const m of this.units) {
+          if (!m.alive) continue;
+          m.addShield(fx.amount);
+          count++;
+          this.scene.vfx.floatText(m.pos.x, m.pos.z + 0.6, `+${fx.amount}🛡️`, '#9fd8ff');
+          this.scene.vfx.burst(m.pos.x, m.pos.z, 0x9fd8ff, 6);
+        }
+        if (count) bus.emit('toast', { text: '아군이 물의 보호막을 얻었습니다.', kind: 'good' });
+        break;
+      }
+      case 'reviveUnit': {
+        // 빛: 이번 웨이브에 쓰러진(필드 이탈) 아군을 즉시 빈 슬롯에 재배치하고 최대 HP의 hpPct로 되살린다.
+        let revived = 0;
+        for (const uid of [...this.downedUids]) {
+          if (fx.max > 0 && revived >= fx.max) break; // max=0 = 전원 부활, >0 = 인원 제한(성능 하향).
+          if (this.units.length >= this.state.placementCap) break;
+          const unit = this.state.roster.find((u) => u.uid === uid);
+          if (!unit) { this.downedUids.delete(uid); continue; }
+          const slot = this.firstFreeSlot();
+          if (slot < 0) break;
+          if (!this.placeUnit(unit, slot)) continue;
+          this.downedUids.delete(uid);
+          const m = this.units.find((x) => x.unit.uid === uid);
+          if (m) {
+            m.hp = Math.max(1, Math.round(m.maxHp * fx.hpPct));
+            this.scene.vfx.ring(m.pos.x, m.pos.z, 0xf2ce6b, 2.0, 0.6);
+            this.scene.vfx.burst(m.pos.x, m.pos.z, 0xf2ce6b, 16);
+            this.scene.vfx.floatText(m.pos.x, m.pos.z + 0.8, '부활!', '#f2ce6b');
+          }
+          revived++;
+        }
+        if (revived) bus.emit('toast', { text: `아군 ${revived}명을 되살렸습니다.`, kind: 'good' });
+        else if (fx.fallbackDraw > 0) { this.deck.drawCards(fx.fallbackDraw); bus.emit('toast', { text: `되살릴 아군이 없어 카드 ${fx.fallbackDraw}장을 뽑습니다.`, kind: 'info' }); }
+        else bus.emit('toast', { text: '되살릴 아군이 없습니다.', kind: 'info' });
+        break;
+      }
       case 'rally':
         this.deck.refillTo(this.waveDeck, 5);
         break;
@@ -765,12 +922,6 @@ export class Battle {
         bus.emit('mana:change', { mana: this.deck.mana, max: this.deck.manaMax });
         bus.emit('toast', { text: `마나 +${fx.amount}`, kind: 'good' });
         this.scene.vfx.ring(this.castleXZ().x, this.castleXZ().z, ELEMENT_COLOR.water, 2.4, 0.4);
-        break;
-      case 'fear':
-        // 어둠: 공포 — 적이 잠깐 경로를 역주행(뒤로 도망)
-        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) e.applyFear(fx.duration);
-        this.scene.vfx.ring(p.x, p.z, ELEMENT_COLOR.dark, fx.radius, 0.5);
-        this.scene.vfx.burst(p.x, p.z, 0x2a2050, 14);
         break;
       case 'block':
         // 풀: 덩굴 벽 — 적 이동을 막는 지속 속박 장판(블록)
@@ -850,8 +1001,12 @@ export class Battle {
       const evo = MONSTERS[el].evolveLevels;
       const lvl = e.def.creatureStage >= 3 ? evo[1] : e.def.creatureStage === 2 ? evo[0] : 1;
       const joined = this.state.giveUnit(el, lvl);
-      if (joined) bus.emit('toast', { text: `포획 성공! 야생 ${displayName(joined)}이(가) 원정대에 합류했습니다. (${dex})`, kind: 'good' });
-      else bus.emit('toast', { text: `원정대가 가득 차 합류하지 못했습니다. (${dex})`, kind: 'bad' });
+      if (joined) { this.deployCaptured(joined); bus.emit('toast', { text: `포획 성공! 야생 ${displayName(joined)}이(가) 원정대에 합류했습니다. (${dex})`, kind: 'good' }); }
+      else {
+        // 만석: 적과 동일하게 편입/놓아주기 모달로 위임 (인원 상관없이 교체 편입 가능).
+        bus.emit('toast', { text: `포획 성공! ${e.def.name} (${dex})`, kind: 'good' });
+        bus.emit('capture:full', { species: e.def.id, name: e.def.name });
+      }
       this.captureFx(e);
       return;
     }
@@ -859,9 +1014,10 @@ export class Battle {
     const absorbed = this.state.absorbCapturedEnemy(e.def.id);
     if (absorbed) { this.onCaptureAbsorb(absorbed, e, dex); return; }
     const joined = this.state.giveEnemyUnit(e.def.id, this.state.stageIndex + 1);
-    if (joined) bus.emit('toast', { text: `포획 성공! ${e.def.name}이 원정대에 합류했습니다. (${dex})`, kind: 'good' });
+    if (joined) { this.deployCaptured(joined); bus.emit('toast', { text: `포획 성공! ${e.def.name}이 원정대에 합류했습니다. (${dex})`, kind: 'good' }); }
     else {
-      bus.emit('toast', { text: `포획 성공! ${e.def.name}. 원정대가 가득 찼습니다. (${dex})`, kind: 'good' });
+      // 만석 처리는 capture:full 모달(편입/놓아주기)에 위임 — 여기선 도감 등록만 알린다.
+      bus.emit('toast', { text: `포획 성공! ${e.def.name} (${dex})`, kind: 'good' });
       bus.emit('capture:full', { species: e.def.id, name: e.def.name });
     }
     this.captureFx(e);

@@ -5,6 +5,28 @@ import { makeCreature, makeEnemy, makeLabelSprite, makeTextSprite, disposeCreatu
 import { ENEMIES } from '../data/enemies';
 import { BLESS_BUFF_PER_STACK, CAPTURED_BOSS_SCALE, FLOAT, isFloating, MARK, unitHeight } from '../data/constants';
 
+/** 유닛 머리 위 HP 바 스프라이트 (피격 시 표시). 적 체력바와 동일 방식. */
+function makeUnitBar(): THREE.Sprite {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 10;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthWrite: false, transparent: true }));
+  sp.scale.set(1.3, 0.2, 1);
+  (sp.material.map as THREE.Texture).needsUpdate = true;
+  return sp;
+}
+
+function drawUnitBar(sp: THREE.Sprite, frac: number): void {
+  const tex = sp.material.map as THREE.CanvasTexture;
+  const c = tex.image as HTMLCanvasElement;
+  const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 64, 10);
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, 64, 10);
+  ctx.fillStyle = frac > 0.5 ? '#54e0c8' : frac > 0.25 ? '#d8a93b' : '#c0392b';
+  ctx.fillRect(1, 1, 62 * Math.max(0, frac), 8);
+  tex.needsUpdate = true;
+}
+
 /** 배치된 아군 유닛 (고정 슬롯). OwnedUnit(육성 모델)을 감싼 전투 인스턴스. */
 export class Monster {
   unit: OwnedUnit;
@@ -19,6 +41,10 @@ export class Monster {
   pos = new THREE.Vector3();
   atkCd = 0;
   alive = true;
+  /** 피격 플래시 타이머(>0이면 붉은 번쩍 + 흔들림). */
+  hitFlash = 0;
+  private hpBar: THREE.Sprite;
+  private hitMesh: THREE.Mesh;
   overheatTimer = 0;
   overheatMult = 1;
   hasteMult = 1;
@@ -81,6 +107,21 @@ export class Monster {
     this.marker.position.y = 0.07;
     this.marker.userData.placeholder = true;
     this.view.add(this.marker);
+
+    // HP 바 (피격 시 표시) — 유닛도 쓰러질 수 있으므로 체력을 시각화한다.
+    this.hpBar = makeUnitBar();
+    this.hpBar.position.set(0, labelY + 0.42, 0);
+    this.hpBar.visible = false;
+    this.view.add(this.hpBar);
+
+    // 피격 붉은 셸: 맞는 순간 번쩍이고, 저체력일 땐 은은히 경고 글로우.
+    this.hitMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(1.15 * shieldScale, 14, 10),
+      new THREE.MeshBasicMaterial({ color: 0xff3a2a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    this.hitMesh.position.y = 0.9 * shieldScale;
+    this.hitMesh.userData.placeholder = true;
+    this.view.add(this.hitMesh);
   }
 
   /** 공격 타겟을 바라보게 회전 목표 설정 (모델 +Z 정면 기준). */
@@ -133,6 +174,37 @@ export class Monster {
 
   heal(amount: number): void {
     this.hp = Math.min(this.maxHp, this.hp + amount);
+    this.updateHpBar();
+  }
+
+  /** 적에게 피격. 보호막 우선 흡수 후 HP 감소, 피격 플래시 트리거. 0이면 쓰러짐(alive=false). 실제 HP 피해 반환. */
+  takeDamage(amount: number): number {
+    if (!this.alive) return 0;
+    let dmg = Math.max(1, Math.round(amount));
+    if (this.shield > 0) {
+      const absorbed = Math.min(this.shield, dmg);
+      this.shield -= absorbed;
+      dmg -= absorbed;
+    }
+    this.hp -= dmg;
+    this.hitFlash = 0.24;
+    if (this.hp <= 0) { this.hp = 0; this.alive = false; }
+    this.updateHpBar();
+    return dmg;
+  }
+
+  /** 다음 웨이브 복귀: HP 완전 회복 + 부활(쓰러진 유닛 전열 복귀). */
+  restoreFull(): void {
+    this.hp = this.maxHp;
+    this.alive = true;
+    this.hitFlash = 0;
+    this.updateHpBar();
+  }
+
+  private updateHpBar(): void {
+    const frac = Math.max(0, this.hp / this.maxHp);
+    this.hpBar.visible = this.alive && frac < 0.999;
+    drawUnitBar(this.hpBar, frac);
   }
 
   refreshStats(): void {
@@ -222,9 +294,28 @@ export class Monster {
     // 보호막 셸 표시
     const smat = this.shieldMesh.material as THREE.MeshBasicMaterial;
     smat.opacity = this.shield > 0 ? 0.25 + Math.sin(t * 6) * 0.05 : 0;
+
+    // 피격 반응: 맞는 순간 붉은 플래시 + 흔들림. 평상시엔 저체력이면 은은한 경고 글로우.
+    const hm = this.hitMesh.material as THREE.MeshBasicMaterial;
+    if (this.hitFlash > 0) {
+      this.hitFlash = Math.max(0, this.hitFlash - dt);
+      hm.opacity = Math.min(0.7, this.hitFlash * 3);
+      const shake = this.hitFlash * 0.16;
+      this.view.position.x = this.pos.x + (Math.random() * 2 - 1) * shake;
+      this.view.position.z = this.pos.z + (Math.random() * 2 - 1) * shake;
+    } else {
+      this.view.position.x = this.pos.x;
+      this.view.position.z = this.pos.z;
+      const low = this.alive && this.hp / this.maxHp < 0.3;
+      hm.opacity = low ? 0.1 + (Math.sin(t * 8) * 0.5 + 0.5) * 0.14 : 0;
+    }
   }
 
   dispose(parent: THREE.Object3D): void {
+    this.hpBar.material.map?.dispose();
+    this.hpBar.material.dispose();
+    this.hitMesh.geometry.dispose();
+    (this.hitMesh.material as THREE.Material).dispose();
     parent.remove(this.view);
     disposeCreatureView(this.view);
   }

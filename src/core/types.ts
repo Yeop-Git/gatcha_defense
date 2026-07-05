@@ -38,6 +38,8 @@ export interface GameEvents {
   'card:played': { id: string };
   'mana:change': { mana: number; max: number };
   'toast': { text: string; kind?: 'good' | 'bad' | 'info' };
+  /** 사용자 동작 실패 알림 — 에러 효과음 + 붉은 시스템 메시지. */
+  'warn': { text: string };
   'run:win': {};
   'run:lose': {};
   /** 포획했으나 로스터가 가득 → 상위(Game)가 '오래된 2 + 신규' 버리기 모달을 띄운다. */

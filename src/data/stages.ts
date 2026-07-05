@@ -39,7 +39,7 @@ const WAVES: Record<number, SpawnGroup[][]> = {
   ],
   3: [
     [{ enemy: 'mushling', count: 6, interval: 0.8 }, { enemy: 'monkroose', count: 4, interval: 1.0 }],
-    [{ enemy: 'mushlord', count: 4, interval: 1.1 }, { enemy: 'alpaca', count: 4, interval: 1.0 }, { enemy: 'beebee', count: 4, interval: 0.9 }],
+    [{ enemy: 'mushking', count: 1, interval: 1 }, { enemy: 'mushlord', count: 4, interval: 1.1 }, { enemy: 'alpaca', count: 4, interval: 1.0 }, { enemy: 'beebee', count: 4, interval: 0.9 }],
     [{ enemy: 'golem', count: 1, interval: 1 }, { enemy: 'cactoro', count: 3, interval: 1.4 }, { enemy: 'mushling', count: 6, interval: 0.9 }],
   ],
   4: [
@@ -121,4 +121,8 @@ export const EVENT_NODES = [
   { id: 'hotspring', label: '몬스터 온천', desc: '모든 유닛이 경험치를 얻는다.' },
   { id: 'egg', label: '운명의 알', desc: '50% 확률로 금화가 쏟아지고, 아니면 꽝.' },
   { id: 'altar', label: '저주받은 제단', desc: '성 HP 15를 바치고 골드 +50.' },
+  // ── 도박 노드(양날/운): 큰 보상엔 큰 리스크 ──
+  { id: 'roulette', label: '🎰 행운의 룰렛', desc: '가진 골드의 절반을 건다. 55% 확률로 2배, 45% 확률로 잃는다.' },
+  { id: 'pact', label: '🩸 피의 계약', desc: '성 HP 40을 제물로 바쳐 모든 유닛의 공격력을 영구 +18% 올린다.' },
+  { id: 'dice', label: '🎲 운명의 주사위', desc: '주사위를 굴린다. 6=강력한 영구 강화, 4·5=골드 +50, 1~3=골드 -20.' },
 ] as const;

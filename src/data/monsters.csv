@@ -1,16 +1,16 @@
 element,stage,name,role,evolve1,evolve2,lateBloom,traits
-water,1,방울북,물방울 공격·감속·넉백,8,18,0,knockback;slow;shield
-water,2,산호북,파동 감속·넉백·아군 보호막,8,18,0,knockback;slow;shield
-water,3,해수호,파도 넉백·광역 감속·아군 보호막,8,18,0,knockback;slow;shield
-grass,1,새싹록,씨앗 공격·풀숲 장판·지속 피해,8,18,0,zone;root;heal
-grass,2,숲사슴,덩굴 속박·씨앗 폭발·회복,8,18,0,zone;root;heal
-grass,3,수호록,광역 속박·지속 회복·풀숲 강화,8,18,0,zone;root;heal
-fire,1,불꼬미,불씨 공격·화상·빠른 공격,8,18,0,burn;rapid;burst
-fire,2,화염호,화염구 연사·화상 중첩·폭발,8,18,0,burn;rapid;burst
-fire,3,구미염,화상 중첩·다중 공격·화염 장판,8,18,0,burn;rapid;burst
-dark,1,루나비,그림자 공격·저주 표식,12,24,1,curse;drain;killstack
-dark,2,월희,저주 중첩·방어 약화·둔화,12,24,1,curse;drain;killstack
-dark,3,이클립사,저주 폭발·흡수·광역 약화,12,24,1,curse;drain;killstack
-light,1,별비,빛 공격·회복·보호막,12,24,1,shield;heal;bless
-light,2,루멘,아군 보호막·정화·광역 회복,12,24,1,shield;heal;bless
-light,3,세라핌,강한 보호막·광역 회복·심판,12,24,1,shield;heal;bless
+water,1,방울북,넉백·감속으로 진격을 늦추는 방어형,8,18,0,knockback;slow;shield
+water,2,산호북,밀치고 늦추며 마나를 채우는 지원형,8,18,0,knockback;slow;shield
+water,3,해수호,광역 넉백·감속에 마나·보호막을 더한 대양,8,18,0,knockback;slow;shield
+grass,1,새싹록,덩굴로 묶고 카드를 부르는 육성형,8,18,0,root;draw;heal
+grass,2,숲사슴,속박과 장판으로 길을 막는 제어형,8,18,0,root;block;draw
+grass,3,수호록,광역 속박·차단·드로우의 수호림,8,18,0,root;block;draw
+fire,1,불꼬미,화상을 쌓고 몰아치는 속공형,8,18,0,burn;rapid;burst
+fire,2,화염호,화상 중첩과 연사의 화력형,8,18,0,burn;rapid;burst
+fire,3,구미염,지속 화상과 폭발 화력의 정점,8,18,0,burn;rapid;burst
+dark,1,루나비,저주를 쌓아 약점을 여는 견제형,12,24,1,curse;stack;drain
+dark,2,월희,저주 중첩으로 피해를 키우는 주술사,12,24,1,curse;stack;drain
+dark,3,이클립사,쌓인 저주를 터뜨리는 처형자,12,24,1,curse;stack;drain
+light,1,별비,아군을 축복하고 치유하는 지원형,12,24,1,buff;heal;revive
+light,2,루멘,버프·회복으로 전열을 지키는 성직형,12,24,1,buff;heal;revive
+light,3,세라핌,버프·회복·부활을 아우르는 빛의 수호자,12,24,1,buff;heal;revive

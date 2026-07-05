@@ -168,9 +168,21 @@ export const BASE_LEAK_NORMAL = 3;
 export const BASE_LEAK_MINIBOSS = 20;
 export const BASE_LEAK_BOSS = 70;
 
+// SIEGE: normal enemies that reach the castle no longer vanish with a flat leak.
+// They stop at the gate and strike the castle for their own `attack` value every `interval`
+// seconds (visible attack motion + damage number), so enemy attack stats finally matter and
+// losing HP is never a "mystery death". Boss/miniboss keep the loop-back leak (BASE_LEAK_*).
+export const SIEGE = { interval: 1.2, attackMult: 1 } as const;
+
+// ENEMY_ATTACK: enemies now fight your units. A (non-boss) enemy that comes within `range` of an
+// ally stops marching and strikes it every `interval` seconds for the enemy's own `attack`. Units
+// have HP and are downed at 0 (out for the wave, revived next placement phase). This is the core
+// "my character is under attack" risk — placement near the lane trades DPS for danger.
+export const ENEMY_ATTACK = { range: 2.2, interval: 1.3 } as const;
+
 /** ??諛섍꺽: 洹쇱쿂 諛⑹뼱???좊떅/二쇱씤怨?瑜?二쇨린 ?寃????뷀렂???깅┰(??蹂댄샇留?遺??移대뱶媛 ?섎?瑜?媛吏?. */
-// (제거됨) 적→아군 반격 상수(ENEMY.attackSpeed/engageRange): 아군 유닛은 피해를 받지 않는
-// 방어 포탑(불사) 설계이므로 미사용 죽은 코드였음. 관련: Enemy.atkCd, Monster.takeDamage 제거.
+// 적→아군 교전 파라미터는 위 ENEMY_ATTACK 참조. 아군 유닛은 이제 피해를 받고 쓰러질 수 있다
+// (불사 포탑 설계 폐기). 관련: Monster.takeDamage/restoreFull, Enemy.engaging, Battle.enemyStrikeUnit.
 
 // ??嫄곗젏) ?꾪닾移???二쇱씤怨??듯빀. 寃쎈줈 ?앹쓽 ?깆씠 ?볦? ?ш굅由щ줈 ?꾨컲 寃쎈줈瑜?諛⑹뼱.
 export const HERO = {
@@ -205,9 +217,9 @@ export const BOND_CAP = 0.3; // ?좊? 蹂대꼫???곹븳 (+30%) ???꾨컲 援곕
 
 /** 留덈굹 (짠6). 湲곕낯? ?ㅽ럺(珥덈떦 1)??媛源앷쾶 ??? ?좊떅??留덈굹 ?뚰븨??媛?띿쓣 ?대떦. */
 export const MANA_MAX = 8;
-export const MANA_REGEN = 0.65; // Base mana per second. Kept tight so card timing matters.
+export const MANA_REGEN = 0.5; // 초당 기본 마나 회복. 카드 타이밍이 중요하도록 타이트하게 유지.
 /** ? = 留덈굹 ?뚰븨: 諛곗튂??? ?좊떅 1泥대떦 珥덈떦 異붽? 留덈굹 */
-export const GRASS_MANA_REGEN = 0.18;
+export const GRASS_MANA_REGEN = 0.13;
 export const HAND_SIZE = 5;
 export const CAPTURE_CARD_ID = 'n_capture';
 /** ?묎툒 泥섏튂(湲곗? ?뚮났) ?ъ궗??荑⑤떎??珥? ??짠6.2 "荑⑤떎??議댁옱" */
@@ -225,13 +237,13 @@ export const MARK: Record<MarkType, { duration: number; maxStacks: number }> = {
   burn: { duration: 4, maxStacks: 5 },
   wet: { duration: 5, maxStacks: 1 },
   overgrowth: { duration: 6, maxStacks: 1 },
-  curse: { duration: 8, maxStacks: 5 },
+  curse: { duration: 8, maxStacks: 8 },
   bless: { duration: 10, maxStacks: 3 },
 };
 
 export const BURN_DPS_PER_STACK = 3;
 export const WET_SLOW = 0.2;
-export const CURSE_DMG_PER_STACK = 0.05;
+export const CURSE_DMG_PER_STACK = 0.06;
 export const BLESS_BUFF_PER_STACK = 0.1;
 export const OVERGROWTH_SLOW = 0.4;
 export const OVERGROWTH_DPS = 4;
@@ -277,7 +289,7 @@ export function unitHeight(stage: number): number {
 }
 /** 속성별 크리처 표시 배율 — 모델 비율 편차 보정. 물 거북은 몸통이 커 보여 축소. */
 export const CREATURE_DISPLAY_SCALE: Record<Element, number> = {
-  fire: 1, water: 0.8, grass: 1, light: 1, dark: 1,
+  fire: 1, water: 0.6, grass: 1, light: 1, dark: 1,
 };
 
 /** 만렙 (레벨 확장). 이 이상 XP는 누적하지 않는다. */
