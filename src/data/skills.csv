@@ -24,8 +24,8 @@ water_torrent,water,격류,water,24,4,point,damage,amount=52;radius=3;knockback=
 grass_sprout,grass,새싹,grass,1,1,point,damage,amount=12;radius=1.4;mark=overgrowth,,12 피해와 덩굴 표식.
 grass_seed,grass,씨앗탄,grass,1,1,point,zone,zone=overgrowth;radius=2.4;duration=6;slow=0.4;dps=4,,6초 동안 적을 느리게 하고 피해를 주는 덩굴 지대를 만듭니다.
 grass_vine,grass,덩굴 감옥,grass,4,2,point,zone,zone=overgrowth;radius=2.6;duration=3;root=3;slow=0.4,,범위 안의 적을 3초 동안 묶습니다.
-grass_grow,grass,자라나기,grass,8,1,self,draw,n=2,,새싹이 자라나 카드 2장을 뽑습니다.
-grass_bloom,grass,새순,grass,16,1,self,draw,n=1,,새순이 돋아 카드 1장을 뽑습니다.
+grass_grow,grass,자라나기,grass,8,2,self,draw,n=2,,새싹이 자라나 카드 2장을 뽑습니다.
+grass_bloom,grass,새순,grass,16,2,self,draw,n=2,,새순이 돋아 카드 2장을 뽑습니다.
 grass_bush,grass,가시덤불,grass,10,3,point,zone,zone=thorn;radius=3;duration=6;slow=0.3;dps=8,,6초 동안 적을 느리게 하고 초당 8 피해를 주는 덤불을 만듭니다.
 grass_mend,grass,치유의 잎,grass,13,2,ally-all,healUnits,amount=28;base=0,,아군 유닛 HP를 28 회복합니다.
 grass_wall,grass,덩굴 벽,grass,15,3,point,block,radius=2.6;duration=5;slow=0.9;dps=3,,덩굴 벽을 세워 5초간 적의 이동을 막습니다.
