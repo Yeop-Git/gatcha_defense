@@ -358,7 +358,8 @@ export class Battle {
   beginWave(): void {
     if (this.phase !== 'placement') return;
     this.waveDeck = this.state.battleDeck(); // 이번 웨이브 덱 고정 스냅샷
-    this.deck.drawHand(this.waveDeck, HAND_SIZE, this.state.monstersFull ? [] : [CAPTURE_CARD_ID]);
+    // 원정대가 가득 차도 포획구는 계속 나온다(만석이면 던질 때 교체/놓아주기 모달로 처리).
+    this.deck.drawHand(this.waveDeck, HAND_SIZE, [CAPTURE_CARD_ID]);
     this.phase = 'wave';
     this.waveClock = 0;
     this.autoDrawTimer = 0;
@@ -426,7 +427,7 @@ export class Battle {
 
   private refreshCaptureAccess(): void {
     if (this.phase !== 'wave') return;
-    if (this.state.monstersFull) return;
+    // 만석이어도 포획구를 회수해준다 — 던지면 교체/놓아주기 흐름으로 이어진다.
     const hasTarget = this.enemies.some((e) => e.alive && ((!e.isBoss && !e.isMini) || e.stunTimer > 0));
     if (!hasTarget) return;
     if (this.deck.ensureInHand(CAPTURE_CARD_ID, this.waveDeck, HAND_SIZE)) {
@@ -962,7 +963,12 @@ export class Battle {
           total += this.hitEnemy(e, fx.amount, fx.element, stage);
           e.marks.add('curse', 1, stage);
         }
-        this.repairBase(total * fx.drainPct, 0x4a4e9e);
+        // 어둠 흡수: 성이 아니라 원정대 전원의 HP를 흡수 피해 일부만큼 회복.
+        const drainHeal = Math.round(total * fx.drainPct);
+        if (drainHeal > 0) {
+          this.healAnyAllies(drainHeal);
+          bus.emit('toast', { text: `생명력 흡수! 아군 전원 HP +${drainHeal}`, kind: 'good' });
+        }
         this.scene.vfx.ring(p.x, p.z, ELEMENT_COLOR.dark, Math.min(fx.radius, 9), 0.4);
         break;
       }
@@ -1194,13 +1200,20 @@ export class Battle {
 
   /** 흡수 강화 공통 처리(토스트·성장 이벤트·이펙트·디스폰). enemy/야생 크리처 공용. */
   private onCaptureAbsorb(absorbed: NonNullable<ReturnType<GameState['absorbCapturedEnemy']>>, e: Enemy, dex: string): void {
-    const placed = this.units.find((m) => m.unit.uid === absorbed.unit.uid);
-    placed?.refreshStats();
+    // 원정대 전원이 보너스를 받으므로 배치된 유닛 스탯을 모두 갱신.
+    this.refreshUnitStats();
     const bondPct = Math.round(absorbed.bondGain * 100);
     const evolvedText = absorbed.evolved ? ` ${absorbed.from}이(가) ${absorbed.to}(으)로 진화했습니다.` : '';
-    bus.emit('toast', { text: `포획 성공! ${e.def.name}의 힘을 ${displayName(absorbed.unit)}이(가) 흡수했습니다. XP +${absorbed.xp}, 유대 +${bondPct}%. (${dex})${evolvedText}`, kind: 'good' });
+    const partyText = absorbed.others.length ? ` 원정대 전원도 XP +${absorbed.xp}를 받았습니다.` : '';
+    bus.emit('toast', { text: `포획 성공! ${e.def.name}의 힘을 ${displayName(absorbed.unit)}이(가) 흡수했습니다. XP +${absorbed.xp}, 유대 +${bondPct}%.${partyText} (${dex})${evolvedText}`, kind: 'good' });
     if (absorbed.evolved || absorbed.gains.length) {
       bus.emit('unit:grown', { uid: absorbed.unit.uid, from: absorbed.from, to: unitName(absorbed.unit), element: absorbed.unit.element, evolved: absorbed.evolved, gains: absorbed.gains });
+    }
+    // 보너스로 성장(진화/스킬 학습)한 동료들도 성장 연출·시그니처 학습 큐에 통지.
+    for (const o of absorbed.others) {
+      if (o.evolved || o.gains.length) {
+        bus.emit('unit:grown', { uid: o.uid, from: o.from, to: o.to, element: o.element, evolved: o.evolved, gains: o.gains });
+      }
     }
     this.captureFx(e);
   }

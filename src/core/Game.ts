@@ -1,6 +1,7 @@
 import { Scene } from '../render/Scene';
 import { MonsterViewer } from '../render/MonsterViewer';
 import { UI, type HandCard } from '../ui/UI';
+import { Tutorial } from '../ui/Tutorial';
 import { state, unitName, displayName, EQUIP_CAP, type CardGain, type SpecialKind } from './GameState';
 import { saveRun, loadRun, clearRun, hasRun } from './save';
 import { Battle } from '../systems/Battle';
@@ -22,6 +23,7 @@ type Mode = 'title' | 'lobby' | 'battle' | 'viewer' | 'manage' | 'stagemap';
 export class Game {
   private scene: Scene;
   private ui: UI;
+  private tutorial: Tutorial;
   private viewer: MonsterViewer;
   private battle: Battle | null = null;
   private mode: Mode = 'title';
@@ -33,6 +35,7 @@ export class Game {
     this.scene = new Scene(canvas);
     this.viewer = new MonsterViewer(this.scene.renderer);
     this.ui = new UI(uiRoot);
+    this.tutorial = new Tutorial(uiRoot);
     this.wireUI();
     this.wireInput();
     this.wireFieldDrag();
@@ -262,7 +265,7 @@ export class Game {
         // 첫 탭: 카드 강조 + 최초 1회 사용법 안내
         this.lastTapId = upId; this.lastTapAt = e.timeStamp;
         this.ui.setCardSelected(upId);
-        if (!this.tapHintShown) { this.tapHintShown = true; this.ui.toast('한 번 더 탭하거나 전장으로 드래그해 사용', 'info'); }
+        if (!this.tapHintShown && !this.tutorial.isActive) { this.tapHintShown = true; this.ui.toast('한 번 더 탭하거나 전장으로 드래그해 사용', 'info'); }
       }
     };
     window.addEventListener('pointermove', move);
@@ -422,6 +425,7 @@ export class Game {
   private startRun(): void {
     state.reset();
     this.ensureMapTrack(); // 런 시작 시 갭별 특수 노드 생성
+    this.tutorial.maybeStart(); // 첫 모험이면 온보딩 무장(첫 stage:start에서 발동)
     this.ui.hideTitle();
     this.showLobby();
   }
@@ -696,13 +700,15 @@ export class Game {
     setBgmTrack('battle');
     const def = STAGES[index];
     const jumps = STAGES.filter((s) => s.difficultyJump && s.id <= def.id).length;
-    // 난이도 점프는 단계적(가산)으로 — 기존 Math.pow는 복리로 S10 ×4.7까지 폭주해 클리어 불가.
-    // 후반(3점프 누적)이 ×3까지 치솟아 벽이 됨 → 스테이지당 증가율 완화(0.08→0.06).
+    // 난이도(긴장): 점프는 가산 유지(복리 폭주 방지). "성이 한 번도 안 위협받는다" 이슈 →
+    // 스테이지당 HP 증가율 0.06→0.09로 올려 후반 적이 더 오래 살아 성문까지 새어들도록.
+    // 1~3 스테이지 온보딩(earlyHpEase)은 그대로 두어 초반은 여전히 부드럽게.
     const earlyHpEase = index <= 2 ? 0.88 + index * 0.04 : 1;
-    const hpScale = earlyHpEase * (1 + index * 0.06) * (1 + (DIFFICULTY_JUMP_MULT - 1) * jumps);
-    // 공격력 스케일: 점프에만 완만히 반응(+8%/점프). 유닛이 순삭되지 않게 완화 — 위협은 주되 죽음은 아니게.
+    const hpScale = earlyHpEase * (1 + index * 0.09) * (1 + (DIFFICULTY_JUMP_MULT - 1) * jumps);
+    // 공격력 스케일: 이제 스테이지에도 완만히 반응(+4%/스테이지) + 점프(+9%/점프). 성문 공성·유닛 교전이
+    // 후반에 실제로 아프게 — 단, 순삭 절벽은 피하려 스테이지 계수는 낮게 유지.
     const earlyAtkEase = index <= 2 ? 0.85 + index * 0.05 : 1;
-    const atkScale = earlyAtkEase * (1 + 0.08 * jumps);
+    const atkScale = earlyAtkEase * (1 + index * 0.03) * (1 + 0.09 * jumps);
     this.battle = new Battle(this.scene, state, def, hpScale, atkScale);
     this.paused = false;
     this.speed = settings.speed; // 설정의 기본 전투 속도 적용
@@ -985,6 +991,7 @@ export class Game {
 
   /** 로비 → 타이틀 화면으로. 진행 상황은 저장돼 있어 '이어하기'로 복귀 가능. */
   private toTitle(): void {
+    this.tutorial.cancel(); // 타이틀 이탈 시 취소 → 다음 새 모험에서 다시 안내
     this.ui.hideLobby();
     this.ui.hideManage();
     this.viewer.setActive(false);
@@ -1010,6 +1017,7 @@ export class Game {
   }
 
   private win(): void {
+    this.tutorial.finish(true); // 승리 = 온보딩 완료로 기록
     this.mode = 'title';
     setBgmTrack('lobby');
     this.ui.showWin(ENEMIES.tyrant.name);
@@ -1051,7 +1059,7 @@ export class Game {
           this.flushBattleGrowth('battle');
         }
         // 첫 전투 시작 시 1회 포획 안내 (핵심 루프 온보딩)
-        if (prev === 'placement' && this.battle.phase !== 'placement' && !this.captureHintShown) {
+        if (prev === 'placement' && this.battle.phase !== 'placement' && !this.captureHintShown && !this.tutorial.isActive) {
           this.captureHintShown = true;
           this.ui.toast('빛나는 포획구 카드를 적에게 드래그하면 포획! 보스는 기절했을 때만 잡을 수 있어요', 'info');
         }

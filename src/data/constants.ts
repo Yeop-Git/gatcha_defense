@@ -177,7 +177,7 @@ export const PORTRAIT_KEY_HIGH = 92;
 /** 湲곗? / 二쇱씤怨?湲곕낯移?(짠14) */
 export const BASE_HP = 235; // ?꾨컲 ?ㅼ썫/?꾩닔??寃щ뵒?꾨줉 ?곹뼢(諛몃윴??
 export const BASE_LEAK_NORMAL = 3;
-export const BASE_LEAK_MINIBOSS = 24; // 밸런스: 미니보스 루프백 누수 소폭↑(20→24) — 점프 스테이지 긴장 (스테이지1~3 온보딩은 유지)
+export const BASE_LEAK_MINIBOSS = 30; // 밸런스: 미니보스 루프백 누수 소폭↑(20→24) — 점프 스테이지 긴장 (스테이지1~3 온보딩은 유지)
 export const BASE_LEAK_BOSS = 60;     // 밸런스: 보스 루프백 누수 ↓(70→60) — 불가피한 죽음 절벽 방지(플랫·비스케일). 위협은 공성으로.
 
 // SIEGE: normal enemies that reach the castle no longer vanish with a flat leak.
@@ -187,7 +187,7 @@ export const BASE_LEAK_BOSS = 60;     // 밸런스: 보스 루프백 누수 ↓(
 // 밸런스: 성 위협의 핵심 밸브. 공성 피해 = round(적 attack × atkScale × attackMult)로 스테이지 스케일이 걸리고,
 // 포탑+유닛을 뚫고 성문에 도달한 적에게만 적용된다 — 깔끔한 방어는 거의 안 아프고, 새어나간 웨이브는 성을 갉는다.
 // mult 1.6/interval 1.05 (기존 1/1.2) ≈ 공성 DPS ×1.83. 병렬·무제한 공성이라 과하지 않게 유지(레드팀 검증).
-export const SIEGE = { interval: 1.05, attackMult: 1.6 } as const;
+export const SIEGE = { interval: 1.05, attackMult: 1.7 } as const;
 
 // ENEMY_ATTACK: enemies now fight your units. A (non-boss) enemy that comes within `range` of an
 // ally stops marching and strikes it every `interval` seconds for the enemy's own `attack`. Units
@@ -236,21 +236,23 @@ export const BOND_CAP = 0.3; // ?좊? 蹂대꼫???곹븳 (+30%) ???꾨컲 援곕
 
 /** 留덈굹 (짠6). 湲곕낯? ?ㅽ럺(珥덈떦 1)??媛源앷쾶 ??? ?좊떅??留덈굹 ?뚰븨??媛?띿쓣 ?대떦. */
 export const MANA_MAX = 8;
-export const MANA_REGEN = 0.55; // 초당 기본 마나 회복. 카드 타이밍이 중요하도록 타이트하게 유지.
+export const MANA_REGEN = 0.5; // 초당 기본 마나 회복. 역할분리로 덱이 크리처(고코스트 주문) 위주가 되므로 살짝 타이트하게(0.55→0.5) — 언제 무엇을 쓸지가 핵심 결정.
 /** ? = 留덈굹 ?뚰븨: 諛곗튂??? ?좊떅 1泥대떦 珥덈떦 異붽? 留덈굹 */
-export const GRASS_MANA_REGEN = 0.13;
+export const GRASS_MANA_REGEN = 0.16;
 export const HAND_SIZE = 5;
 export const AUTO_DRAW_INTERVAL = 6;
 export const CAPTURE_CARD_ID = 'n_capture';
 /** ?묎툒 泥섏튂(湲곗? ?뚮났) ?ъ궗??荑⑤떎??珥? ??짠6.2 "荑⑤떎??議댁옱" */
 export const BASE_HEAL_CD = 18;
 
+// 밸런스(성장 곡선): XP +≈20% & monsters.csv 진화레벨 하향(불/물/풀 6·16, 빛/어둠 10·18) →
+// 2단 진화 ≈ 스테이지 3, 최종(3단) 진화 ≈ 스테이지 8. "최종진화가 스테이지 10에야 나온다" 이슈 해소.
 export const XP_REWARD = {
-  kill: { swarm: 5, flyer: 6, normal: 8, healer: 9, tank: 11, elite: 16, miniboss: 36, boss: 90 } as Record<EnemyTier, number>,
-  waveBase: 12,
-  wavePerStage: 4,
-  wavePerIndex: 3,
-  finalWaveBonus: 8,
+  kill: { swarm: 6, flyer: 7, normal: 10, healer: 11, tank: 13, elite: 19, miniboss: 44, boss: 110 } as Record<EnemyTier, number>,
+  waveBase: 14,
+  wavePerStage: 5,
+  wavePerIndex: 4,
+  finalWaveBonus: 10,
 } as const;
 
 /** 遺??floating) ?곗텧 ?뚮씪誘명꽣 ??鍮??대몺 ?뺣졊瑜섏뿉留??곸슜. ?섎㉧吏???묒?(?좊땲硫붿씠??異뷀썑). */

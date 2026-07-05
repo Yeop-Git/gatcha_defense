@@ -52,31 +52,32 @@ const WAVES: Record<number, SpawnGroup[][]> = {
     [{ enemy: 'goleling', count: 4, interval: 1.1 }, { enemy: 'glub', count: 5, interval: 0.8 }],
     [{ enemy: 'bat', count: 6, interval: 0.6 }, { enemy: 'fishman', count: 4, interval: 1.1 }, { enemy: 'squidle', count: 2, interval: 1.6 }, { enemy: 'wraith', count: 2, interval: 1.6 }],
   ],
+  // 밸런스(긴장): 후반(6~10) 물량↑·간격↓로 킬 처리량을 넘겨 일부가 성문까지 새어들도록. 온보딩(1~3)은 미변경.
   6: [
-    [{ enemy: 'glub', count: 8, interval: 0.5 }, { enemy: 'goleling', count: 4, interval: 1.0 }],
-    [{ enemy: 'fishman', count: 5, interval: 0.9 }, { enemy: 'orcskull', count: 3, interval: 1.3 }, { enemy: 'wraith', count: 2, interval: 1.5 }],
-    [{ enemy: 'yeti', count: 1, interval: 1 }, { enemy: 'glubking', count: 1, interval: 1 }, { enemy: 'bat', count: 8, interval: 0.6 }],
+    [{ enemy: 'glub', count: 11, interval: 0.45 }, { enemy: 'goleling', count: 5, interval: 0.9 }],
+    [{ enemy: 'fishman', count: 7, interval: 0.8 }, { enemy: 'orcskull', count: 4, interval: 1.1 }, { enemy: 'wraith', count: 3, interval: 1.3 }],
+    [{ enemy: 'yeti', count: 1, interval: 1 }, { enemy: 'glubking', count: 1, interval: 1 }, { enemy: 'bat', count: 12, interval: 0.5 }, { enemy: 'fishman', count: 3, interval: 0.9 }],
   ],
   7: [
-    [{ enemy: 'imp', count: 10, interval: 0.5 }],
-    [{ enemy: 'imp', count: 8, interval: 0.5 }, { enemy: 'bluefiend', count: 4, interval: 1.0 }],
-    [{ enemy: 'orc', count: 3, interval: 1.3 }, { enemy: 'imp', count: 8, interval: 0.5 }, { enemy: 'hywirl', count: 4, interval: 0.8 }],
+    [{ enemy: 'imp', count: 14, interval: 0.42 }],
+    [{ enemy: 'imp', count: 10, interval: 0.45 }, { enemy: 'bluefiend', count: 6, interval: 0.9 }],
+    [{ enemy: 'orc', count: 4, interval: 1.1 }, { enemy: 'imp', count: 12, interval: 0.42 }, { enemy: 'hywirl', count: 6, interval: 0.7 }],
   ],
   8: [
-    [{ enemy: 'bluefiend', count: 5, interval: 0.8 }, { enemy: 'imp', count: 8, interval: 0.5 }],
-    [{ enemy: 'orc', count: 4, interval: 1.1 }, { enemy: 'drake', count: 2, interval: 1.6 }],
-    [{ enemy: 'dino', count: 2, interval: 1.6 }, { enemy: 'orcskull', count: 4, interval: 1.0 }, { enemy: 'imp', count: 8, interval: 0.5 }],
+    [{ enemy: 'bluefiend', count: 7, interval: 0.7 }, { enemy: 'imp', count: 10, interval: 0.45 }],
+    [{ enemy: 'orc', count: 5, interval: 1.0 }, { enemy: 'drake', count: 3, interval: 1.4 }],
+    [{ enemy: 'dino', count: 3, interval: 1.4 }, { enemy: 'orcskull', count: 5, interval: 0.9 }, { enemy: 'imp', count: 10, interval: 0.45 }],
   ],
   9: [
-    [{ enemy: 'tribal', count: 4, interval: 1.1 }, { enemy: 'wizard', count: 2, interval: 1.5 }, { enemy: 'cat', count: 4, interval: 0.9 }],
-    [{ enemy: 'ninja', count: 2, interval: 1.3 }, { enemy: 'queenbee', count: 3, interval: 1.2 }, { enemy: 'orcskull', count: 2, interval: 1.3 }],
-    [{ enemy: 'warlord', count: 1, interval: 1 }, { enemy: 'alien', count: 1, interval: 1.8 }, { enemy: 'alpaking', count: 2, interval: 1.5 }],
+    [{ enemy: 'tribal', count: 5, interval: 1.0 }, { enemy: 'wizard', count: 3, interval: 1.3 }, { enemy: 'cat', count: 6, interval: 0.8 }],
+    [{ enemy: 'ninja', count: 3, interval: 1.2 }, { enemy: 'queenbee', count: 4, interval: 1.0 }, { enemy: 'orcskull', count: 3, interval: 1.2 }],
+    [{ enemy: 'warlord', count: 1, interval: 1 }, { enemy: 'alien', count: 2, interval: 1.6 }, { enemy: 'alpaking', count: 3, interval: 1.3 }, { enemy: 'ninja', count: 2, interval: 1.2 }],
   ],
   10: [
-    [{ enemy: 'tribal', count: 5, interval: 0.9 }, { enemy: 'ninja', count: 3, interval: 1.2 }, { enemy: 'wizard', count: 2, interval: 1.5 }],
-    [{ enemy: 'alien', count: 3, interval: 1.3 }, { enemy: 'drake', count: 3, interval: 1.2 }, { enemy: 'spirit', count: 2, interval: 1.6 }],
-    // 최종 시련: 폭룡 단독은 허무 → 소수 호위(드레이크·에일리언)를 곁들여 긴장만 준다(과하지 않게).
-    [{ enemy: 'tyrant', count: 1, interval: 1 }, { enemy: 'drake', count: 2, interval: 1.8 }, { enemy: 'alien', count: 2, interval: 2.0 }],
+    [{ enemy: 'tribal', count: 6, interval: 0.8 }, { enemy: 'ninja', count: 4, interval: 1.0 }, { enemy: 'wizard', count: 3, interval: 1.3 }],
+    [{ enemy: 'alien', count: 4, interval: 1.1 }, { enemy: 'drake', count: 4, interval: 1.0 }, { enemy: 'spirit', count: 3, interval: 1.4 }],
+    // 최종 시련: 폭룡 + 호위(드레이크·에일리언)를 늘려 마지막 압박을 확실히 준다.
+    [{ enemy: 'tyrant', count: 1, interval: 1 }, { enemy: 'drake', count: 3, interval: 1.6 }, { enemy: 'alien', count: 3, interval: 1.7 }],
   ],
 };
 

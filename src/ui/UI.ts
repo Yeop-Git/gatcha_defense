@@ -12,6 +12,8 @@ import { getEnemyPortrait } from '../render/EnemyPortraits';
 import { settings, saveSettings } from '../core/Settings';
 import { playSfx } from '../audio/Sfx';
 import * as Dex from '../core/Dex';
+import { Tutorial } from './Tutorial';
+import { decorateKeywords, keywordByTerm } from './keywords';
 
 export interface HudInfo {
   stageLabel: string;
@@ -165,6 +167,7 @@ export class UI {
   private refs: Record<string, HTMLElement> = {};
   private handIds: string[] = [];
   private cardEls = new Map<string, HTMLElement>();
+  private keywordTip!: HTMLElement;
 
   constructor(private root: HTMLElement) {
     this.buildTitle();
@@ -186,10 +189,51 @@ export class UI {
     this.probeTitleBg();
     this.buildManage();
     this.buildDexView();
+    this.buildKeywordTip();
     bus.on('base:damage', () => this.pulseHp());
     bus.on('toast', ({ text, kind }) => this.toast(text, kind));
     bus.on('warn', ({ text }) => this.warn(text));
     this.setGameplayVisible(false);
+  }
+
+  /** 하스스톤식 키워드 툴팁 — .kw 요소 위에 마우스를 올리면 뜻을 띄운다(이벤트 위임). */
+  private buildKeywordTip(): void {
+    this.keywordTip = el('div');
+    this.keywordTip.id = 'keyword-tip';
+    this.keywordTip.style.display = 'none';
+    this.root.appendChild(this.keywordTip);
+    const findKw = (t: EventTarget | null): HTMLElement | null => {
+      const el0 = t as HTMLElement | null;
+      return el0 && el0.closest ? (el0.closest('.kw') as HTMLElement | null) : null;
+    };
+    this.root.addEventListener('pointerover', (e) => {
+      const kw = findKw(e.target);
+      if (kw) this.showKeywordTip(kw);
+    });
+    this.root.addEventListener('pointerout', (e) => {
+      const kw = findKw(e.target);
+      if (kw && kw !== findKw((e as PointerEvent).relatedTarget)) this.hideKeywordTip();
+    });
+  }
+
+  private showKeywordTip(kw: HTMLElement): void {
+    const def = keywordByTerm(kw.dataset.kw ?? '');
+    if (!def) return;
+    this.keywordTip.innerHTML = `<div class="kt-head"><span class="kt-ico">${def.icon}</span><b>${def.term}</b></div><div class="kt-body">${def.desc}</div>`;
+    this.keywordTip.style.display = 'block';
+    // 키워드 바로 위에 배치. 화면 밖으로 넘치지 않도록 좌우/상하 보정.
+    const r = kw.getBoundingClientRect();
+    const tip = this.keywordTip.getBoundingClientRect();
+    let left = r.left + r.width / 2 - tip.width / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - tip.width - 8));
+    let top = r.top - tip.height - 8;
+    if (top < 8) top = r.bottom + 8; // 위 공간 없으면 아래로
+    this.keywordTip.style.left = `${Math.round(left)}px`;
+    this.keywordTip.style.top = `${Math.round(top)}px`;
+  }
+
+  private hideKeywordTip(): void {
+    this.keywordTip.style.display = 'none';
   }
 
   private hasSave = false;
@@ -235,8 +279,15 @@ export class UI {
             <option value="2" ${settings.speed === 2 ? 'selected' : ''}>2x</option>
             <option value="3" ${settings.speed === 3 ? 'selected' : ''}>3x</option>
           </select></label>
+        <div class="set-row"><span>튜토리얼</span><button class="btn" id="set-tut">다시 보기</button></div>
       </div>
       <div class="choice-row"><button class="btn primary" id="set-ok">확인</button></div>`);
+    const tutBtn = scroll.querySelector('#set-tut') as HTMLButtonElement;
+    tutBtn.onclick = () => {
+      Tutorial.clearProgress();
+      playSfx('click');
+      this.toast('다음 새 모험에서 튜토리얼이 다시 나옵니다.', 'info');
+    };
     const sfxBox = scroll.querySelector('#set-sfx') as HTMLInputElement;
     const musicBox = scroll.querySelector('#set-music') as HTMLInputElement;
     const vol = scroll.querySelector('#set-vol') as HTMLInputElement;
@@ -526,7 +577,7 @@ export class UI {
       <div class="card-elem">${cardElemIcon(def.element)}</div>
       <div class="art">${cardIcon(def)}</div>
       <div class="name">${def.name}</div>
-      <div class="desc">${def.text}</div>
+      <div class="desc">${decorateKeywords(def.text)}</div>
       ${c.cdFrac && c.cdFrac > 0 ? `<div class="cd-overlay" style="height:${Math.round(c.cdFrac * 100)}%"></div>` : ''}`;
   }
 
@@ -571,7 +622,7 @@ export class UI {
   private bigCardHtml(cardId: string, extraCls = ''): string {
     const def = CARD_BY_ID[cardId];
     if (!def) return '';
-    return `<div class="big-card el-${def.element} ${extraCls}" data-card="${cardId}"><div class="cost">${def.cost}</div><div class="card-elem">${cardElemIcon(def.element)}</div><div class="art">${cardIcon(def)}</div><div class="name">${def.name}</div><div class="meta">${cardMeta(def)}</div><div class="desc">${def.text}</div></div>`;
+    return `<div class="big-card el-${def.element} ${extraCls}" data-card="${cardId}"><div class="cost">${def.cost}</div><div class="card-elem">${cardElemIcon(def.element)}</div><div class="art">${cardIcon(def)}</div><div class="name">${def.name}</div><div class="meta">${cardMeta(def)}</div><div class="desc">${decorateKeywords(def.text)}</div></div>`;
   }
 
   showEvolve(data: { from: string; to: string; element: Element; stage: 1 | 2 | 3; kind: 'creature' | 'enemy'; species?: string }): void {
@@ -933,7 +984,7 @@ export class UI {
       const foot = data.readOnly
         ? (def ? cardMeta(def) : `Lv${c.learnLevel}`)
         : (c.learned ? (c.equipped ? '장착 중 · 탭하여 해제' : '탭하여 장착') : `Lv${c.learnLevel} 필요`);
-      const card = el('div', cls, `<div class="cost">${c.cost}</div><div class="card-elem">${cardElemIcon(c.element)}</div><div class="art">${def ? cardIcon(def) : '❔'}</div><div class="name">${c.name}</div><div class="desc">${c.text}</div><div class="mc-foot" style="margin-top:auto;font-size:11px;opacity:0.85;padding-top:4px">${foot}</div>`);
+      const card = el('div', cls, `<div class="cost">${c.cost}</div><div class="card-elem">${cardElemIcon(c.element)}</div><div class="art">${def ? cardIcon(def) : '❔'}</div><div class="name">${c.name}</div><div class="desc">${decorateKeywords(c.text)}</div><div class="mc-foot" style="margin-top:auto;font-size:11px;opacity:0.85;padding-top:4px">${foot}</div>`);
       if (!data.readOnly && c.learned) card.onclick = () => this.onManageToggle(data.selected, c.id);
       grid.appendChild(card);
     }

@@ -66,6 +66,16 @@ export interface CardGain {
   cardId: string;
 }
 
+/** 성장 통지용 유닛 정보 (중복 포획 보너스 확산 시 성장한 동료들). */
+export interface GrownInfo {
+  uid: string;
+  from: string;
+  to: string;
+  element: Element;
+  evolved: boolean;
+  gains: CardGain[];
+}
+
 export interface DerivedStats {
   hp: number;
   attack: number;
@@ -109,7 +119,9 @@ function stageForLevel(element: Element, level: number): 1 | 2 | 3 {
  * 포획 유닛 tier별 플레이 기준 스탯. 원본 도감 HP(보스 1200·미니보스 520 등)를 그대로 쓰면
  * 포획 보스가 만렙 크리처를 2~3배 압도해 밸런스가 붕괴하므로, tier 기반 기준치로 정규화한다.
  */
-const PLAY_BASE_HP: Record<EnemyTier, number> = { swarm: 46, flyer: 44, normal: 62, tank: 92, healer: 56, elite: 96, miniboss: 150, boss: 200 };
+// 역할 분리: 포획 적은 '전선 바디'다 — 크리처(캐스터)보다 확연히 단단하게. tank/normal/elite HP를 크게 올려
+// 원정대의 벽·속도방지턱 역할을 확실히 하고, 얕은 스킬 대신 맷집+tier 패시브로 값을 한다.
+const PLAY_BASE_HP: Record<EnemyTier, number> = { swarm: 52, flyer: 48, normal: 88, tank: 155, healer: 78, elite: 135, miniboss: 210, boss: 270 };
 // 포획체가 원정대 슬롯값을 하도록 상위 tier 공격력 상향(포획=핵심 루프). 미니보스/보스는 포획의 정점이라 트로피값을 준다.
 const PLAY_BASE_ATK: Record<EnemyTier, number> = { swarm: 9, flyer: 9, normal: 11, tank: 11, healer: 7, elite: 17, miniboss: 26, boss: 34 };
 
@@ -349,15 +361,8 @@ export class GameState {
     return unit;
   }
 
-  absorbCapturedEnemy(speciesId: string): { unit: OwnedUnit; from: string; to: string; evolved: boolean; gains: CardGain[]; xp: number; bondGain: number } | null {
-    const captured = ENEMIES[speciesId];
-    if (!captured) return null;
-    const unit = this.roster.find((u) => {
-      if (u.kind !== 'enemy' || !u.species) return false;
-      const owned = ENEMIES[u.species];
-      return u.species === speciesId || captured.evolvesTo === u.species || owned?.evolvesTo === speciesId;
-    });
-    if (!unit) return null;
+  /** 한 유닛에 중복 포획 보너스(XP/유대) 지급 후 성장 결과 반환. 진화 시 각성 시그니처 포함. */
+  private applyDuplicateBonus(unit: OwnedUnit): { from: string; to: string; evolved: boolean; gains: CardGain[]; bondGain: number } {
     const from = unitName(unit);
     const beforeBond = unit.bond ?? 0;
     unit.bond = Math.min(BOND_CAP, beforeBond + CAPTURE.duplicateBond);
@@ -367,30 +372,45 @@ export class GameState {
       const key = this.evolveKeySkill(unit);
       if (key && !result.gains.some((g) => g.cardId === key)) result.gains.push({ uid: unit.uid, cardId: key });
     }
-    return {
-      unit,
-      from,
-      to: unitName(unit),
-      evolved: result.evolved,
-      gains: result.gains,
-      xp: CAPTURE.duplicateXp,
-      bondGain: unit.bond - beforeBond,
-    };
+    return { from, to: unitName(unit), evolved: result.evolved, gains: result.gains, bondGain: unit.bond - beforeBond };
+  }
+
+  /** 중복 포획 보너스를 primary 외 원정대 전원에게도 지급. 성장(레벨업/진화/스킬)한 동료 목록 반환. */
+  private spreadDuplicateBonus(primary: OwnedUnit): GrownInfo[] {
+    const out: GrownInfo[] = [];
+    for (const u of this.roster) {
+      if (u.uid === primary.uid) continue;
+      const beforeLevel = u.level;
+      const r = this.applyDuplicateBonus(u);
+      if (r.evolved || r.gains.length || u.level > beforeLevel) {
+        out.push({ uid: u.uid, from: r.from, to: r.to, element: u.element, evolved: r.evolved, gains: r.gains });
+      }
+    }
+    return out;
+  }
+
+  absorbCapturedEnemy(speciesId: string): { unit: OwnedUnit; from: string; to: string; evolved: boolean; gains: CardGain[]; xp: number; bondGain: number; others: GrownInfo[] } | null {
+    const captured = ENEMIES[speciesId];
+    if (!captured) return null;
+    const unit = this.roster.find((u) => {
+      if (u.kind !== 'enemy' || !u.species) return false;
+      const owned = ENEMIES[u.species];
+      return u.species === speciesId || captured.evolvesTo === u.species || owned?.evolvesTo === speciesId;
+    });
+    if (!unit) return null;
+    const r = this.applyDuplicateBonus(unit);
+    // 동일 캐릭터 중복 포획 시 매칭 유닛뿐 아니라 원정대 전원에게 보너스 지급.
+    const others = this.spreadDuplicateBonus(unit);
+    return { unit, from: r.from, to: r.to, evolved: r.evolved, gains: r.gains, xp: CAPTURE.duplicateXp, bondGain: r.bondGain, others };
   }
 
   /** 야생 크리처(같은 속성 보유) 중복 포획 흡수 — 해당 크리처에 XP/유대 강화(별도 유닛 미생성). */
-  absorbCreatureDuplicate(element: Element): { unit: OwnedUnit; from: string; to: string; evolved: boolean; gains: CardGain[]; xp: number; bondGain: number } | null {
+  absorbCreatureDuplicate(element: Element): { unit: OwnedUnit; from: string; to: string; evolved: boolean; gains: CardGain[]; xp: number; bondGain: number; others: GrownInfo[] } | null {
     const unit = this.roster.find((u) => u.kind === 'creature' && u.element === element);
     if (!unit) return null;
-    const from = unitName(unit);
-    const beforeBond = unit.bond ?? 0;
-    unit.bond = Math.min(BOND_CAP, beforeBond + CAPTURE.duplicateBond);
-    const result = this.addUnitXp(unit, CAPTURE.duplicateXp);
-    if (result.evolved) {
-      const key = this.evolveKeySkill(unit);
-      if (key && !result.gains.some((g) => g.cardId === key)) result.gains.push({ uid: unit.uid, cardId: key });
-    }
-    return { unit, from, to: unitName(unit), evolved: result.evolved, gains: result.gains, xp: CAPTURE.duplicateXp, bondGain: unit.bond - beforeBond };
+    const r = this.applyDuplicateBonus(unit);
+    const others = this.spreadDuplicateBonus(unit);
+    return { unit, from: r.from, to: r.to, evolved: r.evolved, gains: r.gains, xp: CAPTURE.duplicateXp, bondGain: r.bondGain, others };
   }
 
   /** 스테이지 클리어 시 보유 유닛의 유대 누적(상한 BOND_CAP). 뚝심 육성 보상(§14). */
@@ -406,8 +426,9 @@ export class GameState {
     dark: ['dark_burst', 'dark_verdict'],
     light: ['light_smite', 'light_sunfire'],
   };
+  // 역할 분리: 포획 적 2단 각성 = 전선 바디의 시그니처(값싼 자가 강화/보호/흡수). 크리처처럼 광역 폭격 주문이 아님.
   private static readonly ENEMY_KEY: Record<Element, string> = {
-    fire: 'e_fire_8', water: 'e_water_8', grass: 'e_grass_8', light: 'e_light_8', dark: 'e_dark_8',
+    fire: 'e_fire_rage', water: 'e_water_bulwark', grass: 'e_grass_regen', light: 'e_light_aegis', dark: 'e_dark_leech',
   };
   /** 방금 진화한 유닛이 각성으로 배울 핵심 스킬 id. 없으면 null. */
   evolveKeySkill(unit: OwnedUnit): string | null {
