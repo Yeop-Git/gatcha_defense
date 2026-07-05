@@ -54,7 +54,6 @@ export class Enemy {
   defDownPct = 0;
   defDownTimer = 0;
   fearTimer = 0; // 공포(어둠): >0이면 경로를 역주행(뒤로 도망)
-  atkCd = 0; // 적 반격 쿨다운 (근처 방어자 타격)
 
   private bar: THREE.Sprite;
 

@@ -163,10 +163,8 @@ export const BASE_LEAK_MINIBOSS = 20;
 export const BASE_LEAK_BOSS = 70;
 
 /** ??諛섍꺽: 洹쇱쿂 諛⑹뼱???좊떅/二쇱씤怨?瑜?二쇨린 ?寃????뷀렂???깅┰(??蹂댄샇留?遺??移대뱶媛 ?섎?瑜?媛吏?. */
-export const ENEMY = {
-  attackSpeed: 0.8,
-  engageRange: 2.4,
-} as const;
+// (제거됨) 적→아군 반격 상수(ENEMY.attackSpeed/engageRange): 아군 유닛은 피해를 받지 않는
+// 방어 포탑(불사) 설계이므로 미사용 죽은 코드였음. 관련: Enemy.atkCd, Monster.takeDamage 제거.
 
 // ??嫄곗젏) ?꾪닾移???二쇱씤怨??듯빀. 寃쎈줈 ?앹쓽 ?깆씠 ?볦? ?ш굅由щ줈 ?꾨컲 寃쎈줈瑜?諛⑹뼱.
 export const HERO = {

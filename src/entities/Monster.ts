@@ -143,15 +143,8 @@ export class Monster {
     this.hp = Math.min(this.maxHp, this.hp + Math.max(0, this.maxHp - beforeMax));
   }
 
-  takeDamage(amount: number): void {
-    if (this.shield > 0) {
-      const absorbed = Math.min(this.shield, amount);
-      this.shield -= absorbed;
-      amount -= absorbed;
-    }
-    this.hp -= amount;
-    if (this.hp <= 0) this.alive = false;
-  }
+  // (제거됨) takeDamage: 아군 유닛은 불사(방어 포탑) 설계 — 적이 유닛을 공격하는 로직이 없어
+  // 호출되지 않던 죽은 코드였다. 유닛 HP/보호막은 넉백·포획 판정 등 내부용으로만 유지.
 
   /** 공속 버프 (전열 강화 카드). */
   applyHaste(mult: number, duration: number): void {
