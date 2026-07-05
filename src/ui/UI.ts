@@ -224,6 +224,7 @@ export class UI {
     const scroll = this.modal(`<h1>설정</h1>
       <div class="settings-list">
         <label class="set-row"><span>효과음</span><input type="checkbox" id="set-sfx" ${settings.sfx ? 'checked' : ''}/></label>
+        <label class="set-row"><span>배경음악</span><input type="checkbox" id="set-music" ${settings.music ? 'checked' : ''}/></label>
         <label class="set-row"><span>음량</span><input type="range" id="set-vol" min="0" max="100" value="${Math.round(settings.volume * 100)}"/></label>
         <label class="set-row"><span>기본 전투 속도</span>
           <select id="set-speed">
@@ -234,11 +235,13 @@ export class UI {
       </div>
       <div class="choice-row"><button class="btn primary" id="set-ok">확인</button></div>`);
     const sfxBox = scroll.querySelector('#set-sfx') as HTMLInputElement;
+    const musicBox = scroll.querySelector('#set-music') as HTMLInputElement;
     const vol = scroll.querySelector('#set-vol') as HTMLInputElement;
     const speed = scroll.querySelector('#set-speed') as HTMLSelectElement;
     sfxBox.onchange = () => { settings.sfx = sfxBox.checked; saveSettings(); playSfx('click'); };
-    vol.oninput = () => { settings.volume = Number(vol.value) / 100; };
-    vol.onchange = () => { saveSettings(); playSfx('select'); };
+    musicBox.onchange = () => { settings.music = musicBox.checked; saveSettings(); this.onSettingsChange(); playSfx('click'); };
+    vol.oninput = () => { settings.volume = Number(vol.value) / 100; this.onSettingsChange(); };
+    vol.onchange = () => { saveSettings(); this.onSettingsChange(); playSfx('select'); };
     speed.onchange = () => { settings.speed = (Number(speed.value) as 1 | 2 | 3); saveSettings(); this.onSettingsChange(); playSfx('click'); };
     (scroll.querySelector('#set-ok') as HTMLButtonElement).onclick = () => { playSfx('click'); this.clearModal(); };
   }
@@ -628,9 +631,20 @@ export class UI {
   }
 
 
-  showEvent(node: { id: string; label: string; desc: string }): void {
-    const scroll = this.modal(`<h1>${node.label}</h1><p>${node.desc}</p><div class="choice-row"><button class="btn primary" id="ev-ok">선택</button></div>`);
-    (scroll.querySelector('#ev-ok') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onEventPick(node.id); };
+  showEvent(nodes: { id: string; label: string; desc: string }[]): void {
+    const cards = nodes.map((node) => `
+      <button class="event-card" data-id="${node.id}">
+        <span class="event-title">${node.label}</span>
+        <span class="event-desc">${node.desc}</span>
+      </button>`).join('');
+    const scroll = this.modal(`<h1>갈림길</h1><p>마주친 사건 중 하나를 선택하세요.</p><div class="event-row">${cards}</div>`);
+    scroll.querySelectorAll('.event-card').forEach((card) => {
+      (card as HTMLButtonElement).onclick = () => {
+        playSfx('select');
+        this.clearModal();
+        this.onEventPick((card as HTMLElement).dataset.id ?? '');
+      };
+    });
   }
 
   /**

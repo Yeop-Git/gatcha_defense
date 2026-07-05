@@ -14,6 +14,7 @@ import { CAPTURE_CARD_ID, DIFFICULTY_JUMP_MULT, FIXED_DT } from '../data/constan
 import { bus } from './events';
 import { settings } from './Settings';
 import { playSfx } from '../audio/Sfx';
+import { setBgmTrack, updateBgmSettings } from '../audio/Bgm';
 
 type Mode = 'title' | 'lobby' | 'battle' | 'viewer' | 'manage' | 'stagemap';
 
@@ -37,6 +38,7 @@ export class Game {
     this.wireFieldDrag();
     this.wireBus();
     this.ui.showTitle(hasRun());
+    setBgmTrack('lobby');
     if (import.meta.env.DEV) {
       (window as unknown as { __scene: Scene }).__scene = this.scene;
       (window as unknown as { __game: Game }).__game = this;
@@ -82,7 +84,7 @@ export class Game {
     this.ui.onManage = () => this.openManage();
     this.ui.onManageClose = () => this.showLobby();
     this.ui.onSettings = () => this.ui.showSettings();
-    this.ui.onSettingsChange = () => { this.speed = settings.speed; };
+    this.ui.onSettingsChange = () => { this.speed = settings.speed; updateBgmSettings(); };
     this.ui.onDex = () => this.ui.showDex();
     this.ui.onDexView = (d) => this.openDexView(d);
     this.ui.onDexViewClose = () => this.closeDexView();
@@ -412,6 +414,7 @@ export class Game {
   /** 로비: 전투 진입/캐릭터 관리 허브 */
   private showLobby(): void {
     this.mode = 'lobby';
+    setBgmTrack('lobby');
     this.paused = true;
     this.battle = null;
     this.ui.hideManage();
@@ -440,6 +443,7 @@ export class Game {
 
   private openStageMap(): void {
     this.mode = 'stagemap';
+    setBgmTrack('lobby');
     this.ui.hideLobby();
     this.ensureMapTrack();
     const cur = state.stageIndex;
@@ -653,6 +657,7 @@ export class Game {
 
   private startStage(index: number): void {
     state.stageIndex = index;
+    setBgmTrack('battle');
     const def = STAGES[index];
     const jumps = STAGES.filter((s) => s.difficultyJump && s.id <= def.id).length;
     // 난이도 점프는 단계적(가산)으로 — 기존 Math.pow는 복리로 S10 ×4.7까지 폭주해 클리어 불가.
@@ -858,8 +863,8 @@ export class Game {
     if (kind === 'shop') {
       this.enterShop(); // 상점 모달 — onShopClose가 지도로 복귀
     } else if (kind === 'event') {
-      const node = EVENT_NODES[Math.floor(Math.random() * EVENT_NODES.length)];
-      this.ui.showEvent(node); // onEventPick → applyEvent → afterEvent → 지도로 복귀
+      const nodes = [...EVENT_NODES].sort(() => Math.random() - 0.5).slice(0, 3);
+      this.ui.showEvent(nodes); // onEventPick → applyEvent → afterEvent → 지도로 복귀
     } else { // rest(야영)
       const heal = Math.round(state.baseHpMax * 0.25);
       state.heal(heal);
@@ -949,6 +954,7 @@ export class Game {
     this.viewer.setActive(false);
     this.ui.closeViewer();
     this.mode = 'title';
+    setBgmTrack('lobby');
     this.paused = true;
     saveRun();
     this.ui.showTitle(hasRun());
@@ -969,6 +975,7 @@ export class Game {
 
   private win(): void {
     this.mode = 'title';
+    setBgmTrack('lobby');
     this.ui.showWin(ENEMIES.tyrant.name);
     clearRun();
   }
@@ -978,6 +985,7 @@ export class Game {
     this.battle?.finish();
     this.battle = null;
     this.mode = 'title';
+    setBgmTrack('lobby');
     this.ui.showLose(reason);
     clearRun();
   }
