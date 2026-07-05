@@ -12,8 +12,8 @@
     "exe": "vite build && electron-builder --dir"
   },
   "build": {
-    "appId": "com.monsterkeepers.game",
-    "productName": "MonsterKeepers",
+    "appId": "com.catchsuhoping.game",
+    "productName": "CatchSuhoping",
     "directories": { "output": "release" },
     "files": ["dist/**/*", "electron/**/*"],
     "asar": false,

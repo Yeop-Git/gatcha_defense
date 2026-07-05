@@ -191,17 +191,16 @@ export class UI {
   private buildTitle(): void {
     this.title = el('div');
     this.title.id = 'title-screen';
+    // 배경 이미지(title_bg)에 '캐치 수호핑' 로고가 포함 → 텍스트 로고/설명 없이 메뉴만 하단 배치.
     this.title.innerHTML = `
       <div class="title-inner">
-        <div class="logo-banner"><span class="logo">Monster Keepers</span></div>
-        <div class="sub">적을 포획해 나만의 몬스터로 길들이고,<br/>함께 육성해 성을 지키는 디펜스 로그라이크.</div>
         <nav class="title-menu">
           <button class="menu-item primary" id="continue-btn">이어하기</button>
           <button class="menu-item" id="new-btn">새 모험</button>
           <button class="menu-item" id="settings-btn">설정</button>
         </nav>
       </div>
-      <div class="title-hint" id="title-hint">적을 포획해 원정대를 키우고, 몰려오는 적으로부터 성을 지키세요.</div>`;
+      <div class="title-hint" id="title-hint">✨ 수호핑을 포획해 원정대를 키우고, 성을 지키세요! ✨</div>`;
     this.root.appendChild(this.title);
     (this.title.querySelector('#continue-btn') as HTMLButtonElement).onclick = () => { playSfx('click'); if (this.hasSave) this.onContinue(); else this.onStart(); };
     (this.title.querySelector('#new-btn') as HTMLButtonElement).onclick = () => { playSfx('click'); this.onStart(); };
@@ -726,7 +725,7 @@ export class UI {
     this.lobbyUI = el('div');
     this.lobbyUI.id = 'lobby';
     this.lobbyUI.style.display = 'none';
-    this.lobbyUI.innerHTML = `<div class="lobby-head"><button class="btn lobby-title-btn" id="lobby-title">☰ 타이틀</button><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div><div class="menu-card" id="lobby-dex"><div class="mc-ico">📖</div><div class="mc-title">도감</div><div class="mc-sub">수집 컬렉션</div></div></div></div><button class="btn primary lobby-cta" id="lobby-battle"><span class="lc-ico">⚔️</span><span class="lc-title">출정</span><span class="lc-sub" id="lobby-next-stage"></span></button>`;
+    this.lobbyUI.innerHTML = `<div class="lobby-head"><button class="btn lobby-title-btn" id="lobby-title">☰ 타이틀</button><h1>수호핑 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div><div class="menu-card" id="lobby-dex"><div class="mc-ico">📖</div><div class="mc-title">도감</div><div class="mc-sub">수집 컬렉션</div></div></div></div><button class="btn primary lobby-cta" id="lobby-battle"><span class="lc-ico">⚔️</span><span class="lc-title">출정</span><span class="lc-sub" id="lobby-next-stage"></span></button>`;
     this.root.appendChild(this.lobbyUI);
     (this.lobbyUI.querySelector('#lobby-battle') as HTMLElement).onclick = () => this.onEnterBattle();
     (this.lobbyUI.querySelector('#lobby-manage') as HTMLElement).onclick = () => this.onManage();
@@ -834,34 +833,25 @@ export class UI {
   }
 
   /**
-   * 타이틀 로고/배경 이미지 예비 — public/assets/ui/ 에 파일을 넣으면 자동 적용(없으면 우드톤 유지).
-   *  · 배경: title_bg.{jpg,png,webp} → #title-screen 전체 배경(가독성 위해 어둡게 오버레이).
-   *  · 로고: title_logo.{png,webp} → 나무 배너 대신 로고 이미지(.has-logo-img).
-   * 이미지는 추후 제공 예정 — 지금은 파일만 감지해 두는 골격.
+   * 타이틀 배경 이미지 적용 — public/assets/ui/title_bg.{png,jpg,webp}(로고 포함 아트).
+   * 상단 로고/캐릭터는 살리고 하단만 살짝 어둡게(메뉴 가독성). 파일 없으면 우드톤 유지.
    */
   private probeTitleBg(): void {
     const base = import.meta.env.BASE_URL;
-    const tryImg = (cands: string[], on: (url: string) => void): void => {
-      const go = (i: number): void => {
-        if (i >= cands.length) return;
-        const img = new Image();
-        img.onload = () => on(base + cands[i]);
-        img.onerror = () => go(i + 1);
-        img.src = base + cands[i];
+    const cands = ['assets/ui/title_bg.png', 'assets/ui/title_bg.jpg', 'assets/ui/title_bg.webp'];
+    const go = (i: number): void => {
+      if (i >= cands.length) return;
+      const img = new Image();
+      img.onload = () => {
+        this.title.classList.add('has-bg');
+        this.title.style.backgroundImage = `linear-gradient(to bottom, rgba(26,20,44,0) 42%, rgba(22,16,36,0.55) 100%), url("${base}${cands[i]}")`;
+        this.title.style.backgroundSize = 'cover';
+        this.title.style.backgroundPosition = 'center top';
       };
-      go(0);
+      img.onerror = () => go(i + 1);
+      img.src = base + cands[i];
     };
-    tryImg(['assets/ui/title_bg.jpg', 'assets/ui/title_bg.png', 'assets/ui/title_bg.webp'], (url) => {
-      this.title.style.backgroundImage = `linear-gradient(rgba(18,12,7,0.30), rgba(18,12,7,0.60)), url("${url}")`;
-      this.title.style.backgroundSize = 'cover';
-      this.title.style.backgroundPosition = 'center';
-    });
-    tryImg(['assets/ui/title_logo.png', 'assets/ui/title_logo.webp'], (url) => {
-      const banner = this.title.querySelector('.logo-banner') as HTMLElement | null;
-      if (!banner) return;
-      banner.classList.add('has-logo-img');
-      banner.style.backgroundImage = `url("${url}")`;
-    });
+    go(0);
   }
 
   private buildManage(): void {

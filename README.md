@@ -1,4 +1,4 @@
-# Monster Keepers (MVP)
+# 캐치 수호핑 (MVP)
 
 탑뷰 디펜스 × 덱빌딩 로그라이크 × 몬스터 수집. Three.js + TypeScript + Vite.
 기획: [DESIGN.md](DESIGN.md) · 에셋/UI: [ASSETS.md](ASSETS.md) · 아키텍처: [CLAUDE.md](CLAUDE.md)

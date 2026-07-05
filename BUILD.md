@@ -28,7 +28,7 @@ npm run electron       # 데스크톱 창으로 실행
 
 ### B. 배포용 exe 폴더 만들기
 ```bash
-npm run exe            # vite build + electron-builder --dir → release/win-unpacked/MonsterKeepers.exe
+npm run exe            # vite build + electron-builder --dir → release/win-unpacked/CatchSuhoping.exe
 ```
 > 일부 환경(안티바이러스/샌드박스)에서 electron-builder가 파일 잠금(EBUSY/EPERM)으로 실패할 수 있습니다.
 > 그럴 땐 아래 수동 조립을 쓰세요(이미 받은 electron 런타임을 복사).
@@ -37,13 +37,13 @@ npm run exe            # vite build + electron-builder --dir → release/win-unp
 ```bash
 npm run build
 node node_modules/electron/install.js   # electron 바이너리 확보(최초 1회)
-rm -rf release && mkdir -p release/MonsterKeepers/resources/app
-cp -r node_modules/electron/dist/. release/MonsterKeepers/
-mv release/MonsterKeepers/electron.exe release/MonsterKeepers/MonsterKeepers.exe
-rm -f release/MonsterKeepers/resources/default_app.asar
-cp -r dist electron package.json release/MonsterKeepers/resources/app/
+rm -rf release && mkdir -p release/CatchSuhoping/resources/app
+cp -r node_modules/electron/dist/. release/CatchSuhoping/
+mv release/CatchSuhoping/electron.exe release/CatchSuhoping/CatchSuhoping.exe
+rm -f release/CatchSuhoping/resources/default_app.asar
+cp -r dist electron package.json release/CatchSuhoping/resources/app/
 ```
-→ **`release/MonsterKeepers/MonsterKeepers.exe`** 더블클릭으로 실행. 폴더째 zip하면 제출/배포 가능(약 350MB).
+→ **`release/CatchSuhoping/CatchSuhoping.exe`** 더블클릭으로 실행. 폴더째 zip하면 제출/배포 가능(약 350MB).
 
 ## 구성 파일
 - `electron/main.cjs` — Electron 메인(창 생성, dist/index.html 로드, webSecurity:false)

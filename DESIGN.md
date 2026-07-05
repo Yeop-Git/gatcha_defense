@@ -1,6 +1,6 @@
 # DESIGN.md — 게임 기획서 v4 (구현 반영본)
 
-> 게임명(가칭): **Monster Keepers**
+> 게임명: **캐치 수호핑**
 > 한 줄 소개: 스타터 한 마리를 뽑고, **적을 포획해** 원정대를 키우며 성을 지키는 탑뷰 디펜스 로그라이크.
 >
 > **이 문서는 실제 구현(`/src`)을 정본으로 서술한다.** 수치는 `src/data/constants.ts`·`skills.csv`·`enemies.ts`·`stages.ts` 기준.
