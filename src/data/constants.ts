@@ -172,6 +172,12 @@ export const MODEL_OUTLINE_THICKNESS = 0.012;
  * 폴백 성채의 총높이(약 6.5)에 맞춰둔 값 — 넣을 모델 비례에 맞게 여기만 조정.
  */
 export const CASTLE_MODEL_HEIGHT = 6.5;
+/**
+ * 성 모델 최대 가로 크기(발판) — 높이보다 폭이 큰 넓적한 성채가 필드를 넘어 퍼지지 않게
+ * max(x,z)를 이 값 이하로 제한한다(높이/폭 중 더 제한적인 쪽으로 축소). TILE=2 기준 ~3.25칸.
+ * 폴백 성채 발판(지름 약 6.4)과 비슷한 크기.
+ */
+export const CASTLE_MODEL_FOOTPRINT = 6.5;
 
 /** ?ы듃?덉씠??PNG) ?뺢퇋???뺤궗媛곹삎 ??蹂 px + ?щ갚 鍮꾩쑉 */
 export const PORTRAIT_SIZE = 256;

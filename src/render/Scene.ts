@@ -212,7 +212,9 @@ export class Scene {
       !UNIT_SLOTS.some((s) => Math.hypot(c.x - s.x, c.z - s.z) < FIELD.tile * 0.8),
     );
     for (let i = usable.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [usable[i], usable[j]] = [usable[j], usable[i]]; }
-    const count = Math.min(this.decorDensity, usable.length);
+    // 텅 빈 잔디(특히 가운데)를 장식으로 채운다 — 스테이지 고유 밀도(정체성)는 유지하되 훨씬 풍성하게.
+    // 사용 가능한 비경로 셀의 약 절반 + 스테이지 베이스라인만큼 배치(경로/기지/배치슬롯은 이미 제외됨).
+    const count = Math.min(this.decorDensity + Math.round(usable.length * 0.5), usable.length);
     for (let i = 0; i < count; i++) {
       const c = usable[i];
       const prop = makeProp(this.theme);

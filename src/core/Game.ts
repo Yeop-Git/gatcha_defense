@@ -3,7 +3,7 @@ import { MonsterViewer } from '../render/MonsterViewer';
 import { UI, type HandCard } from '../ui/UI';
 import { Tutorial } from '../ui/Tutorial';
 import { state, unitName, displayName, EQUIP_CAP, type CardGain, type SpecialKind } from './GameState';
-import { saveRun, loadRun, clearRun, hasRun } from './save';
+import { saveRun, saveCheckpoint, restoreCheckpoint, loadRun, clearRun, hasRun } from './save';
 import { Battle } from '../systems/Battle';
 import { STAGES, EVENT_NODES, BUFF_NODES } from '../data/stages';
 import { ENEMIES } from '../data/enemies';
@@ -81,6 +81,8 @@ export class Game {
     this.ui.onEvolveAck = () => this.onEvolveAck();
     this.ui.onCardReplacePick = (discardId) => this.pickCardReplace(discardId);
     this.ui.onRestart = () => { clearRun(); this.startRun(); };
+    // 사망 후 '다시 도전' — lose()에서 이미 스테이지 시작 체크포인트로 복원됨. 홈으로 돌아가 재출정.
+    this.ui.onRetryStage = () => this.showLobby();
     this.ui.onPlacementToggle = (_id) => {};
     this.ui.onEnterBattle = () => this.openStageMap();
     this.ui.onStageEnter = () => { this.ui.hideStageMap(); this.enterBattle(); };
@@ -697,6 +699,8 @@ export class Game {
   private startStage(index: number): void {
     this.normalizeRosterCap();
     state.stageIndex = index;
+    // 스테이지 시작 시점 체크포인트 — 사망 시 이 시점으로 되돌려 재도전(로그라이크 폐지).
+    saveCheckpoint();
     setBgmTrack('battle');
     const def = STAGES[index];
     const jumps = STAGES.filter((s) => s.difficultyJump && s.id <= def.id).length;
@@ -713,7 +717,8 @@ export class Game {
     // 후반에 실제로 아프게 — 단, 순삭 절벽은 피하려 스테이지 계수는 낮게 유지.
     const earlyAtkEase = index <= 2 ? 0.85 + index * 0.05 : 1;
     const atkScale = earlyAtkEase * (1 + index * 0.03) * (1 + 0.09 * jumps);
-    this.battle = new Battle(this.scene, state, def, hpScale, atkScale);
+    // 튜토리얼 진행 중이면 자동 배치를 끄고 '직접 배치'를 유도한다.
+    this.battle = new Battle(this.scene, state, def, hpScale, atkScale, this.tutorial.isActive);
     this.paused = false;
     this.speed = settings.speed; // 설정의 기본 전투 속도 적용
     this.lastPhase = this.battle.phase;
@@ -1034,8 +1039,9 @@ export class Game {
     this.battle = null;
     this.mode = 'title';
     setBgmTrack('lobby');
+    // 로그라이크 폐지: 세이브를 지우지 않고 스테이지 시작 시점으로 되돌려 재도전할 수 있게 한다.
+    restoreCheckpoint();
     this.ui.showLose(reason);
-    clearRun();
   }
 
   // ── 루프 ──

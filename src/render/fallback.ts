@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Element, ElementOrNeutral } from '../core/types';
-import { ELEMENT_COLOR, NEUTRAL_COLOR, ELEMENT_ICON, CREATURE_DISPLAY_SCALE, CASTLE_MODEL_HEIGHT } from '../data/constants';
+import { ELEMENT_COLOR, NEUTRAL_COLOR, ELEMENT_ICON, CREATURE_DISPLAY_SCALE, CASTLE_MODEL_HEIGHT, CASTLE_MODEL_FOOTPRINT } from '../data/constants';
 import { attachModel, modelFile, addOutline } from './ModelLoader';
 
 /**
@@ -245,16 +245,17 @@ export function makeBase(): THREE.Group {
     litMat(0x6fd0e8, { roughness: 0.25, emissive: 0x6fd0e8, emissiveIntensity: 0.6 }),
   );
   crystal.position.y = 6.4;
+  // placeholder로 표시 → castle.glb가 로드되면 폴백 성채와 함께 제거된다(새 성 모델 위에
+  // 파란 크리스털이 흔적처럼 떠 있지 않게). GLB가 없으면 폴백 성채에 남아 HP 색 피드백을 제공.
   crystal.userData.placeholder = true;
   g.add(crystal);
   g.userData.crystal = crystal;
   // 금색 깃대 (금속 질감)
   addPart(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 6), litMat(GOLD, { metalness: 0.7, roughness: 0.35 })), 0, 6.0, 0);
-  // 성 HP는 상단 HUD 🏰 게이지로 표시(#hud-actions와 겹침 방지 — 성 위 3D 바 제거).
-  // 대신 수호 코어(crystal)를 HP 피드백에 사용: setBaseHp에서 낮을수록 붉게 물든다.
-  // ▶ 예비: public/assets/models/castle.glb 를 넣으면 폴백 성채(위 placeholder 전부)를
-  //   자동 대체한다. 파일 없으면 조용히 폴백 유지. 크리스털 HP 틴트는 모델 교체 시
-  //   사라지지만 HP는 상단 HUD 🏰 게이지가 계속 표시한다. 애니(깃발 흔들림 등)가 있으면 재생.
-  attachModel(g, modelFile.castle(), CASTLE_MODEL_HEIGHT, undefined, [/idle/i, /wave/i, /flag/i]);
+  // 성 HP는 상단 HUD 🏰 게이지로 표시. 폴백 성채에선 수호 코어(crystal)도 색으로 HP를 보조 표시.
+  // ▶ public/assets/models/castle.glb 를 넣으면 폴백 성채(placeholder 전부)를 대체한다.
+  //   파일 없으면 조용히 폴백 유지. 애니(깃발 흔들림 등)가 있으면 재생.
+  // lit=true: 성은 unlit(플랫 카툰) 대신 PBR 유지 → 씬 조명에 반응하는 입체감(요청). 아웃라인 생략.
+  attachModel(g, modelFile.castle(), CASTLE_MODEL_HEIGHT, undefined, [/idle/i, /wave/i, /flag/i], true, true, CASTLE_MODEL_FOOTPRINT);
   return g;
 }

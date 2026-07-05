@@ -79,13 +79,14 @@ export class Battle {
   private growthEvents: GrowthEvent[] = [];
   private autoDrawTimer = 0;
 
-  constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number, private atkScale = 1) {
+  constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number, private atkScale = 1, skipAutoPlace = false) {
     setStageLayout(stage.id - 1); // 스테이지별 경로/슬롯 적용 (FIELD.path·UNIT_SLOTS 인플레이스 교체)
     scene.setStage(stage.id, stage.theme); // 스테이지 고유 팔레트/장식 밀도
     scene.rebuildMap();
     this.deck = new DeckSystem(state.manaMax, state.manaRegen);
     this.state.placementCap = MAX_MONSTERS;
-    this.autoPlace();
+    // 튜토리얼 첫 전투에선 자동 배치를 건너뛴다 — "배치하라"는 안내와 실제 상태가 어긋나지 않게(직접 배치 유도).
+    if (!skipAutoPlace) this.autoPlace();
     this.hasDarkS3 = state.roster.some((u) => u.element === 'dark' && u.stage >= 3);
     bus.emit('stage:start', { stage: stage.id });
   }
@@ -148,6 +149,7 @@ export class Battle {
     const m = new Monster(unit, slot, s.x, s.z, this.state.unitAtkMult);
     this.units.push(m);
     this.scene.entities.add(m.view);
+    bus.emit('unit:placed', { uid: unit.uid, slot });
     return true;
   }
 
@@ -1194,6 +1196,8 @@ export class Battle {
     playSfx('capture');
     const r = this.state.registerCapture(e.def.id);
     const dex = r.firstTime ? '도감 신규 등록' : `포획 ${r.count}회`;
+    // 포획 성공 신호(모든 분기 공통) — 튜토리얼 포획 단계는 이 이벤트로 1회 포획 시 완료된다.
+    bus.emit('capture:success', { species: e.def.id, name: e.def.name });
 
     // 야생 크리처: 같은 속성 '크리처' 보유 시 흡수 강화(별도 유닛 X), 미보유 시 새 크리처로 합류.
     if (e.def.creatureStage) {

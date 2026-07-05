@@ -120,8 +120,13 @@ export function addOutline(mesh: THREE.Mesh): void {
   mesh.add(outline); // 부모(mesh) 트랜스폼 상속 → 정규화 스케일도 함께 적용
 }
 
-async function loadRaw(file: string): Promise<LoadedModel> {
-  let p = cache.get(file);
+/**
+ * @param lit true면 PBR(MeshStandardMaterial)을 그대로 유지 — 씬 조명에 반응하는 lit 셰이딩 +
+ *   아웃라인 생략(카툰 대신 입체감). 성(城)처럼 조명감을 주고 싶은 대형 프롭 전용.
+ */
+async function loadRaw(file: string, lit = false): Promise<LoadedModel> {
+  const key = lit ? `${file}#lit` : file;
+  let p = cache.get(key);
   if (!p) {
     p = loader.loadAsync(BASE + file).then((gltf) => {
       const meshes: THREE.Mesh[] = [];
@@ -133,19 +138,21 @@ async function loadRaw(file: string): Promise<LoadedModel> {
         o.castShadow = true;
         o.receiveShadow = true;
         o.frustumCulled = false; // 스킨드 메시가 애니메이션 중 잘못 컬링되는 문제 방지
-        if (MODEL_UNLIT) {
+        // lit 모델은 PBR 머티리얼을 유지해 씬 조명에 반응(입체감). 그 외엔 unlit(카툰)로 변환.
+        if (MODEL_UNLIT && !lit) {
           o.material = Array.isArray(o.material)
             ? o.material.map(toUnlit)
             : toUnlit(o.material);
         }
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((mm) => processMaterial(mm, MODEL_MAX_TEXTURE));
-        // 스킨드(리깅) 메시의 인버티드 헐 아웃라인은 본을 따라가지 못한다 → 애니메이션 모델은 아웃라인 생략
-        if (MODEL_OUTLINE && !(animated && o instanceof THREE.SkinnedMesh)) addOutline(o);
+        // 스킨드(리깅) 메시의 인버티드 헐 아웃라인은 본을 따라가지 못한다 → 애니메이션 모델은 아웃라인 생략.
+        // lit 모델은 아웃라인을 붙이지 않는다(플랫 카툰 룩 방지).
+        if (MODEL_OUTLINE && !lit && !(animated && o instanceof THREE.SkinnedMesh)) addOutline(o);
       }
       return { scene: gltf.scene, animations: gltf.animations };
     });
-    cache.set(file, p);
+    cache.set(key, p);
   }
   const loaded = await p;
   // SkeletonUtils.clone: 스킨드 메시의 본 바인딩까지 올바르게 복제 (Object3D.clone은 깨짐)
@@ -185,13 +192,21 @@ function posedBox(root: THREE.Object3D): THREE.Box3 {
   return box;
 }
 
-/** 목표 높이에 맞춰 정규화 (발바닥 y=0). 애니메이션 포즈가 반영된 실제 외형 기준. */
-function normalize(model: THREE.Group, targetHeight: number): void {
+/**
+ * 목표 높이에 맞춰 정규화 (발바닥 y=0). 애니메이션 포즈가 반영된 실제 외형 기준.
+ * maxFootprint를 주면 가로 크기(max(x,z))도 그 값 이하로 제한 — 높이보다 폭이 큰 넓적한
+ * 모델(성채 등)이 필드를 넘어 퍼지지 않게 "높이 또는 폭 중 더 제한적인 쪽"으로 축소한다.
+ */
+function normalize(model: THREE.Group, targetHeight: number, maxFootprint?: number): void {
   const box = posedBox(model);
   const size = new THREE.Vector3();
   box.getSize(size);
   const h = size.y || 1;
-  const s = targetHeight / h;
+  let s = targetHeight / h;
+  if (maxFootprint) {
+    const horiz = Math.max(size.x, size.z) || 1;
+    s = Math.min(s, maxFootprint / horiz);
+  }
   model.scale.setScalar(s);
   // 원점 기준 균등 스케일 → 발바닥(min.y)도 s배. 재측정 없이 y 보정.
   model.position.y -= box.min.y * s;
@@ -297,8 +312,10 @@ export function attachModel(
   tint?: number,
   animPrefs?: RegExp[],
   playAnimation = true,
+  lit = false,
+  maxFootprint?: number,
 ): void {
-  loadRaw(file)
+  loadRaw(file, lit)
     .then(({ scene: model, animations }) => {
       // 내장 애니메이션: 이동 클립 루프 + 공격/사망 원샷 컨트롤러.
       // ★ 정규화 전에 믹서를 만들어 첫 프레임을 포즈시킨다 — 바인드 포즈가 붕괴된 모델도
@@ -315,7 +332,7 @@ export function attachModel(
           group.userData.anim = makeAnimController(mixer, animations, loco);
         }
       }
-      normalize(model, targetHeight);
+      normalize(model, targetHeight, maxFootprint);
       if (tint !== undefined) tintModel(model, tint);
       // 폴백 placeholder 제거
       for (const child of [...group.children]) {

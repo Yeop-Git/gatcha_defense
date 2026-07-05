@@ -36,6 +36,8 @@ export interface GameEvents {
   'base:destroyed': {};
   'enemy:killed': { element: ElementOrNeutral; x: number; z: number; isBoss: boolean };
   'card:played': { id: string };
+  /** 유닛을 슬롯에 배치했을 때 — 튜토리얼 배치 단계 진행용. */
+  'unit:placed': { uid: string; slot: number };
   'card:draw': {};
   'mana:change': { mana: number; max: number };
   'toast': { text: string; kind?: 'good' | 'bad' | 'info' };
@@ -47,5 +49,7 @@ export interface GameEvents {
   'reaction:fired': { name: string };
   /** 포획했으나 로스터가 가득 → 상위(Game)가 '오래된 2 + 신규' 버리기 모달을 띄운다. */
   'capture:full': { species: string; name: string };
+  /** 적을 성공적으로 포획할 때마다(합류/흡수/만석 무관) — 튜토리얼 포획 단계 진행용. */
+  'capture:success': { species: string; name: string };
   'unit:grown': { uid: string; from: string; to: string; element: Element; evolved: boolean; gains: { uid: string; cardId: string }[] };
 }

@@ -1,5 +1,6 @@
 import { bus } from '../core/events';
 import { playSfx } from '../audio/Sfx';
+import { CAPTURE_CARD_ID } from '../data/constants';
 
 /**
  * 첫 모험 온보딩 튜토리얼 — 스포트라이트 마스킹 + 애니메이션 코치마크.
@@ -15,9 +16,9 @@ import { playSfx } from '../audio/Sfx';
 
 const KEY = 'catch-suhoping-tutorial-v2';
 
-type Step = 'idle' | 'place' | 'defend' | 'capture' | 'done';
+type Step = 'idle' | 'place' | 'startwave' | 'skill' | 'capture' | 'done';
 /** 진행 순서 보장용 랭크 — 뒤 단계 이벤트만 전진시킨다(중복/역행 무시). */
-const RANK: Record<Step, number> = { idle: 0, place: 1, defend: 2, capture: 3, done: 4 };
+const RANK: Record<Step, number> = { idle: 0, place: 1, startwave: 2, skill: 3, capture: 4, done: 5 };
 
 interface StepDef {
   no: string;
@@ -29,34 +30,49 @@ interface StepDef {
   place: 'above' | 'below' | 'center';
 }
 
+/**
+ * 4단계(+한 줄 마무리). 각 단계는 서로 다른 대상을 스포트라이트해 "무엇을 만질지"가 명확하다.
+ *  - place    : 배치 셸프의 유닛 카드(튜토리얼에선 자동 배치를 꺼서 실제로 배치가 필요하다)
+ *  - startwave: [웨이브 시작] 버튼(#begin-cta)
+ *  - skill    : 스킬 카드(포획구 제외) — 드래그 앤 드롭으로 '사용'(공격 스킬만 있는 게 아니라 사용으로 설명)
+ *  - capture  : 반짝이는 포획구 카드(.card.pinned) — 구멍이 이 카드로 이동해 단계가 시각적으로 구분된다.
+ * target 선택자가 아직 없으면 reposition()이 #card-shelf로 폴백한다.
+ */
 const STEPS: Record<Exclude<Step, 'idle'>, StepDef> = {
   place: {
     no: 'STEP 1 / 4',
     title: '① 원정대 배치',
-    target: '#card-shelf',
+    target: '#card-shelf .unit-card',
     place: 'above',
-    body: '아래 <b>몬스터 카드</b>를 <b>전장 위로 드래그</b>해 자리를 잡으세요.<br/>배치를 마치면 <b>[웨이브 시작]</b> 버튼을 눌러 적을 맞이합니다.',
+    body: '아래 몬스터 카드를 <b>전장으로 드래그</b>해 배치하세요.',
   },
-  defend: {
+  startwave: {
     no: 'STEP 2 / 4',
-    title: '② 스킬 카드로 방어',
-    target: '#card-shelf',
+    title: '② 웨이브 시작',
+    target: '#begin-cta',
     place: 'above',
-    body: '적이 몰려옵니다! <b>스킬 카드를 탭하거나 전장으로 드래그</b>해 공격하세요.<br/>왼쪽 <b>마나 💧</b>를 소모하며, 시간이 지나면 저절로 회복됩니다.',
+    body: '배치를 마쳤으면 <b>[웨이브 시작]</b>을 눌러 적을 맞이하세요.',
+  },
+  skill: {
+    no: 'STEP 3 / 4',
+    title: '③ 스킬 사용',
+    target: '#card-shelf .card:not(.pinned)',
+    place: 'above',
+    body: '스킬 카드를 <b>전장으로 드래그</b>해 사용하세요 (마나 💧 소모).',
   },
   capture: {
-    no: 'STEP 3 / 4',
-    title: '③ 적을 포획',
-    target: '#card-shelf',
+    no: 'STEP 4 / 4',
+    title: '④ 적을 포획',
+    target: '#card-shelf .card.pinned',
     place: 'above',
-    body: '빛나는 <b>포획구 카드를 적에게 드래그</b>하면 포획!<br/>포획한 몬스터는 <b>원정대에 합류</b>해 함께 성장합니다.',
+    body: '빛나는 포획구를 <b>적에게 드래그</b>하면 원정대로 포획!',
   },
   done: {
     no: '',
     title: '🎉 준비 완료!',
     target: null,
     place: 'center',
-    body: '속성을 <b>섞어</b> 쓰면 표식이 겹쳐 <b>반응(시너지)</b>이 터집니다 — 예) 젖음💧+화상🔥=증기폭발💨!<br/>레벨업·진화·포획으로 원정대를 키워 <b>스테이지 10 최종보스</b>까지 나아가세요. 행운을 빕니다!',
+    body: '이제 성을 지켜 <b>스테이지 10</b>까지 나아가세요. 행운을 빕니다!',
   },
 };
 
@@ -97,9 +113,16 @@ export class Tutorial {
     this.active = true;
     this.step = 'idle';
     this.offs.push(bus.on('stage:start', () => this.advanceTo('place')));
-    this.offs.push(bus.on('wave:start', () => this.advanceTo('defend')));
-    this.offs.push(bus.on('card:played', () => this.advanceTo('capture')));
-    // 카드를 한 장도 쓰지 않고 웨이브를 넘겨도 완료되도록 wave:clear는 done으로 마무리.
+    // 유닛을 실제로 배치하면 → '웨이브 시작' 안내로.
+    this.offs.push(bus.on('unit:placed', () => this.advanceTo('startwave')));
+    // 웨이브가 시작되면 → 스킬 사용 안내로.
+    this.offs.push(bus.on('wave:start', () => this.advanceTo('skill')));
+    // 포획 단계는 '스킬 카드(포획구 제외)를 처음 썼을 때' 넘어간다.
+    this.offs.push(bus.on('card:played', (e) => {
+      if ((e as { id?: string } | undefined)?.id !== CAPTURE_CARD_ID) this.advanceTo('capture');
+    }));
+    // 포획을 '한 번' 성공하면 즉시 완료. (웨이브를 통째로 클리어해도 폴백으로 완료.)
+    this.offs.push(bus.on('capture:success', () => this.advanceTo('done')));
     this.offs.push(bus.on('wave:clear', () => this.advanceTo('done')));
   }
 
@@ -175,17 +198,22 @@ export class Tutorial {
   /** 대상 요소의 화면 사각형을 읽어 구멍/링/손가락/말풍선을 배치. */
   private reposition(): void {
     if (!this.overlay) return;
-    const target = this.curTarget ? (document.querySelector(this.curTarget) as HTMLElement | null) : null;
-    const r = target?.getBoundingClientRect();
-    // 대상이 없거나(중앙 안내) 아직 레이아웃 전이라 크기가 0이면 → 구멍 없이 화면 중앙 안내로 폴백.
-    // (게임 루프가 손패를 그리기 전 잠깐, 구멍이 구석에 작게 튀는 현상 방지)
+    let target = this.curTarget ? (document.querySelector(this.curTarget) as HTMLElement | null) : null;
+    let r = target?.getBoundingClientRect();
+    // 지정한 카드가 아직 손패에 없거나 크기가 0이면(재드로우·쿨다운 등) 카드 선반으로 폴백 —
+    // 구멍이 갑자기 사라지거나 구석에 튀지 않고 항상 조작 영역을 비춘다.
+    if (this.curTarget && this.curPlace !== 'center' && (!target || !r || r.width < 8 || r.height < 8)) {
+      target = document.querySelector('#card-shelf') as HTMLElement | null;
+      r = target?.getBoundingClientRect();
+    }
+    // 여전히 대상이 없거나(중앙 안내) 크기가 0이면 → 구멍 없이 화면 중앙 안내로 폴백.
     if (!target || !r || this.curPlace === 'center' || r.width < 8 || r.height < 8) {
       this.overlay.classList.remove('spotlight');
       if (this.bubble) { this.bubble.style.left = '50%'; this.bubble.style.top = '50%'; this.bubble.style.transform = 'translate(-50%, -50%)'; }
       return;
     }
     this.overlay.classList.add('spotlight');
-    const pad = 10;
+    const pad = 8;
     const x = r.left - pad, y = r.top - pad, w = r.width + pad * 2, h = r.height + pad * 2;
     if (this.hole) {
       this.hole.style.left = `${x}px`; this.hole.style.top = `${y}px`;

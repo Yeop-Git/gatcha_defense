@@ -283,7 +283,9 @@ body {
   background: rgba(10,6,3,0.55); z-index: 60;
 }
 .scroll {
-  min-width: 420px; width: min(940px, 94vw); max-width: 940px; max-height: 88vh; padding: 30px 34px; text-align: center;
+  min-width: min(420px, 92vw); width: min(940px, 94vw); max-width: 940px; max-height: 90vh; padding: 30px 34px; text-align: center;
+  /* 내용이 화면보다 길면 모달 안에서 스크롤(도감·드래프트 등이 화면 밖으로 잘려나가던 문제 방지). */
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
   background: linear-gradient(180deg, var(--parchment), var(--parchment-dark));
   border: 4px solid var(--gold); border-radius: 10px; color: var(--ink);
   box-shadow: 0 10px 40px rgba(0,0,0,0.6);
@@ -363,10 +365,11 @@ body {
 #tut-overlay { position: fixed; inset: 0; z-index: 55; pointer-events: none; display: none; }
 #tut-overlay.on { display: block; }
 
-/* 구멍: 대상 사각형 위에 놓이는 투명 박스. 거대한 box-shadow로 바깥을 어둡게 덮어 대상만 밝게 남긴다. */
+/* 구멍: 대상(카드) 위에 놓이는 투명 박스. 거대한 box-shadow로 바깥을 어둡게 덮어 그 카드만 밝게 남긴다.
+   카드 크기의 작은 구멍 + 은은한 가장자리 falloff로 "이 카드를 만져라"가 또렷하게 읽힌다. */
 #tut-hole {
-  position: absolute; border-radius: 14px; opacity: 0;
-  box-shadow: 0 0 0 4000px rgba(18,11,5,0.74);
+  position: absolute; border-radius: 10px; opacity: 0;
+  box-shadow: 0 0 0 4000px rgba(18,11,5,0.62), 0 0 26px 6px rgba(18,11,5,0.55);
   transition: left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease;
 }
 /* 중앙 안내(spotlight 없음)일 땐 구멍 없이 화면 전체를 은은히 덮는다. */
@@ -404,6 +407,13 @@ body {
   background: linear-gradient(180deg, var(--parchment), var(--parchment-dark));
   border: 3px solid var(--gold); border-radius: 14px;
   box-shadow: 0 10px 28px rgba(0,0,0,0.55), inset 0 0 0 2px var(--wood-dark);
+}
+/* 말풍선 → 스포트라이트 카드 연결 꼬리(아래 방향). 카드 강조 단계에서만 표시. */
+#tut-overlay.spotlight #tut-bubble::after {
+  content: ''; position: absolute; left: 50%; bottom: -11px; transform: translateX(-50%);
+  border-left: 12px solid transparent; border-right: 12px solid transparent;
+  border-top: 12px solid var(--parchment-dark);
+  filter: drop-shadow(0 3px 2px rgba(0,0,0,0.35));
 }
 #tut-bubble.pop { animation: tutPop 0.28s cubic-bezier(0.2,1.3,0.5,1) both; }
 @keyframes tutPop {
@@ -994,6 +1004,8 @@ body {
 #lobby .lobby-body { margin-bottom: 84px; }
 /* 로비 → 타이틀 복귀 버튼 (좌상단) */
 .lobby-title-btn { position: absolute; top: 18px; left: 18px; z-index: 6; font-size: 14px; padding: 8px 14px; }
+/* 로비 설정 버튼 (우상단) — 배틀 HUD와 동일하게 로비에서도 즉시 접근 */
+.lobby-set-btn { position: absolute; top: 18px; right: 18px; z-index: 6; font-size: 18px; padding: 8px 13px; line-height: 1; }
 
 /* HUD 우측 액션: 스크린 위에 확실히 뜨고 배경 위로 겹쳐 보이지 않게 */
 #hud-actions { z-index: 13; }
@@ -1131,13 +1143,43 @@ body {
 .chip { border-radius: 13px; }
 .card, .unit-card, .big-card, .mcard { border-radius: 14px; }
 
-/* ── 낮은 세로 해상도(노트북 720p·창 축소) 대응 — 하단 카드 선반/배치 바/토스트가 겹치지 않게 축소 ── */
+/* ═══════════════════════════════════════════════════════════════
+   반응형: 대부분의 PC/노트북 해상도 대응 (MacBook Air ~800px 세로 포함).
+   원칙 — 모달은 .scroll이 스크롤을 담당하고, 여기서는 카드/도감/드래프트의
+   고정 크기를 뷰포트에 맞춰 완만히 축소해 "깨짐(잘림·넘침)"을 없앤다.
+   ══════════════════════════════════════════════════════════════ */
+
+/* 노트북급 세로(≤880px: MacBook Air/13" 등) — 하단 선반·드래프트·모달 헤더 축소 */
+@media (max-height: 880px) {
+  #card-shelf { height: 190px; }
+  .card { width: 116px; height: 160px; }
+  .card .art { height: 62px; font-size: 36px; }
+  .draft-card { min-height: 340px; flex-basis: 158px; max-width: 158px; }
+  .scroll h1 { font-size: 26px; }
+  .scroll { padding: 22px 26px; }
+}
+
+/* 낮은 세로 해상도(노트북 720p·창 축소) — 더 강하게 축소 */
 @media (max-height: 760px) {
   #card-shelf { height: 168px; }
   .card { width: 104px; height: 146px; }
+  .card .art { height: 56px; font-size: 32px; }
   #placement-bar { bottom: 234px; }
   #toast-layer { bottom: 246px; }
   #drop-zone.on.shelf { padding-bottom: 140px; }
+  .draft-card { min-height: 300px; flex-basis: 146px; max-width: 146px; padding: 12px 10px 16px; }
+}
+
+/* 좁은 가로(≤1200px) — 도감 셀/HUD가 넘치지 않게 정리 */
+@media (max-width: 1200px) {
+  #hud-top { gap: 8px; }
+  .gauge.big .bar-wrap { width: 150px; }
+}
+
+/* 도감: 화면이 작을 때 셀/그리드를 줄여 한눈에 들어오게(모달은 세로 스크롤로 흡수) */
+@media (max-height: 880px), (max-width: 1000px) {
+  .dex-grid { gap: 7px !important; }
+  .dex-line { gap: 3px; padding: 5px 6px; }
 }
 
 /* ── 접근성: 모션 최소화 선호 시 무한 애니메이션/전환을 사실상 정지(어지럼 방지) ── */
