@@ -733,25 +733,25 @@ export class Game {
   /** 성장 플로우(카드 획득) 종료 후 목적지. 'battle' = 전투 중 흡수-진화 후 전투 재개. */
   private growthDest: 'node' | 'stagemap' | 'battle' = 'node';
 
+  private flushBattleGrowth(dest: 'battle' | 'stagemap' = 'battle'): boolean {
+    if (!this.battle) return false;
+    for (const ev of this.battle.consumeGrowthEvents()) {
+      if (ev.evolved) this.evolveQueue.push({ uid: ev.uid, from: ev.from, to: ev.to, element: ev.element });
+      this.gainQueue.push(...ev.gains);
+    }
+    if (!this.evolveQueue.length && !this.gainQueue.length) return false;
+    this.paused = true;
+    this.growthDest = dest;
+    this.continueGrowthFlow();
+    return true;
+  }
+
   private onStageClearedDetected(): void {
     this.paused = true;
     const def = this.battle!.stage;
     // 유닛 경험치 지급
     const rewards: string[] = [`🪙 ${state.gold}`];
-    const xpGain = 120 + def.id * 90; // 만렙 30 곡선에 맞춘 스테이지 XP (레벨업 완만화)
-    for (const u of state.roster) {
-      const before = unitName(u);
-      const r = state.addUnitXp(u, xpGain);
-      if (r.evolved) {
-        this.evolveQueue.push({ uid: u.uid, from: before, to: unitName(u), element: u.element });
-        // 진화 각성: 그 단계의 핵심 스킬을 즉시 배운다
-        const key = state.evolveKeySkill(u);
-        if (key) this.gainQueue.push({ uid: u.uid, cardId: key });
-        rewards.push(`${displayName(u)} 진화! ${u.stage}단 달성`);
-      }
-      this.gainQueue.push(...r.gains);
-    }
-    if (this.gainQueue.length) rewards.push(`새 스킬 ${this.gainQueue.length}장 획득`);
+    rewards.push('처치와 웨이브 보상 XP를 정산했습니다.');
     // 유대 성장: 함께 클리어한 유닛일수록 누적(뚝심 육성 보상, §14)
     state.growBond();
     if (state.roster.length) rewards.push('동료 유대 상승. HP와 공격 보너스가 증가합니다.');
@@ -1003,6 +1003,9 @@ export class Game {
         this.lastPhase = this.battle.phase;
         this.refreshHand();
         this.refreshPlacement();
+        if (prev === 'wave' && this.battle.phase === 'placement') {
+          this.flushBattleGrowth('battle');
+        }
         // 첫 전투 시작 시 1회 포획 안내 (핵심 루프 온보딩)
         if (prev === 'placement' && this.battle.phase !== 'placement' && !this.captureHintShown) {
           this.captureHintShown = true;
@@ -1025,9 +1028,11 @@ export class Game {
     if (!this.battle) return;
     const phase = this.battle.phase;
     if (phase === 'stageClear') {
+      if (this.flushBattleGrowth('battle')) return;
       this.battle.phase = 'placement'; // 중복 방지 (이미 처리)
       this.onStageClearedDetected();
     } else if (phase === 'won') {
+      if (this.flushBattleGrowth('battle')) return;
       this.battle.finish(); this.battle = null; this.win();
     } else if (phase === 'lost') {
       const reason = '성이 무너졌습니다.';

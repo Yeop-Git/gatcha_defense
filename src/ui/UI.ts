@@ -609,8 +609,8 @@ export class UI {
       // 2단계: 자리를 비울 동료 선택
       scroll.innerHTML = `<h1>동료를 한 명 보내주세요</h1>
         <p><b>${data.newName}</b>이(가) 들어갈 자리를 만들려면, 원정대에서 내보낼 동료를 고르세요.</p>
-        <div class="replace-row"></div>`;
-      const row = scroll.querySelector('.replace-row')!;
+        <div class="replace-row capture-replace-row"></div>`;
+      const row = scroll.querySelector('.capture-replace-row')!;
       for (const o of data.options) {
         const deadTag = o.dead ? '<div class="rs-tag downed">쓰러짐</div>' : '<div class="rs-tag old">동료</div>';
         const deadDesc = o.dead ? `${o.sub}<br/><b class="downed-note">현재 쓰러짐</b>` : o.sub;

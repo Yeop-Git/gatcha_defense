@@ -39,8 +39,8 @@ const WAVES: Record<number, SpawnGroup[][]> = {
   ],
   3: [
     [{ enemy: 'mushling', count: 6, interval: 0.8 }, { enemy: 'monkroose', count: 4, interval: 1.0 }],
-    [{ enemy: 'mushking', count: 1, interval: 1 }, { enemy: 'mushlord', count: 4, interval: 1.1 }, { enemy: 'alpaca', count: 4, interval: 1.0 }, { enemy: 'beebee', count: 4, interval: 0.9 }],
-    [{ enemy: 'golem', count: 1, interval: 1 }, { enemy: 'cactoro', count: 3, interval: 1.4 }, { enemy: 'mushling', count: 6, interval: 0.9 }],
+    [{ enemy: 'mushking', count: 1, interval: 1 }, { enemy: 'mushlord', count: 3, interval: 1.1 }, { enemy: 'alpaca', count: 3, interval: 1.0 }, { enemy: 'beebee', count: 3, interval: 0.95 }],
+    [{ enemy: 'golem', count: 1, interval: 1 }, { enemy: 'cactoro', count: 2, interval: 1.5 }, { enemy: 'mushling', count: 5, interval: 0.95 }],
   ],
   4: [
     [{ enemy: 'beebee', count: 6, interval: 0.7 }, { enemy: 'pigeon', count: 4, interval: 0.9 }],

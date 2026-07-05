@@ -528,6 +528,15 @@ body {
 }
 .replace-row { display: flex; gap: 18px; justify-content: center; flex-wrap: nowrap; overflow: visible; max-width: 100%; margin: 18px 0; }
 .replace-row > * { flex: 0 0 auto; }
+.capture-replace-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: min(54vh, 470px);
+  padding: 14px 6px 8px;
+}
+.capture-replace-row .replace-slot { flex: 0 0 150px; }
 .replace-slot { position: relative; cursor: pointer; transition: transform 0.15s; }
 .replace-slot:hover { transform: translateY(-8px) scale(1.05); }
 .replace-slot:hover .big-card { border-color: var(--hp-ruby); box-shadow: 0 0 20px rgba(192,57,43,0.6); }

@@ -89,7 +89,7 @@ function itemEffectOf(unit: OwnedUnit): ItemEffect {
 
 /** XP 곡선: 레벨 n → n+1 필요량. 만렙 30 확장 + 레벨업 완화(기존 20+12n에서 상향). */
 export function xpForLevel(level: number): number {
-  return 30 + level * 15;
+  return 40 + level * 18;
 }
 
 /** 유닛 진화 단계 계산 (레벨 기준) */

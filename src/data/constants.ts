@@ -204,8 +204,8 @@ export const UNIT_BASE = {
 } as const;
 
 export const EVOLVE_MULT = 1.6; // 吏꾪솕???ㅽ꺈 諛곗쑉
-export const LATE_BLOOM_MULT = 0.8; // 鍮??대몺 1??蹂댁젙
-export const LATE_BLOOM_STAGE3_JUMP = 1.9; // 3???꾨떖 ?먰봽
+export const LATE_BLOOM_MULT = 0.88; // 鍮??대몺 1??蹂댁젙
+export const LATE_BLOOM_STAGE3_JUMP = 1.85; // 3???꾨떖 ?먰봽
 
 /**
  * ?좊?(Bond) ?깆옣 ???ъ폆紐ъ떇 "?뚮젅?댁뼱? ?④퍡 ?щ뒗" 異붽? ?ㅽ꺈 (짠14).
@@ -217,13 +217,21 @@ export const BOND_CAP = 0.3; // ?좊? 蹂대꼫???곹븳 (+30%) ???꾨컲 援곕
 
 /** 留덈굹 (짠6). 湲곕낯? ?ㅽ럺(珥덈떦 1)??媛源앷쾶 ??? ?좊떅??留덈굹 ?뚰븨??媛?띿쓣 ?대떦. */
 export const MANA_MAX = 8;
-export const MANA_REGEN = 0.5; // 초당 기본 마나 회복. 카드 타이밍이 중요하도록 타이트하게 유지.
+export const MANA_REGEN = 0.55; // 초당 기본 마나 회복. 카드 타이밍이 중요하도록 타이트하게 유지.
 /** ? = 留덈굹 ?뚰븨: 諛곗튂??? ?좊떅 1泥대떦 珥덈떦 異붽? 留덈굹 */
 export const GRASS_MANA_REGEN = 0.13;
 export const HAND_SIZE = 5;
 export const CAPTURE_CARD_ID = 'n_capture';
 /** ?묎툒 泥섏튂(湲곗? ?뚮났) ?ъ궗??荑⑤떎??珥? ??짠6.2 "荑⑤떎??議댁옱" */
 export const BASE_HEAL_CD = 18;
+
+export const XP_REWARD = {
+  kill: { swarm: 5, flyer: 6, normal: 8, healer: 9, tank: 11, elite: 16, miniboss: 36, boss: 90 } as Record<EnemyTier, number>,
+  waveBase: 12,
+  wavePerStage: 4,
+  wavePerIndex: 3,
+  finalWaveBonus: 8,
+} as const;
 
 /** 遺??floating) ?곗텧 ?뚮씪誘명꽣 ??鍮??대몺 ?뺣졊瑜섏뿉留??곸슜. ?섎㉧吏???묒?(?좊땲硫붿씠??異뷀썑). */
 export const FLOAT = { height: 0.5, amp: 0.24, speed: 1.9 } as const;
@@ -257,7 +265,7 @@ export const DARK_KILL_STACK_MAX = 0.5;
 export const FIXED_DT = 1 / 60;
 
 /** ?쒖씠???먰봽 ?ㅽ뀒?댁??먯꽌 ???ㅽ꺈 諛곗쑉 (짠10) ??踰쎌씠 ?덈Т 媛?붾씪 ?꾪솕 */
-export const DIFFICULTY_JUMP_MULT = 1.24;
+export const DIFFICULTY_JUMP_MULT = 1.2;
 
 /** 유닛 생존 바닥: 스테이지가 오를수록 아군 최대 HP를 +5%/스테이지 보정.
  *  (적 공격력·HP는 스테이지마다 오르는데 유닛 HP는 레벨/진화로만 올라, 뒤처진 유닛이 순삭되던 문제 완화) */

@@ -28,6 +28,7 @@ import {
   CAPTURE,
   CAPTURE_CARD_ID,
   CAPTURE_RADIUS,
+  XP_REWARD,
 } from '../data/constants';
 import { CaptureOrb } from '../entities/CaptureOrb';
 import { Enemy } from '../entities/Enemy';
@@ -42,6 +43,7 @@ import { unlockEnemy } from '../core/Dex';
 
 type Phase = 'placement' | 'wave' | 'stageClear' | 'lost' | 'won';
 interface SpawnEvent { t: number; enemy: string }
+interface GrowthEvent { uid: string; from: string; to: string; element: Element; evolved: boolean; gains: { uid: string; cardId: string }[] }
 
 const colorOf = (el: ElementOrNeutral): number => (el === 'neutral' ? NEUTRAL_COLOR : ELEMENT_COLOR[el]);
 
@@ -70,6 +72,7 @@ export class Battle {
   private combo = 0;
   private comboTimer = 0;
   private unitGhost: THREE.Group | null = null; // 배치 드래그 반투명 미리보기 모델
+  private growthEvents: GrowthEvent[] = [];
 
   constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number, private atkScale = 1) {
     setStageLayout(stage.id - 1); // 스테이지별 경로/슬롯 적용 (FIELD.path·UNIT_SLOTS 인플레이스 교체)
@@ -299,6 +302,12 @@ export class Battle {
     return this.stage.waves.length;
   }
 
+  consumeGrowthEvents(): GrowthEvent[] {
+    const out = this.growthEvents;
+    this.growthEvents = [];
+    return out;
+  }
+
   /** 웨이브 보너스 버프 적용 후 배치된 유닛 스탯 즉시 갱신. */
   refreshUnitStats(): void {
     for (const m of this.units) m.refreshStats();
@@ -381,6 +390,7 @@ export class Battle {
   }
 
   private onWaveClear(): void {
+    this.awardWaveXp();
     bus.emit('wave:clear', { stage: this.stage.id, wave: this.waveIndex + 1 });
     this.waveIndex++;
     if (this.waveIndex >= this.totalWaves) {
@@ -646,6 +656,7 @@ export class Battle {
     bus.emit('enemy:killed', { element: e.element, x: e.pos.x, z: e.pos.z, isBoss: e.isBoss });
     this.scene.vfx.burst(e.pos.x, e.pos.z, ELEMENT_COLOR[e.element === 'neutral' ? 'light' : e.element] ?? 0xffffff, 10);
     this.state.gold += e.isBoss ? 100 : e.isMini ? 30 : 3;
+    this.awardKillXp(e);
     if (this.hasDarkS3) this.state.darkKillStacks = Math.min(DARK_KILL_STACK_MAX, this.state.darkKillStacks + DARK_KILL_STACK);
     // 연속 처치 콤보: 5의 배수마다 골드 보너스 + 화려한 표시(간단한 손맛 요소).
     this.combo++;
@@ -704,6 +715,41 @@ export class Battle {
       this.scene.vfx.floatText(m.pos.x, m.pos.z + 0.6, `+${healed}`, '#6fae4c');
       this.scene.vfx.burst(m.pos.x, m.pos.z, 0x8fe06a, 6);
     }
+  }
+
+  private awardKillXp(e: Enemy): void {
+    const amount = XP_REWARD.kill[e.def.tier] ?? XP_REWARD.kill.normal;
+    const recipients = this.units.filter((m) => m.alive).map((m) => m.unit);
+    if (!recipients.length) return;
+    for (const unit of recipients) this.addUnitXpDeferred(unit, amount);
+    this.scene.vfx.floatText(e.pos.x, e.pos.z + 0.75, `XP +${amount}`, '#9fd8ff');
+  }
+
+  private awardWaveXp(): void {
+    const amount = XP_REWARD.waveBase
+      + this.stage.id * XP_REWARD.wavePerStage
+      + (this.waveIndex + 1) * XP_REWARD.wavePerIndex
+      + (this.waveIndex + 1 >= this.totalWaves ? XP_REWARD.finalWaveBonus : 0);
+    for (const unit of this.state.roster) this.addUnitXpDeferred(unit, amount);
+    bus.emit('toast', { text: `웨이브 보상: 전원 XP +${amount}`, kind: 'good' });
+  }
+
+  private addUnitXpDeferred(unit: OwnedUnit, amount: number): void {
+    const from = unitName(unit);
+    const r = this.state.addUnitXp(unit, amount);
+    if (r.evolved) {
+      const key = this.state.evolveKeySkill(unit);
+      if (key && !r.gains.some((g) => g.cardId === key)) r.gains.push({ uid: unit.uid, cardId: key });
+    }
+    if (!r.evolved && r.gains.length === 0) return;
+    this.growthEvents.push({
+      uid: unit.uid,
+      from,
+      to: unitName(unit),
+      element: unit.element,
+      evolved: r.evolved,
+      gains: r.gains,
+    });
   }
 
   private nearestEnemy(x: number, z: number): Enemy | null {

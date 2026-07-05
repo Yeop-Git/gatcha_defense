@@ -3,7 +3,7 @@ n_draw,hero,재정비,normal,1,2,self,draw,n=2,,카드 2장을 뽑습니다.
 n_revive,hero,재소환진,normal,1,3,ally-all,reviveUnit,hpPct=0.3;max=1;fallbackDraw=1,,쓰러진 아군 하나를 최대 HP의 30%로 되살립니다. 대상이 없으면 카드 1장을 뽑습니다.
 n_capture,hero,포획구,normal,1,3,point,capture,radius=1.4,,지정한 위치에 포획구를 던집니다. 보스는 기절 중일 때만 포획할 수 있습니다.
 n_bind,hero,구속 덫,normal,1,2,point,bind,radius=2.6;duration=2.5,,범위 안의 적을 2.5초 동안 묶습니다.
-n_heal,hero,응급 수리,normal,1,3,self,baseHeal,amount=30,,성 HP를 30 회복합니다.
+n_heal,hero,응급 수리,normal,1,3,ally-all,baseHeal,amount=45,,성 및 살아있는 아군 HP를 45 회복합니다.
 fire_spark,fire,불씨,fire,1,1,point,damage,amount=16;radius=1.2;mark=burn;markStacks=1,,적에게 16 피해와 화상 1중첩.
 fire_ball,fire,화염구,fire,1,2,point,damage,amount=24;radius=2.2;mark=burn;markStacks=2,,범위 안의 적에게 24 피해와 화상 2중첩.
 fire_chain,fire,연쇄 불씨,fire,4,2,point,chain,amount=16;targets=3;mark=burn;markStacks=1,,가까운 적 3마리에게 연쇄 피해와 화상.
@@ -17,7 +17,7 @@ water_cannon,water,물대포,water,1,2,point,damage,amount=20;radius=1.3;mark=we
 water_pool,water,감속 웅덩이,water,4,2,point,zone,zone=slow;radius=3;duration=6;slow=0.45,,6초 동안 적을 45% 느리게 하는 웅덩이를 만듭니다.
 water_spring,water,샘솟음,water,6,1,self,manaGain,amount=2,,물길이 솟아 마나를 2 회복합니다.
 water_mana,water,밀물의 축복,water,8,1,self,manaGain,amount=3,,밀려드는 물결로 마나를 3 회복합니다.
-water_guard,water,수호의 물결,water,13,2,ally-all,shieldUnits,amount=24,,아군 유닛에게 24의 보호막을 두릅니다. 피격 시 HP보다 먼저 흡수됩니다.
+water_guard,water,수호의 물결,water,13,2,ally-all,shieldUnits,amount=34,,아군 유닛에게 34의 보호막을 두릅니다. 피격 시 HP보다 먼저 흡수됩니다.
 water_iron,water,대소용돌이,water,18,4,point,zone,zone=slow;radius=3.4;duration=6;slow=0.6;root=1.5,,넓은 범위를 크게 감속하고 짧게 묶는 소용돌이를 만듭니다.
 water_tide,water,밀물,water,20,3,point,damage,amount=32;radius=3;mark=wet;knockback=4,,넓은 범위에 32 피해를 주고 강하게 밀쳐냅니다.
 water_torrent,water,격류,water,24,4,point,damage,amount=40;radius=2.8;knockback=3.5,,범위 안의 적에게 40 피해와 강한 넉백.
@@ -27,7 +27,7 @@ grass_vine,grass,덩굴 감옥,grass,4,2,point,zone,zone=overgrowth;radius=2.6;d
 grass_grow,grass,자라나기,grass,8,1,self,draw,n=2,,새싹이 자라나 카드 2장을 뽑습니다.
 grass_bloom,grass,새순,grass,16,1,self,draw,n=1,,새순이 돋아 카드 1장을 뽑습니다.
 grass_bush,grass,가시덤불,grass,10,3,point,zone,zone=thorn;radius=3;duration=6;slow=0.3;dps=8,,6초 동안 적을 느리게 하고 초당 8 피해를 주는 덤불을 만듭니다.
-grass_mend,grass,치유의 잎,grass,13,2,ally-all,healUnits,amount=16;base=0,,아군 유닛 HP를 16 회복합니다.
+grass_mend,grass,치유의 잎,grass,13,2,ally-all,healUnits,amount=28;base=0,,아군 유닛 HP를 28 회복합니다.
 grass_wall,grass,덩굴 벽,grass,15,3,point,block,radius=2.6;duration=5;slow=0.9;dps=3,,덩굴 벽을 세워 5초간 적의 이동을 막습니다.
 grass_spore,grass,포자 폭발,grass,18,3,point,damage,amount=28;radius=2.8;mark=overgrowth,,범위 안의 적에게 28 피해와 덩굴 표식.
 grass_forest,grass,가시숲,grass,24,4,point,zone,zone=thorn;radius=3.4;duration=6;slow=0.4;dps=10,,6초 동안 적을 느리게 하고 초당 10 피해를 줍니다.
@@ -41,10 +41,10 @@ dark_night,dark,밤의 칼날,dark,20,3,point,damage,amount=34;radius=2.8;mark=c
 dark_verdict,dark,일식 선고,dark,24,6,enemy-area,eclipseVerdict,radius=99;executePct=0.2,,맵 전체의 쌓인 저주를 터뜨려 스택이 높을수록 치명적인 피해를 주고 약한 적을 처형합니다.
 light_ray,light,빛가루,light,1,1,ally-all,blessAll,stacks=1,,전군의 공격력을 잠시 높입니다.
 light_bless,light,축복,light,1,2,ally-one,blessOne,stacks=2,,가장 강한 아군에게 축복을 내려 공격력을 크게 높입니다.
-light_shield,light,치유의 빛,light,6,2,ally-all,healUnits,amount=22;base=0,,아군 유닛 HP를 22 회복합니다.
+light_shield,light,치유의 빛,light,6,2,ally-all,healUnits,amount=32;base=0,,아군 유닛 HP를 32 회복합니다.
 light_haste,light,성스러운 가속,light,10,3,self,haste,mult=1.35;duration=6,,잠시 모든 아군의 공격 속도를 높입니다.
-light_smite,light,수호의 빛,light,13,3,ally-all,shieldUnits,amount=30,,아군 유닛에게 30의 보호막을 두릅니다. 피격 시 HP보다 먼저 흡수됩니다.
-light_prayer,light,정화의 기도,light,16,3,ally-all,healUnits,amount=42;base=30,,아군 유닛 HP를 42 회복하고 성도 30 수리합니다.
+light_smite,light,수호의 빛,light,13,3,ally-all,shieldUnits,amount=42,,아군 유닛에게 42의 보호막을 두릅니다. 피격 시 HP보다 먼저 흡수됩니다.
+light_prayer,light,정화의 기도,light,16,3,ally-all,healUnits,amount=60;base=40,,아군 유닛 HP를 60 회복하고 성도 40 수리합니다.
 light_still,light,부활의 성가,light,20,4,ally-all,reviveUnit,hpPct=0.55,,다운된 아군을 최대 HP의 55%로 되살립니다.
 light_sunfire,light,여명의 강림,light,24,5,ally-all,blessAll,stacks=3,,전군에 최대치의 축복을 내려 공격력을 극대화합니다.
 e_fire_1,e_fire,불뿜기,fire,1,1,point,damage,amount=13;radius=1.2;mark=burn;markStacks=1,,13 피해와 화상 1중첩.
@@ -68,16 +68,16 @@ e_grass_2,e_grass,씨앗,grass,1,1,point,zone,zone=overgrowth;radius=2.2;duratio
 e_grass_3,e_grass,포자 표식,grass,2,1,enemy-area,markArea,mark=overgrowth;stacks=1;radius=2.2,,범위 안의 적에게 덩굴 표식을 남깁니다.
 e_grass_4,e_grass,뿌리감옥,grass,3,2,point,zone,zone=overgrowth;radius=2.4;duration=2.5;root=2.5;slow=0.3,,범위 안의 적을 2.5초 동안 묶습니다.
 e_grass_5,e_grass,가시덤불,grass,5,3,point,zone,zone=thorn;radius=2.6;duration=5;slow=0.3;dps=7,,5초 동안 적을 느리게 하고 초당 7 피해를 줍니다.
-e_grass_6,e_grass,치유의 잎,grass,7,2,ally-all,healUnits,amount=18;base=0,,아군 유닛 HP를 18 회복합니다.
+e_grass_6,e_grass,치유의 잎,grass,7,2,ally-all,healUnits,amount=30;base=0,,아군 유닛 HP를 30 회복합니다.
 e_grass_7,e_grass,포자탄,grass,9,3,point,damage,amount=26;radius=2.6;mark=overgrowth,,범위 안의 적에게 26 피해와 덩굴 표식.
 e_grass_8,e_grass,대지의 분노,grass,10,5,enemy-area,damage,amount=26;radius=99;mark=overgrowth,,맵 전체의 적에게 26 피해와 덩굴 표식을 남깁니다.
 e_light_1,e_light,빛가루,light,1,1,ally-all,blessAll,stacks=1,,전군의 공격력을 잠시 높입니다.
 e_light_2,e_light,가호,light,1,2,ally-one,blessOne,stacks=2,,가장 강한 아군의 공격력을 높입니다.
-e_light_3,e_light,치유의 빛,light,2,2,ally-all,healUnits,amount=18;base=0,,아군 유닛 HP를 18 회복합니다.
-e_light_4,e_light,수호의 빛,light,3,3,ally-all,shieldUnits,amount=22,,아군 유닛에게 보호막을 두릅니다.
+e_light_3,e_light,치유의 빛,light,2,2,ally-all,healUnits,amount=30;base=0,,아군 유닛 HP를 30 회복합니다.
+e_light_4,e_light,수호의 빛,light,3,3,ally-all,shieldUnits,amount=34,,아군 유닛에게 보호막을 두릅니다.
 e_light_5,e_light,성스러운 가속,light,5,3,self,haste,mult=1.3;duration=5,,잠시 모든 아군의 공격 속도를 높입니다.
 e_light_6,e_light,전열의 가호,light,7,3,ally-all,blessAll,stacks=2,,전군의 공격력을 크게 높입니다.
-e_light_7,e_light,정화의 빛,light,9,3,ally-all,healUnits,amount=34;base=20,,아군 유닛 HP를 34 회복하고 성도 조금 수리합니다.
+e_light_7,e_light,정화의 빛,light,9,3,ally-all,healUnits,amount=50;base=30,,아군 유닛 HP를 50 회복하고 성도 조금 수리합니다.
 e_light_8,e_light,부활의 성가,light,10,4,ally-all,reviveUnit,hpPct=0.5,,다운된 아군을 최대 HP의 50%로 되살립니다.
 e_dark_1,e_dark,그림자,dark,1,1,point,damage,amount=11;radius=1.2;mark=curse;markStacks=1,,11 피해와 저주 1중첩.
 e_dark_2,e_dark,저주 표식,dark,1,1,enemy-area,markArea,mark=curse;stacks=2;radius=2.4,,범위 안의 적에게 저주 2중첩을 남깁니다.
