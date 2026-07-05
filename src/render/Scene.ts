@@ -27,6 +27,10 @@ function darken(hex: number, f: number): number {
   return new THREE.Color(hex).multiplyScalar(f).getHex();
 }
 
+/** 성 HP 코어 색 보간용 상수 (매 틱 재할당 방지 — setBaseHp는 60Hz 호출). */
+const BASE_HP_HEALTHY = new THREE.Color(0x6fd0e8);
+const BASE_HP_DANGER = new THREE.Color(0xc0392b);
+
 /** 테마별 장식 프롭 (로우폴리 unlit). 잔디/비경로 셀에 흩뿌린다. */
 function makeProp(theme: Theme): THREE.Group {
   const g = new THREE.Group();
@@ -284,10 +288,8 @@ export class Scene {
     const mat = crystal?.material as THREE.MeshBasicMaterial | undefined;
     if (!mat) return;
     const f = Math.max(0, Math.min(1, frac));
-    // 청록(0x6fd0e8) → 위험 시 루비(0xc0392b) 로 보간
-    const healthy = new THREE.Color(0x6fd0e8);
-    const danger = new THREE.Color(0xc0392b);
-    mat.color.copy(danger).lerp(healthy, f);
+    // 청록(healthy) → 위험 시 루비(danger)로 보간. 상수 재사용(할당 없음).
+    mat.color.copy(BASE_HP_DANGER).lerp(BASE_HP_HEALTHY, f);
   }
 
   /** 화면 좌표 → 지면(y=0) 월드 좌표 */

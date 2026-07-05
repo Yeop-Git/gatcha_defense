@@ -91,6 +91,7 @@ export class Game {
     this.ui.onCaptureDiscardPick = (id) => this.onCaptureDiscardPick(id);
     this.ui.onShop = () => this.openShop();
     this.ui.onShopBuy = (id) => this.buyShopItem(id);
+    this.ui.onShopClose = () => this.showLobby(); // 상점 닫을 때 로비 골드/상태 갱신(구매 반영)
   }
 
   private lastPhase = '';

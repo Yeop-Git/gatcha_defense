@@ -132,6 +132,7 @@ export class UI {
   onManageToggle = (_holderId: string, _cardId: string) => {};
   onShop = () => {};
   onShopBuy = (_id: string) => {};
+  onShopClose = () => {};
 
   private hudTop!: HTMLElement;
   private actions!: HTMLElement;
@@ -631,7 +632,7 @@ export class UI {
     scroll.querySelectorAll('.shop-item:not(.disabled)').forEach((row) => {
       (row as HTMLElement).onclick = () => { playSfx('coin'); this.onShopBuy((row as HTMLElement).dataset.id!); };
     });
-    (scroll.querySelector('#shop-ok') as HTMLButtonElement).onclick = () => { playSfx('click'); this.clearModal(); };
+    (scroll.querySelector('#shop-ok') as HTMLButtonElement).onclick = () => { playSfx('click'); this.clearModal(); this.onShopClose(); };
   }
 
   showWin(finalBossName: string): void {
