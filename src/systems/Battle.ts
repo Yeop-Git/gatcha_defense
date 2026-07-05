@@ -29,6 +29,9 @@ import {
   CAPTURE_CARD_ID,
   CAPTURE_RADIUS,
   XP_REWARD,
+  HAND_SIZE,
+  AUTO_DRAW_INTERVAL,
+  MAX_MONSTERS,
 } from '../data/constants';
 import { CaptureOrb } from '../entities/CaptureOrb';
 import { Enemy } from '../entities/Enemy';
@@ -73,12 +76,14 @@ export class Battle {
   private comboTimer = 0;
   private unitGhost: THREE.Group | null = null; // 배치 드래그 반투명 미리보기 모델
   private growthEvents: GrowthEvent[] = [];
+  private autoDrawTimer = 0;
 
   constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number, private atkScale = 1) {
     setStageLayout(stage.id - 1); // 스테이지별 경로/슬롯 적용 (FIELD.path·UNIT_SLOTS 인플레이스 교체)
     scene.setStage(stage.id, stage.theme); // 스테이지 고유 팔레트/장식 밀도
     scene.rebuildMap();
     this.deck = new DeckSystem(state.manaMax, state.manaRegen);
+    this.state.placementCap = MAX_MONSTERS;
     this.autoPlace();
     this.hasDarkS3 = state.roster.some((u) => u.element === 'dark' && u.stage >= 3);
     bus.emit('stage:start', { stage: stage.id });
@@ -97,18 +102,47 @@ export class Battle {
     return -1;
   }
 
+  private placementLimit(): number {
+    return Math.min(MAX_MONSTERS, this.state.placementCap, UNIT_SLOTS.length);
+  }
+
+  private syncPlacement(): void {
+    const allowed = new Set(this.state.roster.slice(0, MAX_MONSTERS).map((u) => u.uid));
+    const seenSlots = new Set<number>();
+    const seenUnits = new Set<string>();
+    for (let i = this.units.length - 1; i >= 0; i--) {
+      const m = this.units[i];
+      const invalid =
+        !allowed.has(m.unit.uid) ||
+        m.slot < 0 ||
+        m.slot >= UNIT_SLOTS.length ||
+        seenSlots.has(m.slot) ||
+        seenUnits.has(m.unit.uid) ||
+        i >= this.placementLimit();
+      if (invalid) {
+        m.dispose(this.scene.entities);
+        this.units.splice(i, 1);
+        continue;
+      }
+      seenSlots.add(m.slot);
+      seenUnits.add(m.unit.uid);
+    }
+  }
+
   private autoPlace(): void {
+    this.syncPlacement();
     const sorted = [...this.state.roster].sort((a, b) => b.stage - a.stage || b.level - a.level);
-    for (const u of sorted.slice(0, this.state.placementCap)) {
+    for (const u of sorted.slice(0, this.placementLimit())) {
       const slot = this.firstFreeSlot();
       if (slot >= 0) this.placeUnit(u, slot);
     }
   }
 
   placeUnit(unit: OwnedUnit, slot: number): boolean {
+    this.syncPlacement();
     if (slot < 0 || slot >= UNIT_SLOTS.length || !this.slotFree(slot)) return false;
     if (this.units.some((m) => m.unit.uid === unit.uid)) return false;
-    if (this.units.length >= this.state.placementCap) return false;
+    if (this.units.length >= this.placementLimit()) return false;
     const s = UNIT_SLOTS[slot];
     const m = new Monster(unit, slot, s.x, s.z, this.state.unitAtkMult);
     this.units.push(m);
@@ -137,13 +171,15 @@ export class Battle {
    * 슬롯이 없으면 로스터에만 남고 다음 배치 페이즈에서 배치. (전투 중이 아니어도 안전.)
    */
   deployCaptured(unit: OwnedUnit): void {
+    this.syncPlacement();
     if (this.units.some((m) => m.unit.uid === unit.uid)) return;
-    if (this.units.length >= this.state.placementCap) return;
+    if (this.units.length >= this.placementLimit()) return;
     const slot = this.firstFreeSlot();
     if (slot >= 0) this.placeUnit(unit, slot);
   }
 
   placeablesState(): { id: string; name: string; element: ElementOrNeutral; placed: boolean; dead: boolean; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3; level: number; hp: number; maxHp: number }[] {
+    this.syncPlacement();
     return this.state.roster.map((u) => {
       const live = this.units.find((m) => m.unit.uid === u.uid);
       const down = this.downedUids.has(u.uid);
@@ -179,8 +215,8 @@ export class Battle {
     if (placed) { this.removeUnit(placed.slot); return; }
     const unit = this.state.roster.find((u) => u.uid === id);
     if (!unit) return;
-    if (this.units.length >= this.state.placementCap) {
-      bus.emit('warn', { text: `유닛은 최대 ${this.state.placementCap}마리까지 배치할 수 있습니다.` });
+    if (this.units.length >= this.placementLimit()) {
+      bus.emit('warn', { text: `유닛은 최대 ${this.placementLimit()}마리까지 배치할 수 있습니다.` });
       return;
     }
     const slot = this.firstFreeSlot();
@@ -194,8 +230,8 @@ export class Battle {
     if (placed) return this.moveUnitToSlot(placed, slot);
     const unit = this.state.roster.find((u) => u.uid === id);
     if (!unit) return false;
-    if (this.units.length >= this.state.placementCap) {
-      bus.emit('warn', { text: `유닛은 최대 ${this.state.placementCap}마리까지 배치할 수 있습니다.` });
+    if (this.units.length >= this.placementLimit()) {
+      bus.emit('warn', { text: `유닛은 최대 ${this.placementLimit()}마리까지 배치할 수 있습니다.` });
       return false;
     }
     const occupant = this.units.find((m) => m.slot === slot);
@@ -316,9 +352,10 @@ export class Battle {
   beginWave(): void {
     if (this.phase !== 'placement') return;
     this.waveDeck = this.state.battleDeck(); // 이번 웨이브 덱 고정 스냅샷
-    this.deck.drawHand(this.waveDeck, 5, [CAPTURE_CARD_ID]);
+    this.deck.drawHand(this.waveDeck, HAND_SIZE, this.state.monstersFull ? [] : [CAPTURE_CARD_ID]);
     this.phase = 'wave';
     this.waveClock = 0;
+    this.autoDrawTimer = 0;
     this.spawnQueue = [];
     const groups = this.stage.waves[this.waveIndex] ?? [];
     for (const g of groups) {
@@ -354,6 +391,7 @@ export class Battle {
     this.deck.bonusRegen = this.units.filter((m) => m.alive && m.element === 'grass').length * GRASS_MANA_REGEN;
     this.deck.regenMana(dt);
     this.deck.updateCooldowns(dt);
+    this.updateAutoDraw(dt);
     this.refreshCaptureAccess();
     this.updateCastleAttack(dt);
     this.scene.setBaseHp(this.state.baseHp / this.state.baseHpMax);
@@ -382,11 +420,31 @@ export class Battle {
 
   private refreshCaptureAccess(): void {
     if (this.phase !== 'wave') return;
+    if (this.state.monstersFull) return;
     const hasTarget = this.enemies.some((e) => e.alive && ((!e.isBoss && !e.isMini) || e.stunTimer > 0));
     if (!hasTarget) return;
-    if (this.deck.ensureInHand(CAPTURE_CARD_ID, this.waveDeck, 5)) {
+    if (this.deck.ensureInHand(CAPTURE_CARD_ID, this.waveDeck, HAND_SIZE)) {
       bus.emit('toast', { text: '포획구를 회수했습니다.', kind: 'info' });
     }
+  }
+
+  private updateAutoDraw(dt: number): void {
+    if (this.phase !== 'wave') return;
+    if (this.deck.hand.length >= HAND_SIZE) {
+      this.autoDrawTimer = 0;
+      return;
+    }
+    this.autoDrawTimer += dt;
+    if (this.autoDrawTimer < AUTO_DRAW_INTERVAL) return;
+    this.autoDrawTimer = 0;
+    const before = this.deck.hand.length;
+    this.deck.refillTo(this.waveDeck, Math.min(HAND_SIZE, before + 1));
+    if (this.deck.hand.length > before) bus.emit('card:draw', {});
+  }
+
+  get autoDrawFrac(): number {
+    if (this.phase !== 'wave' || this.deck.hand.length >= HAND_SIZE) return 0;
+    return Math.max(0, Math.min(1, this.autoDrawTimer / AUTO_DRAW_INTERVAL));
   }
 
   private onWaveClear(): void {
@@ -838,7 +896,7 @@ export class Battle {
     if ((def.target === 'point' || def.target === 'enemy-area') && !pt) pt = this.frontEnemyPoint() ?? this.castleXZ();
     if (!this.deck.consume(id)) return false;
     this.applyCardEffect(def.effect, def.element, pt);
-    if (this.deck.hand.length === 0) this.deck.refillTo(this.waveDeck, 5);
+    if (this.deck.hand.length === 0) this.deck.refillTo(this.waveDeck, HAND_SIZE);
     if (def.effect.kind === 'baseHeal') this.deck.setCooldown(id, BASE_HEAL_CD);
     if (def.effect.kind === 'capture') this.deck.setCooldown(id, CAPTURE.cooldown);
     // 카드 속성별로 음높이를 살짝 달리해 시전음 차별화 (불=높게, 어둠=낮게).
@@ -957,7 +1015,7 @@ export class Battle {
         let revived = 0;
         for (const uid of [...this.downedUids]) {
           if (fx.max > 0 && revived >= fx.max) break; // max=0 = 전원 부활, >0 = 인원 제한(성능 하향).
-          if (this.units.length >= this.state.placementCap) break;
+          if (this.units.length >= this.placementLimit()) break;
           const unit = this.state.roster.find((u) => u.uid === uid);
           if (!unit) { this.downedUids.delete(uid); continue; }
           const slot = this.firstFreeSlot();
@@ -979,7 +1037,7 @@ export class Battle {
         break;
       }
       case 'rally':
-        this.deck.refillTo(this.waveDeck, 5);
+        this.deck.refillTo(this.waveDeck, HAND_SIZE);
         break;
       case 'baseHeal':
         this.repairBase(fx.amount);
@@ -1103,10 +1161,12 @@ export class Battle {
       const lvl = e.def.creatureStage >= 3 ? evo[1] : e.def.creatureStage === 2 ? evo[0] : 1;
       const joined = this.state.giveUnit(el, lvl);
       if (joined) { this.deployCaptured(joined); bus.emit('toast', { text: `포획 성공! 야생 ${displayName(joined)}이(가) 원정대에 합류했습니다. (${dex})`, kind: 'good' }); }
-      else {
+      else if (this.state.monstersFull) {
         // 만석: 적과 동일하게 편입/놓아주기 모달로 위임 (인원 상관없이 교체 편입 가능).
         bus.emit('toast', { text: `포획 성공! ${e.def.name} (${dex})`, kind: 'good' });
         bus.emit('capture:full', { species: e.def.id, name: e.def.name });
+      } else {
+        bus.emit('toast', { text: `포획 성공! ${e.def.name} (${dex})`, kind: 'good' });
       }
       this.captureFx(e);
       return;
@@ -1116,10 +1176,12 @@ export class Battle {
     if (absorbed) { this.onCaptureAbsorb(absorbed, e, dex); return; }
     const joined = this.state.giveEnemyUnit(e.def.id, this.state.stageIndex + 1);
     if (joined) { this.deployCaptured(joined); bus.emit('toast', { text: `포획 성공! ${e.def.name}이 원정대에 합류했습니다. (${dex})`, kind: 'good' }); }
-    else {
+    else if (this.state.monstersFull) {
       // 만석 처리는 capture:full 모달(편입/놓아주기)에 위임 — 여기선 도감 등록만 알린다.
       bus.emit('toast', { text: `포획 성공! ${e.def.name} (${dex})`, kind: 'good' });
       bus.emit('capture:full', { species: e.def.id, name: e.def.name });
+    } else {
+      bus.emit('toast', { text: `포획 성공! ${e.def.name} (${dex})`, kind: 'good' });
     }
     this.captureFx(e);
   }

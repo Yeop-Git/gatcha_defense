@@ -189,7 +189,7 @@ export class GameState {
   heroEquipped: string[] = [];
 
   // 배치 (creature + 포획 enemy 합쳐 최대 MAX_MONSTERS)
-  placementCap = 6;
+  placementCap = MAX_MONSTERS;
 
   // 마나 상한 (런타임 마나는 DeckSystem이 스테이지 단위로 관리)
   manaMax = MANA_MAX;

@@ -36,6 +36,7 @@ export interface GameEvents {
   'base:destroyed': {};
   'enemy:killed': { element: ElementOrNeutral; x: number; z: number; isBoss: boolean };
   'card:played': { id: string };
+  'card:draw': {};
   'mana:change': { mana: number; max: number };
   'toast': { text: string; kind?: 'good' | 'bad' | 'info' };
   /** 사용자 동작 실패 알림 — 에러 효과음 + 붉은 시스템 메시지. */

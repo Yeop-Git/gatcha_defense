@@ -17,6 +17,9 @@ export const COLORS = {
 /** 5?띿꽦 怨좎젙 紐⑸줉 (?쒕옒?꾪듃/?쒗쉶?? */
 export const ELEMENTS: Element[] = ['fire', 'water', 'grass', 'light', 'dark'];
 
+/** 원정대/전장 동료 수는 게임 전체에서 5명으로 고정. */
+export const PARTY_SIZE = 5;
+
 /** ?띿꽦 ?ъ씤??而щ윭 (?대갚 罹≪뒓/?댄럺???댄듃) */
 export const ELEMENT_COLOR: Record<Element, number> = {
   fire: 0xe8632c,
@@ -104,7 +107,7 @@ export const FIELD = {
 };
 
 /** 경로 인접(비경로) 셀에 배치 슬롯 자동 생성 — 경로를 따라 고르게 count개. */
-function genSlots(cells: Set<string>, count = 6): { x: number; z: number }[] {
+function genSlots(cells: Set<string>, count = PARTY_SIZE): { x: number; z: number }[] {
   const cand: { col: number; row: number }[] = [];
   for (let col = 0; col < GRID_COLS; col++) for (let row = 0; row < GRID_ROWS; row++) {
     if (cells.has(`${col},${row}`)) continue;
@@ -128,7 +131,7 @@ export function setStageLayout(stageIndex: number): void {
   FIELD.path.length = 0; FIELD.path.push(...pts);
   FIELD.pathCellSet.clear();
   for (const [c, r] of expandCells(corners)) FIELD.pathCellSet.add(`${c},${r}`);
-  const slots = genSlots(FIELD.pathCellSet, 6);
+  const slots = genSlots(FIELD.pathCellSet, PARTY_SIZE);
   UNIT_SLOTS.length = 0; UNIT_SLOTS.push(...slots);
 }
 
@@ -140,7 +143,6 @@ export const UNIT_SLOTS: { x: number; z: number }[] = [
   { x: 9, z: -3 },   // 2 ?꾨컲(湲곗? ?묎렐)
   { x: -7, z: 3 },   // 3 吏꾩엯 蹂닿컯
   { x: 1, z: 3 },    // 4 以묒븰 蹂닿컯
-  { x: -7, z: -3 },  // 5 ?덈퉬
 ];
 
 /** ?꾪룷??GLB ?띿뒪泥?理쒕? ?댁긽??(?⑸웾 ?덇컧). 珥덇낵 ??罹붾쾭?ㅻ줈 異뺤냼. */
@@ -178,7 +180,7 @@ export const SIEGE = { interval: 1.2, attackMult: 1 } as const;
 // ally stops marching and strikes it every `interval` seconds for the enemy's own `attack`. Units
 // have HP and are downed at 0 (out for the wave, revived next placement phase). This is the core
 // "my character is under attack" risk — placement near the lane trades DPS for danger.
-export const ENEMY_ATTACK = { range: 2.2, interval: 1.75, hitsBeforeLeave: 2, leaveDuration: 3.5 } as const;
+export const ENEMY_ATTACK = { range: 2.2, interval: 1.55, hitsBeforeLeave: 1, leaveDuration: 2.4 } as const;
 
 /** ??諛섍꺽: 洹쇱쿂 諛⑹뼱???좊떅/二쇱씤怨?瑜?二쇨린 ?寃????뷀렂???깅┰(??蹂댄샇留?遺??移대뱶媛 ?섎?瑜?媛吏?. */
 // 적→아군 교전 파라미터는 위 ENEMY_ATTACK 참조. 아군 유닛은 이제 피해를 받고 쓰러질 수 있다
@@ -193,7 +195,7 @@ export const HERO = {
 } as const;
 
 /** 理쒕? 蹂댁쑀쨌湲곗슜 紐ъ뒪????(creature + ?ы쉷 enemy ?⑹퀜). 媛?5????紐ъ뒪????30??+ 臾댁깋 5. */
-export const MAX_MONSTERS = 6;
+export const MAX_MONSTERS = PARTY_SIZE;
 
 /** ?좊떅 1??湲곕낯移?+ 吏꾪솕 諛곗쑉 (짠14) */
 export const UNIT_BASE = {
@@ -221,6 +223,7 @@ export const MANA_REGEN = 0.55; // 초당 기본 마나 회복. 카드 타이밍
 /** ? = 留덈굹 ?뚰븨: 諛곗튂??? ?좊떅 1泥대떦 珥덈떦 異붽? 留덈굹 */
 export const GRASS_MANA_REGEN = 0.13;
 export const HAND_SIZE = 5;
+export const AUTO_DRAW_INTERVAL = 6;
 export const CAPTURE_CARD_ID = 'n_capture';
 /** ?묎툒 泥섏튂(湲곗? ?뚮났) ?ъ궗??荑⑤떎??珥? ??짠6.2 "荑⑤떎??議댁옱" */
 export const BASE_HEAL_CD = 18;

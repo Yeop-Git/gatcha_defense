@@ -1,16 +1,16 @@
 element,stage,name,role,evolve1,evolve2,lateBloom,traits
-water,1,방울북,넉백·감속으로 진격을 늦추는 방어형,8,18,0,knockback;slow;shield
-water,2,산호북,밀치고 늦추며 마나를 채우는 지원형,8,18,0,knockback;slow;shield
-water,3,해수호,광역 넉백·감속에 마나·보호막을 더한 대양,8,18,0,knockback;slow;shield
-grass,1,새싹록,덩굴로 묶고 카드를 부르는 육성형,8,18,0,root;draw;heal
-grass,2,숲사슴,속박과 장판으로 길을 막는 제어형,8,18,0,root;block;draw
-grass,3,수호록,광역 속박·차단·드로우의 수호림,8,18,0,root;block;draw
+water,1,방울부기,넉백·감속으로 진격을 늦추는 방어형,8,18,0,knockback;slow;shield
+water,2,산호부기,밀치고 늦추며 마나를 채우는 지원형,8,18,0,knockback;slow;shield
+water,3,용왕부기,광역 넉백·감속에 마나·보호막을 더한 대양,8,18,0,knockback;slow;shield
+grass,1,새싹이,덩굴로 묶고 카드를 부르는 육성형,8,18,0,root;draw;heal
+grass,2,망울이,속박과 장판으로 길을 막는 제어형,8,18,0,root;block;draw
+grass,3,매화록,광역 속박·차단·드로우의 수호림,8,18,0,root;block;draw
 fire,1,불꼬미,화상을 쌓고 몰아치는 속공형,8,18,0,burn;rapid;burst
-fire,2,화염호,화상 중첩과 연사의 화력형,8,18,0,burn;rapid;burst
-fire,3,구미염,지속 화상과 폭발 화력의 정점,8,18,0,burn;rapid;burst
-dark,1,루나비,저주를 쌓아 약점을 여는 견제형,12,24,1,curse;stack;drain
-dark,2,월희,저주 중첩으로 피해를 키우는 주술사,12,24,1,curse;stack;drain
-dark,3,이클립사,쌓인 저주를 터뜨리는 처형자,12,24,1,curse;stack;drain
-light,1,별비,아군을 축복하고 치유하는 지원형,12,24,1,buff;heal;revive
+fire,2,화르르,화상 중첩과 연사의 화력형,8,18,0,burn;rapid;burst
+fire,3,플레어,지속 화상과 폭발 화력의 정점,8,18,0,burn;rapid;burst
+dark,1,루나,저주를 쌓아 약점을 여는 견제형,12,24,1,curse;stack;drain
+dark,2,디아나,저주 중첩으로 피해를 키우는 주술사,12,24,1,curse;stack;drain
+dark,3,테이아,쌓인 저주를 터뜨리는 처형자,12,24,1,curse;stack;drain
+light,1,럭스,아군을 축복하고 치유하는 지원형,12,24,1,buff;heal;revive
 light,2,루멘,버프·회복으로 전열을 지키는 성직형,12,24,1,buff;heal;revive
 light,3,세라핌,버프·회복·부활을 아우르는 빛의 수호자,12,24,1,buff;heal;revive

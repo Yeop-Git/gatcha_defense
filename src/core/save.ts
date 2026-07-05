@@ -1,4 +1,5 @@
 import { state, bumpUidAbove, type GameState } from './GameState';
+import { MAX_MONSTERS } from '../data/constants';
 
 const KEY = 'monster-keepers-run-v2';
 
@@ -7,7 +8,7 @@ export function saveRun(): void {
   try {
     const snap = {
       baseHpMax: state.baseHpMax, baseHp: state.baseHp, gold: state.gold, stageIndex: state.stageIndex,
-      roster: state.roster, heroEquipped: state.heroEquipped, placementCap: state.placementCap,
+      roster: state.roster.slice(0, MAX_MONSTERS), heroEquipped: state.heroEquipped,
       unitAtkMult: state.unitAtkMult, manaRegenMult: state.manaRegenMult,
       // 스탯 강화(강화 노드·상점)로 오르는 보너스 — 누락 시 이어하기에서 초기화되던 버그.
       rangeBonus: state.rangeBonus, aspdBonus: state.aspdBonus,
@@ -39,6 +40,8 @@ export function loadRun(): boolean {
     const snap = JSON.parse(raw) as Partial<GameState>;
     state.reset();
     Object.assign(state, snap);
+    state.placementCap = MAX_MONSTERS;
+    state.roster = (state.roster ?? []).slice(0, MAX_MONSTERS);
     // 구버전 스냅샷 방어: 새 필드 기본값 보장
     state.captured = state.captured ?? {};
     state.darkKillStacks = state.darkKillStacks ?? 0;

@@ -18,6 +18,7 @@ export interface HudInfo {
   baseHp: number; baseHpMax: number;
   mana: number; manaMax: number;
   deckDraw: number; deckDiscard: number;
+  drawFrac: number;
   wave: number; totalWaves: number;
   gold: number;
   enemiesLeft: number;
@@ -346,11 +347,12 @@ export class UI {
       </div>
       <div class="chip" title="웨이브"><span class="chip-ico">🌊</span><span id="wave-val">-</span></div>
       <div class="chip" title="드로우 더미 / 버린 더미"><span class="chip-ico">🎴</span><span id="deck-val">0/0</span></div>
+      <div class="draw-gauge chip" title="자동 드로우"><span class="chip-ico">⏳</span><div class="draw-track"><div class="draw-fill" id="draw-fill"></div></div></div>
       <div class="chip" title="남은 적"><span class="chip-ico">👹</span><span id="enemy-val">0</span></div>
       <div class="chip" title="골드"><span class="chip-ico">🪙</span><span id="gold-val">0</span></div>
       <div class="chip stage-label" title="현재 스테이지"><span class="chip-ico">📍</span><span id="stage-val">스테이지</span></div>`;
     this.root.appendChild(this.hudTop);
-    ['hp-bar','hp-val','wave-val','deck-val','enemy-val','gold-val','stage-val'].forEach((id) => {
+    ['hp-bar','hp-val','wave-val','deck-val','draw-fill','enemy-val','gold-val','stage-val'].forEach((id) => {
       this.refs[id] = this.hudTop.querySelector('#' + id) as HTMLElement;
     });
     this.buildManaBar();
@@ -410,6 +412,7 @@ export class UI {
     this.refs['mana-max'].textContent = `${info.manaMax}`;
     this.refs['wave-val'].textContent = `${info.wave}/${info.totalWaves}`;
     this.refs['deck-val'].textContent = `${info.deckDraw}/${info.deckDiscard}`;
+    this.refs['draw-fill'].style.width = `${Math.round(info.drawFrac * 100)}%`;
     this.refs['enemy-val'].textContent = `${info.enemiesLeft}`;
     this.refs['gold-val'].textContent = `${info.gold}`;
     this.refs['stage-val'].textContent = info.stageLabel;

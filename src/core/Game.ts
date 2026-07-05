@@ -10,7 +10,7 @@ import { MONSTERS } from '../data/monsters';
 import { cardsOfCharacter, CARDS, CARD_BY_ID, cardIcon, cardRole } from '../data/cards';
 import { ITEMS, ITEM_BY_ID } from '../data/items';
 import type { Element } from './types';
-import { CAPTURE_CARD_ID, DIFFICULTY_JUMP_MULT, FIXED_DT } from '../data/constants';
+import { CAPTURE_CARD_ID, DIFFICULTY_JUMP_MULT, FIXED_DT, MAX_MONSTERS } from '../data/constants';
 import { bus } from './events';
 import { settings } from './Settings';
 import { playSfx } from '../audio/Sfx';
@@ -102,6 +102,11 @@ export class Game {
 
   private lastPhase = '';
   private speed: 1 | 2 | 3 = 1;
+  private normalizeRosterCap(): void {
+    state.placementCap = MAX_MONSTERS;
+    if (state.roster.length > MAX_MONSTERS) state.roster = state.roster.slice(0, MAX_MONSTERS);
+  }
+
   private refreshPlacement(): void {
     this.ui.hidePlacement();
   }
@@ -327,6 +332,7 @@ export class Game {
   private wireBus(): void {
     bus.on('mana:change', () => { if (this.mode === 'battle') this.refreshHand(); });
     bus.on('card:played', () => this.refreshHand());
+    bus.on('card:draw', () => this.refreshHand());
     bus.on('capture:full', ({ species, name }) => this.onCaptureFull(species, name));
     bus.on('unit:grown', ({ uid, from, to, element, evolved, gains }) => {
       if (evolved) this.evolveQueue.push({ uid, from, to, element });
@@ -345,6 +351,10 @@ export class Game {
   // ── 포획 캡 초과: '오래된 2 + 신규' 버리기 ──
   private pendingCaptureSpecies: string | null = null;
   private onCaptureFull(species: string, name: string): void {
+    if (!state.monstersFull) {
+      this.ui.warn('원정대 자리가 남아 있어 교체가 필요하지 않습니다.');
+      return;
+    }
     this.pendingCaptureSpecies = species;
     this.paused = true; // 전투 일시정지 후 선택
     const def = ENEMIES[species];
@@ -371,6 +381,7 @@ export class Game {
     // ENEMIES[species] 유효성 확인 후에만 기존 동료 제거 — 무효 시 동료만 잃는 사고 방지.
     if (species && ENEMIES[species]) {
       const def = ENEMIES[species];
+      const rosterBefore = [...state.roster];
       const dropped = state.roster.find((u) => u.uid === id);
       state.roster = state.roster.filter((u) => u.uid !== id);
       this.battle?.removeUnitByUid(id);
@@ -384,8 +395,14 @@ export class Game {
       } else {
         joined = state.giveEnemyUnit(species, state.stageIndex + 1);
       }
-      if (joined) { this.battle?.deployCaptured(joined); this.ui.toast(`${dropped ? displayName(dropped) : '동료'}을(를) 보내고 새 포획체가 합류`, 'info'); }
-      else this.ui.warn('새 포획체 합류에 실패했습니다.');
+      if (joined) {
+        this.battle?.deployCaptured(joined);
+        this.ui.toast(`${dropped ? displayName(dropped) : '동료'}을(를) 보내고 ${displayName(joined)}이(가) 합류했습니다.`, 'info');
+      } else {
+        state.roster = rosterBefore;
+        if (dropped) this.battle?.deployCaptured(dropped);
+        this.ui.warn('포획체 편입에 실패해 원정대를 되돌렸습니다.');
+      }
     } else {
       this.ui.toast('새 포획체를 놓아주었다', 'info');
     }
@@ -413,6 +430,7 @@ export class Game {
 
   /** 로비: 전투 진입/캐릭터 관리 허브 */
   private showLobby(): void {
+    this.normalizeRosterCap();
     this.mode = 'lobby';
     setBgmTrack('lobby');
     this.paused = true;
@@ -656,6 +674,7 @@ export class Game {
   }
 
   private startStage(index: number): void {
+    this.normalizeRosterCap();
     state.stageIndex = index;
     setBgmTrack('battle');
     const def = STAGES[index];
@@ -1056,6 +1075,7 @@ export class Game {
       baseHp: state.baseHp, baseHpMax: state.baseHpMax,
       mana: b.deck.mana, manaMax: b.deck.manaMax,
       deckDraw: b.deck.drawCount, deckDiscard: b.deck.discardCount,
+      drawFrac: b.autoDrawFrac,
       wave: Math.min(b.waveIndex + 1, b.totalWaves), totalWaves: b.totalWaves,
       gold: state.gold,
       enemiesLeft: b.enemies.filter((e) => e.alive).length,
