@@ -704,7 +704,11 @@ export class Game {
     // 스테이지당 HP 증가율 0.06→0.09로 올려 후반 적이 더 오래 살아 성문까지 새어들도록.
     // 1~3 스테이지 온보딩(earlyHpEase)은 그대로 두어 초반은 여전히 부드럽게.
     const earlyHpEase = index <= 2 ? 0.88 + index * 0.04 : 1;
-    const hpScale = earlyHpEase * (1 + index * 0.09) * (1 + (DIFFICULTY_JUMP_MULT - 1) * jumps);
+    // 난이도(중반~후반 강화): 스테이지4(index3)부터 HP 증가율을 가속(+8%/스테이지 추가)해 적이 킬 처리량보다
+    // 오래 살아남아 유닛 방어선을 뚫고 성문까지 새어들도록. 포탑 대폭 너프와 맞물려 "성이 위협받는" 상황이 잦아짐.
+    // 초반 1~3(earlyHpEase)은 그대로 부드럽게 유지.
+    const lateHp = 1 + Math.max(0, index - 2) * 0.08;
+    const hpScale = earlyHpEase * (1 + index * 0.10) * lateHp * (1 + (DIFFICULTY_JUMP_MULT - 1) * jumps);
     // 공격력 스케일: 이제 스테이지에도 완만히 반응(+4%/스테이지) + 점프(+9%/점프). 성문 공성·유닛 교전이
     // 후반에 실제로 아프게 — 단, 순삭 절벽은 피하려 스테이지 계수는 낮게 유지.
     const earlyAtkEase = index <= 2 ? 0.85 + index * 0.05 : 1;
@@ -1061,7 +1065,7 @@ export class Game {
         // 첫 전투 시작 시 1회 포획 안내 (핵심 루프 온보딩)
         if (prev === 'placement' && this.battle.phase !== 'placement' && !this.captureHintShown && !this.tutorial.isActive) {
           this.captureHintShown = true;
-          this.ui.toast('빛나는 포획구 카드를 적에게 드래그하면 포획! 보스는 기절했을 때만 잡을 수 있어요', 'info');
+          this.ui.toast('빛나는 포획구 카드를 적에게 드래그하면 포획! 원정대에 합류시켜 키울 수 있어요', 'info');
         }
       }
     }

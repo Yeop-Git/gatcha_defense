@@ -258,15 +258,15 @@ export class Scene {
     this.scene.add(this.capLabel);
   }
 
-  private static readonly CAP_COLOR = { catch: 0x5fe08a, bossWait: 0xf2b03b, none: 0xd23b3b } as const;
-  /** 포획 조준 링 갱신: 지점·반경·상태(잡힘/보스대기/빗나감). */
-  setCapturePreview(x: number, z: number, radius: number, status: 'catch' | 'bossWait' | 'none', label = ''): void {
+  private static readonly CAP_COLOR = { catch: 0x5fe08a, none: 0xd23b3b } as const;
+  /** 포획 조준 링 갱신: 지점·반경·상태(잡힘/빗나감). 보스/미니는 포획 대상이 아니라 상태에 없음. */
+  setCapturePreview(x: number, z: number, radius: number, status: 'catch' | 'none', label = ''): void {
     this.capRing.position.set(x, 0.12, z);
     this.capRing.scale.setScalar(Math.max(0.4, radius));
     const mat = this.capRing.material as THREE.MeshBasicMaterial;
     mat.color.setHex(Scene.CAP_COLOR[status]);
     mat.opacity = status === 'none' ? 0.4 : 0.75;
-    const text = label || (status === 'catch' ? '포획 가능' : status === 'bossWait' ? '기절 필요' : '범위 밖');
+    const text = label || (status === 'catch' ? '포획 가능' : '범위 밖');
     if (text !== this.capLabelText) {
       this.scene.remove(this.capLabel);
       (this.capLabel.material as THREE.SpriteMaterial).map?.dispose();
@@ -323,11 +323,13 @@ export class Scene {
   /** 성 HP를 수호 코어(crystal) 색으로 표현 (0~1). 낮을수록 청록→붉게. */
   setBaseHp(frac: number): void {
     const crystal = this.base.userData.crystal as THREE.Mesh | undefined;
-    const mat = crystal?.material as THREE.MeshBasicMaterial | undefined;
+    const mat = crystal?.material as THREE.MeshStandardMaterial | undefined;
     if (!mat) return;
     const f = Math.max(0, Math.min(1, frac));
     // 청록(healthy) → 위험 시 루비(danger)로 보간. 상수 재사용(할당 없음).
     mat.color.copy(BASE_HP_DANGER).lerp(BASE_HP_HEALTHY, f);
+    // lit 크리스털은 자체 발광(emissive)도 같이 물들여야 색이 따로 놀지 않는다.
+    if (mat.emissive) mat.emissive.copy(BASE_HP_DANGER).lerp(BASE_HP_HEALTHY, f);
   }
 
   /** 화면 좌표 → 지면(y=0) 월드 좌표 */

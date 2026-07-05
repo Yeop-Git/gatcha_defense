@@ -2,7 +2,7 @@
 import type { Scene } from '../render/Scene';
 import { type GameState, type OwnedUnit, displayName, deriveStats, unitName } from '../core/GameState';
 import type { StageDef } from '../data/stages';
-import type { Element, ElementOrNeutral, Vec2 } from '../core/types';
+import type { Element, ElementOrNeutral, MarkType, Vec2 } from '../core/types';
 import { ENEMIES, creatureEnemyId } from '../data/enemies';
 import { MONSTERS } from '../data/monsters';
 import { makeCreature, makeEnemy, disposeCreatureView } from '../render/fallback';
@@ -16,7 +16,7 @@ import {
   SIEGE,
   ENEMY_ATTACK,
   BURN_DPS_PER_STACK,
-  OVERGROWTH_DPS,
+  REACTION,
   ELEMENTS,
   HERO,
   DARK_KILL_STACK,
@@ -39,6 +39,7 @@ import { Monster } from '../entities/Monster';
 import { Projectile } from '../entities/Projectile';
 import { GroundZone, type ZoneKind } from '../entities/GroundZone';
 import { affinity } from './affinity';
+import { findReaction, type Reaction } from './reactions';
 import { DeckSystem } from './DeckSystem';
 import { bus } from '../core/events';
 import { playSfx } from '../audio/Sfx';
@@ -427,8 +428,8 @@ export class Battle {
 
   private refreshCaptureAccess(): void {
     if (this.phase !== 'wave') return;
-    // 만석이어도 포획구를 회수해준다 — 던지면 교체/놓아주기 흐름으로 이어진다.
-    const hasTarget = this.enemies.some((e) => e.alive && ((!e.isBoss && !e.isMini) || e.stunTimer > 0));
+    // 만석이어도 포획구를 회수해준다 — 던지면 교체/놓아주기 흐름으로 이어진다. (보스/미니는 포획 불가라 대상에서 제외)
+    const hasTarget = this.enemies.some((e) => e.alive && !e.isBoss && !e.isMini);
     if (!hasTarget) return;
     if (this.deck.ensureInHand(CAPTURE_CARD_ID, this.waveDeck, HAND_SIZE)) {
       bus.emit('toast', { text: '포획구를 회수했습니다.', kind: 'info' });
@@ -500,10 +501,10 @@ export class Battle {
       // 타격감: 명중 순간 임팩트 팝(코어 플래시 + 색 스파크 + 링). 치명타는 더 크고 흰 스파크.
       this.scene.vfx.impact(hit.pos.x, hit.pos.z, color, crit ? 1.5 : 0.85, crit);
       if (crit) this.scene.vfx.floatText(hit.pos.x, hit.pos.z + 0.5, `⚡${dealt}`, '#ff5a3c');
-      if (m.element === 'fire') hit.marks.add('burn', 1, stage);
-      else if (m.element === 'water') { hit.marks.add('wet', 1, stage); hit.knockback(0.4); }
-      else if (m.element === 'dark') hit.marks.add('curse', 1, stage);
-      else if (m.element === 'grass') hit.marks.add('overgrowth', 1, stage);
+      if (m.element === 'fire') this.applyMark(hit, 'burn', 1, stage);
+      else if (m.element === 'water') { this.applyMark(hit, 'wet', 1, stage); hit.knockback(0.4); }
+      else if (m.element === 'dark') this.applyMark(hit, 'curse', 1, stage);
+      else if (m.element === 'grass') this.applyMark(hit, 'overgrowth', 1, stage);
       else if (m.element === 'light') this.lightSupport(m);
     });
     this.projectiles.push(p);
@@ -568,9 +569,10 @@ export class Battle {
           if (z.dps > 0) this.damageDot(e, z.dps * dt, z.element);
         }
       }
+      if (e.reactionCd > 0) e.reactionCd -= dt;
       const burn = e.marks.stacks('burn');
       if (burn > 0) this.damageDot(e, burn * BURN_DPS_PER_STACK * dt, 'fire');
-      if (e.marks.has('overgrowth') && !e.def.flying) this.damageDot(e, OVERGROWTH_DPS * dt, 'grass');
+      // 덩굴(overgrowth)은 더 이상 DoT가 아니다 — 이동 속박(Enemy.speedMult/update의 주기적 뿌리)으로 작동.
       if (e.ignoreUnitTimer > 0) {
         e.ignoreUnitTimer -= dt;
         if (e.ignoreUnitTimer <= 0) {
@@ -586,9 +588,9 @@ export class Battle {
 
       e.update(dt, t);
       if (e.justStunned) {
-        // 보스/미니보스 포획 창 개방 — 놓치면 영구 실패라 확실히 알린다(핵심 루프의 정점).
+        // 보스/미니보스는 포획 불가 — HP0에서 즉사 대신 잠깐 기절(비틀거림) 연출만 남기고 소멸한다.
         e.justStunned = false;
-        bus.emit('toast', { text: `⚡ ${e.def.name} 기절! 지금 포획구를 던지세요!`, kind: 'good' });
+        bus.emit('toast', { text: `⚡ ${e.def.name}이(가) 쓰러집니다!`, kind: 'good' });
         this.scene.vfx.ring(e.pos.x, e.pos.z, 0xf2ce6b, 3.5, 0.5);
       }
       if (foe && e.alive) {
@@ -754,6 +756,49 @@ export class Battle {
 
   private damageDot(e: Enemy, amount: number, _element: Element): void {
     e.applyDamage(amount);
+  }
+
+  /**
+   * 표식 적용의 단일 경로 — 적에게 붙는 모든 표식은 여기를 거친다(CLAUDE.md 원칙 5의 "단일 판정").
+   * 새 표식을 붙이기 전에 반응(시너지)을 판정: 이미 다른 속성 표식이 있으면 반응이 터지고 두 표식을 소모한다.
+   */
+  private applyMark(e: Enemy, type: MarkType, stacks: number, sourceStage: number): void {
+    if (e.reactionCd <= 0) {
+      const r = findReaction(type, (m) => e.marks.has(m));
+      if (r) {
+        // 두 표식을 소모하고 반응 폭발. 새 표식(type)은 붙이지 않는다(소모된 것으로 간주).
+        e.marks.remove(r.a);
+        e.marks.remove(r.b);
+        e.reactionCd = REACTION.cooldown;
+        this.triggerReaction(e, r);
+        return;
+      }
+    }
+    e.marks.add(type, stacks, sourceStage);
+  }
+
+  /** 반응 효과 실행 — reactions.ts의 선언형 필드를 공용 헬퍼로 처리(조합별 분기 없음). */
+  private triggerReaction(origin: Enemy, r: Reaction): void {
+    const scale = 1 + this.state.stageIndex * REACTION.dmgPerStagePct;
+    const { x, z } = origin.pos;
+    const affected = this.enemiesInRadius(x, z, r.radius);
+    if (r.damage) {
+      const dmg = Math.round(r.damage * scale);
+      for (const e of affected) {
+        const dealt = e.applyDamage(dmg, true);
+        this.scene.vfx.floatText(e.pos.x, e.pos.z, String(dealt), '#ffffff');
+      }
+    }
+    if (r.spread) for (const e of affected) e.marks.add(r.spread.mark, r.spread.stacks, origin.marks.sourceStage(r.spread.mark) || 1);
+    if (r.root) for (const e of affected) e.applyRoot(r.root);
+    if (r.slow) for (const e of affected) e.applySlow(r.slow.pct, r.slow.duration);
+    // 연출: 반응 이름 플로팅 + 컬러 링/버스트 + 살짝 흔들림.
+    this.scene.vfx.floatText(x, z + 1.1, `${r.icon} ${r.name}`, `#${r.color.toString(16).padStart(6, '0')}`);
+    this.scene.vfx.ring(x, z, r.color, Math.min(r.radius, 9), 0.5);
+    this.scene.vfx.burst(x, z, r.color, 16);
+    this.scene.vfx.impact(x, z, r.color, 1.4, true);
+    playSfx('select');
+    bus.emit('reaction:fired', { name: r.name });
   }
 
   enemiesInRadius(x: number, z: number, r: number): Enemy[] {
@@ -925,7 +970,7 @@ export class Battle {
       case 'damage':
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
           this.hitEnemy(e, fx.amount, fx.element, stage);
-          if (fx.mark) e.marks.add(fx.mark, fx.markStacks ?? 1, stage);
+          if (fx.mark) this.applyMark(e, fx.mark, fx.markStacks ?? 1, stage);
           if (fx.knockback) e.knockback(fx.knockback);
         }
         this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), Math.min(fx.radius, 9), 0.4);
@@ -936,7 +981,7 @@ export class Battle {
         const d2 = (e: Enemy) => (e.pos.x - p.x) ** 2 + (e.pos.z - p.z) ** 2;
         for (const e of this.enemiesInRadius(p.x, p.z, 8).sort((a, b) => d2(a) - d2(b)).slice(0, fx.targets)) {
           this.hitEnemy(e, fx.amount, fx.element, stage);
-          if (fx.mark) e.marks.add(fx.mark, fx.markStacks ?? 1, stage);
+          if (fx.mark) this.applyMark(e, fx.mark, fx.markStacks ?? 1, stage);
           this.scene.vfx.burst(e.pos.x, e.pos.z, colorOf(fx.element), 8);
         }
         break;
@@ -946,14 +991,14 @@ export class Battle {
         this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), fx.radius, 0.4);
         break;
       case 'markArea':
-        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) e.marks.add(fx.mark, fx.stacks, stage);
+        for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) this.applyMark(e, fx.mark, fx.stacks, stage);
         this.scene.vfx.ring(p.x, p.z, colorOf(fx.element), Math.min(fx.radius, 9), 0.4);
         break;
       case 'defDown':
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
           e.defDownPct = fx.pct;
           e.defDownTimer = fx.duration;
-          e.marks.add('curse', 1, stage);
+          this.applyMark(e, 'curse', 1, stage);
         }
         this.scene.vfx.ring(p.x, p.z, ELEMENT_COLOR.dark, fx.radius, 0.4);
         break;
@@ -961,7 +1006,7 @@ export class Battle {
         let total = 0;
         for (const e of this.enemiesInRadius(p.x, p.z, fx.radius)) {
           total += this.hitEnemy(e, fx.amount, fx.element, stage);
-          e.marks.add('curse', 1, stage);
+          this.applyMark(e, 'curse', 1, stage);
         }
         // 어둠 흡수: 성이 아니라 원정대 전원의 HP를 흡수 피해 일부만큼 회복.
         const drainHeal = Math.round(total * fx.drainPct);
@@ -1106,32 +1151,21 @@ export class Battle {
     }
   }
 
-  captureHint(x: number, z: number): { status: 'catch' | 'bossWait' | 'none'; radius: number; label: string } {
-    // resolveCapture와 동일 규칙으로 '실제 잡히는 대상'을 먼저 고른다(기절 안 된 보스는 후보에서 제외).
+  captureHint(x: number, z: number): { status: 'catch' | 'none'; radius: number; label: string } {
+    // resolveCapture와 동일 규칙으로 '실제 잡히는 대상'을 먼저 고른다(보스/미니는 포획 불가라 후보에서 제외).
     // 이렇게 해야 프리뷰 링이 가리키는 대상 = 실제 포획 대상이 되어 "왜 저게 잡히지?" 불일치가 없다.
     let best: Enemy | null = null;
     let bd = Infinity;
-    let nearBoss: Enemy | null = null; // 근처의 기절 안 된 보스(안내용)
-    let nbd = Infinity;
     for (const e of this.enemies) {
-      if (!e.alive || e.dying) continue;
+      if (!e.alive || e.dying || e.isBoss || e.isMini) continue;
       const d = Math.hypot(e.pos.x - x, e.pos.z - z);
-      if ((e.isBoss || e.isMini) && !e.stunned) {
-        if (d < nbd) { nbd = d; nearBoss = e; }
-        continue;
-      }
       if (d < bd) { bd = d; best = e; }
     }
     if (best) {
       const radius = CAPTURE_RADIUS[best.def.tier] ?? 1.4;
       if (bd <= radius) return { status: 'catch', radius, label: `${best.def.name}: 포획 가능` };
+      return { status: 'none', radius, label: `${best.def.name}: 범위 밖` };
     }
-    // 잡을 대상이 사거리 내에 없고, 근처에 기절 안 된 보스가 있으면 기절 안내를 준다.
-    if (nearBoss) {
-      const br = CAPTURE_RADIUS[nearBoss.def.tier] ?? 1.4;
-      if (nbd <= br) return { status: 'bossWait', radius: br, label: `${nearBoss.def.name}: 기절 필요` };
-    }
-    if (best) return { status: 'none', radius: CAPTURE_RADIUS[best.def.tier] ?? 1.4, label: `${best.def.name}: 범위 밖` };
     return { status: 'none', radius: 1.4, label: '대상 없음' };
   }
 
@@ -1139,8 +1173,7 @@ export class Battle {
     let best: Enemy | null = null;
     let bd = Infinity;
     for (const e of this.enemies) {
-      if (!e.alive || e.dying) continue;
-      if ((e.isBoss || e.isMini) && !e.stunned) continue;
+      if (!e.alive || e.dying || e.isBoss || e.isMini) continue;
       const d = Math.hypot(e.pos.x - p.x, e.pos.z - p.z);
       if (d < bd) { bd = d; best = e; }
     }

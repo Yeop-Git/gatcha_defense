@@ -42,42 +42,43 @@ const WAVES: Record<number, SpawnGroup[][]> = {
     [{ enemy: 'mushking', count: 1, interval: 1 }, { enemy: 'mushlord', count: 3, interval: 1.1 }, { enemy: 'alpaca', count: 3, interval: 1.0 }, { enemy: 'beebee', count: 3, interval: 0.95 }],
     [{ enemy: 'golem', count: 1, interval: 1 }, { enemy: 'cactoro', count: 2, interval: 1.5 }, { enemy: 'mushling', count: 5, interval: 0.95 }],
   ],
+  // 밸런스(중반~후반 강화): 4스테이지부터 물량↑·간격↓로 킬 처리량을 넘겨 상당수가 성문까지 새어들도록.
+  // 포탑 대폭 너프와 맞물려 "성이 자주 위협받는" 긴장을 만든다. 온보딩(1~3)은 미변경.
   4: [
-    [{ enemy: 'beebee', count: 6, interval: 0.7 }, { enemy: 'pigeon', count: 4, interval: 0.9 }],
-    [{ enemy: 'alpaking', count: 2, interval: 1.6 }, { enemy: 'monkroose', count: 5, interval: 0.9 }],
-    [{ enemy: 'spirit', count: 2, interval: 1.5 }, { enemy: 'queenbee', count: 2, interval: 1.6 }, { enemy: 'cat', count: 4, interval: 1.0 }],
+    [{ enemy: 'beebee', count: 8, interval: 0.6 }, { enemy: 'pigeon', count: 5, interval: 0.8 }],
+    [{ enemy: 'alpaking', count: 2, interval: 1.5 }, { enemy: 'monkroose', count: 7, interval: 0.8 }],
+    [{ enemy: 'spirit', count: 2, interval: 1.4 }, { enemy: 'queenbee', count: 3, interval: 1.4 }, { enemy: 'cat', count: 6, interval: 0.85 }],
   ],
   5: [
-    [{ enemy: 'bat', count: 8, interval: 0.6 }, { enemy: 'hywirl', count: 4, interval: 0.9 }],
-    [{ enemy: 'goleling', count: 4, interval: 1.1 }, { enemy: 'glub', count: 5, interval: 0.8 }],
-    [{ enemy: 'bat', count: 6, interval: 0.6 }, { enemy: 'fishman', count: 4, interval: 1.1 }, { enemy: 'squidle', count: 2, interval: 1.6 }, { enemy: 'wraith', count: 2, interval: 1.6 }],
+    [{ enemy: 'bat', count: 10, interval: 0.5 }, { enemy: 'hywirl', count: 5, interval: 0.8 }],
+    [{ enemy: 'goleling', count: 5, interval: 1.0 }, { enemy: 'glub', count: 7, interval: 0.7 }],
+    [{ enemy: 'bat', count: 8, interval: 0.5 }, { enemy: 'fishman', count: 5, interval: 1.0 }, { enemy: 'squidle', count: 3, interval: 1.4 }, { enemy: 'wraith', count: 3, interval: 1.4 }],
   ],
-  // 밸런스(긴장): 후반(6~10) 물량↑·간격↓로 킬 처리량을 넘겨 일부가 성문까지 새어들도록. 온보딩(1~3)은 미변경.
   6: [
-    [{ enemy: 'glub', count: 11, interval: 0.45 }, { enemy: 'goleling', count: 5, interval: 0.9 }],
-    [{ enemy: 'fishman', count: 7, interval: 0.8 }, { enemy: 'orcskull', count: 4, interval: 1.1 }, { enemy: 'wraith', count: 3, interval: 1.3 }],
-    [{ enemy: 'yeti', count: 1, interval: 1 }, { enemy: 'glubking', count: 1, interval: 1 }, { enemy: 'bat', count: 12, interval: 0.5 }, { enemy: 'fishman', count: 3, interval: 0.9 }],
+    [{ enemy: 'glub', count: 14, interval: 0.4 }, { enemy: 'goleling', count: 6, interval: 0.8 }],
+    [{ enemy: 'fishman', count: 9, interval: 0.7 }, { enemy: 'orcskull', count: 5, interval: 1.0 }, { enemy: 'wraith', count: 4, interval: 1.2 }],
+    [{ enemy: 'yeti', count: 1, interval: 1 }, { enemy: 'glubking', count: 1, interval: 1 }, { enemy: 'bat', count: 16, interval: 0.42 }, { enemy: 'fishman', count: 5, interval: 0.8 }],
   ],
   7: [
-    [{ enemy: 'imp', count: 14, interval: 0.42 }],
-    [{ enemy: 'imp', count: 10, interval: 0.45 }, { enemy: 'bluefiend', count: 6, interval: 0.9 }],
-    [{ enemy: 'orc', count: 4, interval: 1.1 }, { enemy: 'imp', count: 12, interval: 0.42 }, { enemy: 'hywirl', count: 6, interval: 0.7 }],
+    [{ enemy: 'imp', count: 18, interval: 0.38 }],
+    [{ enemy: 'imp', count: 13, interval: 0.4 }, { enemy: 'bluefiend', count: 8, interval: 0.8 }],
+    [{ enemy: 'orc', count: 5, interval: 1.0 }, { enemy: 'imp', count: 16, interval: 0.38 }, { enemy: 'hywirl', count: 8, interval: 0.6 }],
   ],
   8: [
-    [{ enemy: 'bluefiend', count: 7, interval: 0.7 }, { enemy: 'imp', count: 10, interval: 0.45 }],
-    [{ enemy: 'orc', count: 5, interval: 1.0 }, { enemy: 'drake', count: 3, interval: 1.4 }],
-    [{ enemy: 'dino', count: 3, interval: 1.4 }, { enemy: 'orcskull', count: 5, interval: 0.9 }, { enemy: 'imp', count: 10, interval: 0.45 }],
+    [{ enemy: 'bluefiend', count: 9, interval: 0.6 }, { enemy: 'imp', count: 13, interval: 0.4 }],
+    [{ enemy: 'orc', count: 7, interval: 0.9 }, { enemy: 'drake', count: 4, interval: 1.3 }],
+    [{ enemy: 'dino', count: 4, interval: 1.3 }, { enemy: 'orcskull', count: 7, interval: 0.8 }, { enemy: 'imp', count: 13, interval: 0.4 }],
   ],
   9: [
-    [{ enemy: 'tribal', count: 5, interval: 1.0 }, { enemy: 'wizard', count: 3, interval: 1.3 }, { enemy: 'cat', count: 6, interval: 0.8 }],
-    [{ enemy: 'ninja', count: 3, interval: 1.2 }, { enemy: 'queenbee', count: 4, interval: 1.0 }, { enemy: 'orcskull', count: 3, interval: 1.2 }],
-    [{ enemy: 'warlord', count: 1, interval: 1 }, { enemy: 'alien', count: 2, interval: 1.6 }, { enemy: 'alpaking', count: 3, interval: 1.3 }, { enemy: 'ninja', count: 2, interval: 1.2 }],
+    [{ enemy: 'tribal', count: 7, interval: 0.9 }, { enemy: 'wizard', count: 4, interval: 1.2 }, { enemy: 'cat', count: 8, interval: 0.7 }],
+    [{ enemy: 'ninja', count: 4, interval: 1.1 }, { enemy: 'queenbee', count: 5, interval: 0.9 }, { enemy: 'orcskull', count: 5, interval: 1.0 }],
+    [{ enemy: 'warlord', count: 1, interval: 1 }, { enemy: 'alien', count: 3, interval: 1.5 }, { enemy: 'alpaking', count: 4, interval: 1.2 }, { enemy: 'ninja', count: 3, interval: 1.1 }],
   ],
   10: [
-    [{ enemy: 'tribal', count: 6, interval: 0.8 }, { enemy: 'ninja', count: 4, interval: 1.0 }, { enemy: 'wizard', count: 3, interval: 1.3 }],
-    [{ enemy: 'alien', count: 4, interval: 1.1 }, { enemy: 'drake', count: 4, interval: 1.0 }, { enemy: 'spirit', count: 3, interval: 1.4 }],
+    [{ enemy: 'tribal', count: 8, interval: 0.7 }, { enemy: 'ninja', count: 5, interval: 0.9 }, { enemy: 'wizard', count: 4, interval: 1.2 }],
+    [{ enemy: 'alien', count: 5, interval: 1.0 }, { enemy: 'drake', count: 5, interval: 0.9 }, { enemy: 'spirit', count: 4, interval: 1.3 }],
     // 최종 시련: 폭룡 + 호위(드레이크·에일리언)를 늘려 마지막 압박을 확실히 준다.
-    [{ enemy: 'tyrant', count: 1, interval: 1 }, { enemy: 'drake', count: 3, interval: 1.6 }, { enemy: 'alien', count: 3, interval: 1.7 }],
+    [{ enemy: 'tyrant', count: 1, interval: 1 }, { enemy: 'drake', count: 4, interval: 1.5 }, { enemy: 'alien', count: 4, interval: 1.6 }],
   ],
 };
 

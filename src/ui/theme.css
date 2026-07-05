@@ -358,50 +358,68 @@ body {
 @keyframes toastIn { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes toastOut { to { opacity: 0; transform: translateY(-10px); } }
 
-/* ── 튜토리얼 코치마크 ── */
+/* ── 튜토리얼: 스포트라이트 마스킹 코치마크 ── */
+/* 오버레이 전체는 클릭을 통과시킨다(논블로킹) — 실제 조작은 그대로 가능. 자식(말풍선 버튼)만 클릭 활성. */
+#tut-overlay { position: fixed; inset: 0; z-index: 55; pointer-events: none; display: none; }
+#tut-overlay.on { display: block; }
+
+/* 구멍: 대상 사각형 위에 놓이는 투명 박스. 거대한 box-shadow로 바깥을 어둡게 덮어 대상만 밝게 남긴다. */
+#tut-hole {
+  position: absolute; border-radius: 14px; opacity: 0;
+  box-shadow: 0 0 0 4000px rgba(18,11,5,0.74);
+  transition: left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease;
+}
+/* 중앙 안내(spotlight 없음)일 땐 구멍 없이 화면 전체를 은은히 덮는다. */
+#tut-overlay:not(.spotlight)::before {
+  content: ''; position: absolute; inset: 0; background: rgba(18,11,5,0.66);
+}
+#tut-overlay.spotlight #tut-hole { opacity: 1; }
+#tut-overlay.spotlight #tut-ring,
+#tut-overlay.spotlight #tut-hand { display: block; }
+#tut-ring, #tut-hand { display: none; }
+
+/* 펄스 링: 구멍 둘레에서 밝게 맥동. */
+#tut-ring {
+  position: absolute; border-radius: 16px; border: 3px solid var(--gold-bright);
+  box-shadow: 0 0 18px var(--gold-bright); pointer-events: none;
+  animation: tutRing 1.3s ease-in-out infinite;
+}
+@keyframes tutRing {
+  0%, 100% { transform: scale(1); opacity: 0.55; }
+  50% { transform: scale(1.03); opacity: 1; }
+}
+/* 손가락 아이콘: 대상 위에서 톡톡 두드리는 모션. */
+#tut-hand {
+  position: absolute; font-size: 30px; transform: translate(-50%, -100%);
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6)); animation: tutHand 1.1s ease-in-out infinite;
+}
+@keyframes tutHand {
+  0%, 100% { transform: translate(-50%, -100%); }
+  50% { transform: translate(-50%, -60%); }
+}
+
 #tut-bubble {
-  position: absolute; top: 86px; left: 50%; transform: translateX(-50%);
-  width: min(520px, 92vw); z-index: 55; pointer-events: auto; text-align: center;
+  position: absolute; width: min(460px, 92vw); pointer-events: auto; text-align: center;
   padding: 14px 20px 12px; color: var(--ink);
   background: linear-gradient(180deg, var(--parchment), var(--parchment-dark));
   border: 3px solid var(--gold); border-radius: 14px;
   box-shadow: 0 10px 28px rgba(0,0,0,0.55), inset 0 0 0 2px var(--wood-dark);
 }
-#tut-bubble::after {
-  content: ''; position: absolute; bottom: -13px; left: 50%; transform: translateX(-50%);
-  border: 11px solid transparent; border-top-color: var(--gold);
-}
 #tut-bubble.pop { animation: tutPop 0.28s cubic-bezier(0.2,1.3,0.5,1) both; }
 @keyframes tutPop {
-  from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.96); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .tut-step-no { font-family: 'Jua'; font-size: 12px; letter-spacing: 1px; color: var(--leather); opacity: 0.85; min-height: 12px; }
 .tut-title { font-family: 'Jua'; font-size: 21px; color: var(--wood-dark); margin: 2px 0 7px; }
 .tut-body { font-size: 15px; line-height: 1.65; }
 .tut-body b { color: var(--hp-ruby); font-weight: 700; }
-.tut-dim { color: var(--leather); font-size: 13px; }
 .tut-actions { margin-top: 13px; display: flex; justify-content: center; }
 .tut-skip {
   background: none; border: none; color: var(--leather); font-family: inherit;
   font-size: 13px; text-decoration: underline; cursor: pointer; pointer-events: auto;
 }
 .tut-skip:hover { color: var(--wood-dark); }
-
-/* 강조 글로우 — 손패 재렌더에도 유지되도록 body 클래스로 스코프한다. */
-@keyframes tutGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(242,206,107,0); }
-  50% { box-shadow: 0 0 24px 6px var(--gold-bright); }
-}
-body.tut-step-placement #card-shelf,
-body.tut-step-placement #begin-cta,
-body.tut-step-cards #card-shelf,
-body.tut-step-cards #mana-vert {
-  animation: tutGlow 1.4s ease-in-out infinite;
-}
-body.tut-step-capture #card-shelf .card.pinned {
-  animation: tutGlow 1.1s ease-in-out infinite;
-}
 
 /* ── 몬스터 뷰어 ── */
 #viewer-ui { position: absolute; inset: 0; z-index: 30; display: none; }
@@ -628,11 +646,16 @@ body.tut-step-capture #card-shelf .card.pinned {
 .place-chip.dead .pc-state { color: var(--hp-ruby); }
 
 /* ── 이름 짓기 ── */
+/* 이름 짓기 = 연필 아이콘 버튼(원형 칩). 텍스트('수정') 대신 아이콘만 노출. */
 .rename-btn {
-  background: none; border: none; cursor: pointer; font-size: 15px; padding: 2px 4px;
-  border-radius: 6px; transition: background 0.15s;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; margin-left: 6px; vertical-align: middle;
+  background: rgba(216,169,59,0.16); border: 1px solid var(--gold); cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 0; border-radius: 50%;
+  transition: background 0.15s, transform 0.1s;
 }
-.rename-btn:hover { background: rgba(216,169,59,0.3); }
+.rename-btn:hover { background: rgba(216,169,59,0.4); transform: scale(1.08); }
+.rename-btn:active { transform: scale(0.94); }
 .rename-row { display: flex; justify-content: center; margin: 14px 0; }
 #rename-input {
   font-family: 'Jua', sans-serif; font-size: 20px; text-align: center;

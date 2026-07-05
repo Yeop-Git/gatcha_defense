@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Element, ElementOrNeutral } from '../core/types';
 import type { EnemyDef } from '../data/enemies';
-import { FIELD, CURSE_DMG_PER_STACK, WET_SLOW, FLOAT, isFloating, CAPTURE, ENEMY_HEIGHT } from '../data/constants';
+import { FIELD, CURSE_DMG_PER_STACK, WET_SLOW, OVERGROWTH_SLOW, OVERGROWTH_ROOT, FLOAT, isFloating, CAPTURE, ENEMY_HEIGHT } from '../data/constants';
 import { makeCreature, makeEnemy, disposeCreatureView } from '../render/fallback';
 import { Marks } from './Marks';
 
@@ -58,6 +58,10 @@ export class Enemy {
   private seg = 0;
   private segT = 0;
   rootTimer = 0;
+  /** 덩굴(overgrowth) 표식의 주기적 뿌리 재발동 타이머. 표식이 있는 동안 interval마다 짧게 root. */
+  overgrowthTimer = 0;
+  /** 표식 반응(시너지) 쿨다운 — 한 적이 반응을 연속 폭발하지 못하게. Battle이 감소/판정. */
+  reactionCd = 0;
   zoneSlow = 0; // 이번 프레임 장판 감속(0~1), Battle이 매 프레임 세팅
   /** 임시 감속 (증기 장막 등 지속형 디버프): slowTimer 동안 slowPct 적용 */
   slowPct = 0;
@@ -129,12 +133,14 @@ export class Enemy {
     this.slowTimer = Math.max(this.slowTimer, duration);
   }
 
-  /** 현재 이동속도 배율 (wet + zoneSlow + 임시감속 합성, root면 0). 보스는 감속 반감. */
+  /** 현재 이동속도 배율 (wet + 덩굴속박 + zoneSlow + 임시감속 합성, root면 0). 보스는 감속 반감. */
   private speedMult(): number {
     if (this.rootTimer > 0) return 0;
     const wet = this.marks.has('wet') ? WET_SLOW : 0;
+    // 덩굴(overgrowth) = 하드 CC: 젖음보다 강한 지속 감속(별도로 주기적 뿌리도 걸림).
+    const vine = this.marks.has('overgrowth') ? OVERGROWTH_SLOW : 0;
     const temp = this.slowTimer > 0 ? this.slowPct : 0;
-    const slow = Math.min(0.85, (wet + this.zoneSlow) * this.ccFactor + temp);
+    const slow = Math.min(0.9, (wet + vine + this.zoneSlow) * this.ccFactor + temp);
     return 1 - slow;
   }
 
@@ -189,6 +195,13 @@ export class Enemy {
       return;
     }
     if (this.rootTimer > 0) this.rootTimer -= dt;
+    // 덩굴 표식: 표식이 유지되는 동안 interval마다 짧게 뿌리로 옭아맨다(하드 CC 정체성). 표식이 없으면 리셋.
+    if (this.marks.has('overgrowth')) {
+      this.overgrowthTimer -= dt;
+      if (this.overgrowthTimer <= 0) { this.overgrowthTimer = OVERGROWTH_ROOT.interval; this.applyRoot(OVERGROWTH_ROOT.duration); }
+    } else {
+      this.overgrowthTimer = 0;
+    }
     if (this.slowTimer > 0) { this.slowTimer -= dt; if (this.slowTimer <= 0) this.slowPct = 0; }
     if (this.defDownTimer > 0) this.defDownTimer -= dt;
     this.marks.update(dt, t);
@@ -287,6 +300,8 @@ export class Enemy {
     this.stunned = false;
     this.stunTimer = 0;
     this.rootTimer = 0;
+    this.overgrowthTimer = 0;
+    this.reactionCd = 0;
     this.slowTimer = 0;
     this.slowPct = 0;
     this.zoneSlow = 0;

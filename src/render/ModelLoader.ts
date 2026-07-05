@@ -38,6 +38,8 @@ const cache = new Map<string, Promise<LoadedModel>>();
 export const modelFile = {
   creature: (el: Element, stage: number) => `creatures/mon_${el}_${stage}.glb`,
   hero: () => `creatures/hero.glb`,
+  /** 지키는 성(기지). 넣어주면 자동 적용될 예비 파일: models/castle.glb */
+  castle: () => `castle.glb`,
   /** file = enemies/ 안의 GLTF 파일명 (EnemyDef.model). 예: 'GreenBlob.gltf' */
   enemy: (file: string) => `enemies/${file}`,
 };

@@ -166,6 +166,13 @@ export const MODEL_OUTLINE = true;
 /** ?멸낸???먭퍡 (酉?怨듦컙 ?⑥쐞 ???붾뱶 ?⑥쐞, 紐⑤뜽 ?ㅼ??쇨낵 臾닿??섍쾶 ?쇱젙). */
 export const MODEL_OUTLINE_THICKNESS = 0.012;
 
+/**
+ * 성(기지) 모델 목표 높이. public/assets/models/castle.glb 를 넣으면 이 높이로
+ * 정규화되어 폴백 성채를 대체한다(발바닥 y=0). 없으면 조용히 폴백 유지.
+ * 폴백 성채의 총높이(약 6.5)에 맞춰둔 값 — 넣을 모델 비례에 맞게 여기만 조정.
+ */
+export const CASTLE_MODEL_HEIGHT = 6.5;
+
 /** ?ы듃?덉씠??PNG) ?뺢퇋???뺤궗媛곹삎 ??蹂 px + ?щ갚 鍮꾩쑉 */
 export const PORTRAIT_SIZE = 256;
 export const PORTRAIT_PADDING = 0.08;
@@ -204,11 +211,11 @@ export const ENEMY_ATTACK = { range: 2.2, interval: 1.55, hitsBeforeLeave: 1, le
 // ??嫄곗젏) ?꾪닾移???二쇱씤怨??듯빀. 寃쎈줈 ?앹쓽 ?깆씠 ?볦? ?ш굅由щ줈 ?꾨컲 寃쎈줈瑜?諛⑹뼱.
 export const HERO = {
   hp: 120,
-  attack: 17,
-  // 밸런스: 유일한 포탑 완화 — 공속만 1.45→1.25(DPS 24.6→21.25). 성문 공성 적이 2~3발 버텨 더 많이 새어들도록.
-  // range는 7.5 유지(축소 안 함) — 사거리는 보스가 얼마나 일찍 교전되는지=플랫 누수 랩 수를 결정하므로 건드리지 않음.
-  attackSpeed: 1.25,
-  range: 7.5, // ?깆씠 ?ㅼ쭏??諛⑹뼱?먭? ?섎룄濡??됰꼮??寃쎈줈 ??而ㅻ쾭)
+  // 밸런스(성 위협 강화): 포탑 공격력 대폭 너프. attack 17→7, 공속 1.25→1.05 (DPS 21.25→7.35, ≈-65%).
+  // 성문 포탑이 더 이상 새어든 물량을 혼자 정리하지 못한다 → 유닛 방어선을 뚫으면 성이 실제로 위협받는다.
+  attack: 7,
+  attackSpeed: 1.05,
+  range: 7.5, // 사거리는 유지 — 보스가 얼마나 일찍 교전되는지(플랫 누수 랩 수)를 결정하므로 건드리지 않음.
 } as const;
 
 /** 理쒕? 蹂댁쑀쨌湲곗슜 紐ъ뒪????(creature + ?ы쉷 enemy ?⑹퀜). 媛?5????紐ъ뒪????30??+ 臾댁깋 5. */
@@ -271,12 +278,20 @@ export const MARK: Record<MarkType, { duration: number; maxStacks: number }> = {
   bless: { duration: 10, maxStacks: 3 },
 };
 
+// ── 표식 정체성(역할 분리) ────────────────────────────────────────────────
+// 각 속성 표식은 "명확히 다른 한 가지 역할"만 갖는다 — 화상만 지속피해, 나머지는 비피해 제어/증폭:
+//   🔥 화상(burn)        = 지속 피해 (스택 DoT)          → 불 = 시간 화력
+//   💧 젖음(wet)         = 가벼운 감속                    → 물 = 견제/넉백
+//   🍃 덩굴(overgrowth)  = 강한 속박 (중감속 + 주기적 뿌리) → 풀 = 하드 CC (화상과 완전히 다름)
+//   🌑 저주(curse)       = 받는 피해 증폭                 → 어둠 = 증폭/처형
+//   🌟 축복(bless)       = 아군 공격력 버프 (적에겐 안 붙음) → 빛 = 지원
 export const BURN_DPS_PER_STACK = 3;
 export const WET_SLOW = 0.2;
 export const CURSE_DMG_PER_STACK = 0.06;
 export const BLESS_BUFF_PER_STACK = 0.1;
-export const OVERGROWTH_SLOW = 0.4;
-export const OVERGROWTH_DPS = 4;
+/** 덩굴 표식 = 하드 CC. 지속 감속(젖음보다 강함) + 주기적 뿌리로 "발을 묶는다". 더 이상 DoT가 아니다. */
+export const OVERGROWTH_SLOW = 0.5;
+export const OVERGROWTH_ROOT = { interval: 2.0, duration: 0.55 } as const;
 
 
 /** ?대몺 3??泥섏튂 ?ㅽ깮 (짠5.4) */
@@ -304,6 +319,14 @@ export const CAPTURE = {
   bossStun: 3,       // 蹂댁뒪/誘몃땲蹂댁뒪 HP0 ???ы쉷 媛??湲곗젅 李?珥?
   duplicateXp: 120,
   duplicateBond: 0.04,
+} as const;
+
+// ── 표식 반응(시너지) ─────────────────────────────────────────────────────
+// 서로 다른 속성 표식이 같은 적에게 겹치면 "반응"이 터진다(systems/reactions.ts의 단일 판정 테이블).
+// 덱에 여러 속성을 섞을 전략적 이유 = 반응 폭발. 스택이 쌓인 적일수록 반응 피해가 커진다.
+export const REACTION = {
+  cooldown: 0.7,        // 적 1마리가 반응을 연속으로 터뜨리지 못하게 하는 최소 간격(초)
+  dmgPerStagePct: 0.14, // 반응 피해 스테이지 스케일(+14%/스테이지) — 후반에도 유효타
 } as const;
 
 export const CAPTURE_RADIUS: Record<EnemyTier, number> = {

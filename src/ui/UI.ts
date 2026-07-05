@@ -626,7 +626,7 @@ export class UI {
   }
 
   showEvolve(data: { from: string; to: string; element: Element; stage: 1 | 2 | 3; kind: 'creature' | 'enemy'; species?: string }): void {
-    const scroll = this.modal(`<div class="evolve-stage el-${data.element}"><div class="evo-burst"></div><div class="evo-ring"></div><div class="evo-ico">${ELEMENT_ICON[data.element]}</div><div class="evo-title">진화</div><div class="evo-names"><span class="evo-from">${data.from}</span><span class="evo-arrow">→</span><span class="evo-to">${data.to}</span></div><p class="evo-sub">${data.stage}단으로 진화했습니다. 새로운 핵심 스킬을 배웠습니다.</p></div><div class="choice-row"><button class="btn primary" id="evo-ok">확인</button></div>`);
+    const scroll = this.modal(`<div class="evolve-stage el-${data.element}"><div class="evo-burst"></div><div class="evo-ring"></div><div class="evo-ico">${ELEMENT_ICON[data.element]}</div><div class="evo-title">진화</div><div class="evo-names"><span class="evo-from">${data.from}</span><span class="evo-arrow">→</span><span class="evo-to">${data.to}</span></div><p class="evo-sub">한 단계 진화했습니다! 새로운 핵심 스킬을 배웠습니다.</p></div><div class="choice-row"><button class="btn primary" id="evo-ok">확인</button></div>`);
     // 실제 진화 단계·종류(크리처/적)에 맞는 포트레이트 (기존: 항상 3단 → 2단 진화 시 불일치 버그)
     applyUnitPortrait(scroll.querySelector('.evo-ico') as HTMLElement, { name: data.to, element: data.element, kind: data.kind, species: data.species, stage: data.stage });
     (scroll.querySelector('#evo-ok') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onEvolveAck(); };
@@ -791,7 +791,7 @@ export class UI {
     list.innerHTML = '';
     const selIndex = Math.max(0, roster.findIndex((u) => u.uid === selectedUid));
     roster.forEach((u, i) => {
-      const item = el('div', 'roster-item' + (i === selIndex ? ' sel' : ''), `<div class="ri-pic">${ELEMENT_ICON[u.element]}</div><div class="ri-text"><div class="ri-name">${displayName(u)}</div><div class="ri-sub">${ELEMENT_NAME_KO[u.element]} · Lv${u.level} · ${u.stage}단</div></div>`);
+      const item = el('div', 'roster-item' + (i === selIndex ? ' sel' : ''), `<div class="ri-pic">${ELEMENT_ICON[u.element]}</div><div class="ri-text"><div class="ri-name">${displayName(u)}</div><div class="ri-sub">${ELEMENT_NAME_KO[u.element]} · Lv${u.level}</div></div>`);
       applyOwnedPortrait(item.querySelector('.ri-pic') as HTMLElement, u);
       item.onclick = () => {
         list.querySelectorAll('.roster-item').forEach((x) => x.classList.remove('sel'));
@@ -832,7 +832,7 @@ export class UI {
     r.innerHTML = '';
     r.appendChild(el('div', 'lobby-mon', '<div class="lm-ico">🏰</div><div class="lm-name">성</div><div class="lm-sub">공용 카드 5장</div>'));
     for (const u of info.roster) {
-      const chip = el('div', 'lobby-mon', `<div class="lm-ico">${cardElemIcon(u.element)}</div><div class="lm-name">${displayName(u)}</div><div class="lm-sub">Lv${u.level} · ${u.stage}단</div>`);
+      const chip = el('div', 'lobby-mon', `<div class="lm-ico">${cardElemIcon(u.element)}</div><div class="lm-name">${displayName(u)}</div><div class="lm-sub">Lv${u.level}</div>`);
       applyOwnedPortrait(chip.querySelector('.lm-ico') as HTMLElement, u);
       r.appendChild(chip);
     }
@@ -998,9 +998,9 @@ export class UI {
     const roleText = isEnemy ? (edef?.desc ?? '') : MONSTERS[u.element].stages[u.stage - 1].role;
     const traitLabel = isEnemy ? capturedTraitLabel(edef?.tier) : '';
     const traitDesc = isEnemy ? capturedTraitDesc(edef?.tier) : '';
-    const stageRow = isEnemy ? `<div class="row"><span>구분</span><span>포획 개체 · ${u.stage}단</span></div>` : `<div class="row"><span>진화 단계</span><span>${u.stage}단 / 3</span></div><div class="row"><span>진화 레벨</span><span>${MONSTERS[u.element].evolveLevels.join(' / ')}</span></div>`;
+    const stageRow = isEnemy ? `<div class="row"><span>구분</span><span>포획 개체</span></div>` : `<div class="row"><span>진화 단계</span><span>${u.stage} / 3</span></div><div class="row"><span>진화 레벨</span><span>${MONSTERS[u.element].evolveLevels.join(' / ')}</span></div>`;
     const body = this.viewerUI.querySelector('#info-body')!;
-    body.innerHTML = `<div class="info-pic">${ELEMENT_ICON[u.element]}</div><h2>${displayName(u)} <button class="rename-btn" id="rename-btn" title="이름 짓기">수정</button></h2><div class="row"><span>종족</span><span>${unitName(u)}</span></div><div class="row"><span>속성</span><span>${ELEMENT_NAME_KO[u.element]}</span></div><div class="row"><span>레벨</span><span>Lv ${u.level}</span></div>${stageRow}${traitLabel ? `<div class="row"><span>포획 특성</span><span>${traitLabel}</span></div>` : ''}${u.item && ITEM_BY_ID[u.item] ? `<div class="row"><span>🎒 도구</span><span>${ITEM_BY_ID[u.item].icon} ${ITEM_BY_ID[u.item].name}</span></div>` : ''}<div class="row"><span>❤️ 체력</span><span>${s.hp}</span></div><div class="row"><span>⚔️ 공격력</span><span>${s.attack}</span></div><div class="row"><span>🎯 사거리</span><span>${s.range.toFixed(1)}</span></div><div class="row"><span>⚡ 공격속도</span><span>${s.attackSpeed.toFixed(2)}</span></div><div class="row"><span>💥 치명타 확률</span><span>${Math.round(s.critChance * 100)}%</span></div><div class="row"><span>🔥 치명타 피해</span><span>+${Math.round((s.critDmg - 1) * 100)}%</span></div><div class="row"><span>🤝 유대 보너스</span><span>+${Math.round(s.bond * 100)}%</span></div><p style="margin-top:10px;font-size:12.5px;opacity:0.9">${traitDesc || roleText}</p>`;
+    body.innerHTML = `<div class="info-pic">${ELEMENT_ICON[u.element]}</div><h2>${displayName(u)} <button class="rename-btn" id="rename-btn" title="이름 짓기" aria-label="이름 짓기">✏️</button></h2><div class="row"><span>종족</span><span>${unitName(u)}</span></div><div class="row"><span>속성</span><span>${ELEMENT_NAME_KO[u.element]}</span></div><div class="row"><span>레벨</span><span>Lv ${u.level}</span></div>${stageRow}${traitLabel ? `<div class="row"><span>포획 특성</span><span>${traitLabel}</span></div>` : ''}${u.item && ITEM_BY_ID[u.item] ? `<div class="row"><span>🎒 도구</span><span>${ITEM_BY_ID[u.item].icon} ${ITEM_BY_ID[u.item].name}</span></div>` : ''}<div class="row"><span>❤️ 체력</span><span>${s.hp}</span></div><div class="row"><span>⚔️ 공격력</span><span>${s.attack}</span></div><div class="row"><span>🎯 사거리</span><span>${s.range.toFixed(1)}</span></div><div class="row"><span>⚡ 공격속도</span><span>${s.attackSpeed.toFixed(2)}</span></div><div class="row"><span>💥 치명타 확률</span><span>${Math.round(s.critChance * 100)}%</span></div><div class="row"><span>🔥 치명타 피해</span><span>+${Math.round((s.critDmg - 1) * 100)}%</span></div><div class="row"><span>🤝 유대 보너스</span><span>+${Math.round(s.bond * 100)}%</span></div><p style="margin-top:10px;font-size:12.5px;opacity:0.9">${traitDesc || roleText}</p>`;
     applyOwnedPortrait(body.querySelector('.info-pic') as HTMLElement, u);
     (body.querySelector('#rename-btn') as HTMLButtonElement).onclick = () => this.showRenameDialog(u);
   }

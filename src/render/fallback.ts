@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Element, ElementOrNeutral } from '../core/types';
-import { ELEMENT_COLOR, NEUTRAL_COLOR, ELEMENT_ICON, CREATURE_DISPLAY_SCALE } from '../data/constants';
+import { ELEMENT_COLOR, NEUTRAL_COLOR, ELEMENT_ICON, CREATURE_DISPLAY_SCALE, CASTLE_MODEL_HEIGHT } from '../data/constants';
 import { attachModel, modelFile, addOutline } from './ModelLoader';
 
 /**
@@ -19,6 +19,21 @@ function toonMat(color: number, opts: { transparent?: boolean; opacity?: number 
   if (opts.transparent !== undefined) m.transparent = opts.transparent;
   if (opts.opacity !== undefined) m.opacity = opts.opacity;
   return m;
+}
+
+/**
+ * lit(입체) 셰이딩 머티리얼 — 씬의 키/필 디렉셔널 + 앰비언트 조명에 반응해
+ * 면마다 명암이 생긴다. 성채 전용(카툰 flat 룩 탈피). 그림자맵은 씬에서 꺼져 있어
+ * 드리운 그림자는 없지만 형태 음영은 나온다.
+ */
+function litMat(color: number, opts: { roughness?: number; metalness?: number; emissive?: number; emissiveIntensity?: number } = {}): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: opts.roughness ?? 0.82,
+    metalness: opts.metalness ?? 0,
+    emissive: opts.emissive ?? 0x000000,
+    emissiveIntensity: opts.emissiveIntensity ?? 1,
+  });
 }
 
 /**
@@ -196,44 +211,50 @@ export function makeEnemy(el: ElementOrNeutral, radius: number, flying?: boolean
   return g;
 }
 
-/** 지키는 성(거점) — 카툰 로우폴리 성채(주인공 통합). 위에 HP 바가 떠 있음. */
+/** 지키는 성(거점) — lit(입체) 셰이딩 로우폴리 성채(주인공 통합). 위에 HP 바가 떠 있음. */
 export function makeBase(): THREE.Group {
   const g = new THREE.Group();
   const STONE = 0x9a8f7a, STONE_D = 0x7a6f5c, ROOF = 0xc0392b, GOLD = 0xd8a93b;
+  // 카툰 flat 룩 탈피: lit 머티리얼 + 검은 외곽선 제거로 면마다 명암이 살아난다.
   const addPart = (mesh: THREE.Mesh, x: number, y: number, z: number): THREE.Mesh => {
     mesh.position.set(x, y, z);
     mesh.userData.placeholder = true;
-    addOutline(mesh);
     g.add(mesh);
     return mesh;
   };
   // 잔디 위 성터(원형 받침)
-  addPart(new THREE.Mesh(new THREE.CylinderGeometry(2.9, 3.2, 0.5, 16), toonMat(STONE_D)), 0, 0.25, 0);
+  addPart(new THREE.Mesh(new THREE.CylinderGeometry(2.9, 3.2, 0.5, 16), litMat(STONE_D, { roughness: 0.95 })), 0, 0.25, 0);
   // 성벽(사각 본체)
-  addPart(new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.8, 3.6), toonMat(STONE)), 0, 1.4, 0);
+  addPart(new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.8, 3.6), litMat(STONE)), 0, 1.4, 0);
   // 중앙 첨탑(본성)
-  addPart(new THREE.Mesh(new THREE.BoxGeometry(1.9, 2.6, 1.9), toonMat(STONE)), 0, 3.2, 0);
-  addPart(new THREE.Mesh(new THREE.ConeGeometry(1.6, 1.6, 4), toonMat(ROOF)), 0, 5.1, 0).rotation.y = Math.PI / 4;
+  addPart(new THREE.Mesh(new THREE.BoxGeometry(1.9, 2.6, 1.9), litMat(STONE)), 0, 3.2, 0);
+  addPart(new THREE.Mesh(new THREE.ConeGeometry(1.6, 1.6, 4), litMat(ROOF, { roughness: 0.7 })), 0, 5.1, 0).rotation.y = Math.PI / 4;
   // 네 모서리 탑
   for (const [sx, sz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]] as const) {
-    addPart(new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 2.8, 8), toonMat(STONE)), sx, 1.9, sz);
-    addPart(new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.1, 8), toonMat(ROOF)), sx, 3.7, sz);
+    addPart(new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 2.8, 8), litMat(STONE)), sx, 1.9, sz);
+    addPart(new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.1, 8), litMat(ROOF, { roughness: 0.7 })), sx, 3.7, sz);
   }
   // 성벽 흉벽(크레넬레이션)
   for (let k = 0; k < 4; k++) {
     const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
-    addPart(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), toonMat(STONE_D)), Math.cos(a) * 1.7, 2.45, Math.sin(a) * 1.7);
+    addPart(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), litMat(STONE_D, { roughness: 0.95 })), Math.cos(a) * 1.7, 2.45, Math.sin(a) * 1.7);
   }
-  // 수호 코어(발광 크리스털) — 본성 위
-  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), toonMat(0x6fd0e8));
+  // 수호 코어(발광 크리스털) — 본성 위. emissive로 자체 발광(조명과 무관하게 빛남).
+  const crystal = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.55, 0),
+    litMat(0x6fd0e8, { roughness: 0.25, emissive: 0x6fd0e8, emissiveIntensity: 0.6 }),
+  );
   crystal.position.y = 6.4;
   crystal.userData.placeholder = true;
-  addOutline(crystal);
   g.add(crystal);
   g.userData.crystal = crystal;
-  // 금색 깃대
-  addPart(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 6), toonMat(GOLD)), 0, 6.0, 0);
+  // 금색 깃대 (금속 질감)
+  addPart(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 6), litMat(GOLD, { metalness: 0.7, roughness: 0.35 })), 0, 6.0, 0);
   // 성 HP는 상단 HUD 🏰 게이지로 표시(#hud-actions와 겹침 방지 — 성 위 3D 바 제거).
   // 대신 수호 코어(crystal)를 HP 피드백에 사용: setBaseHp에서 낮을수록 붉게 물든다.
+  // ▶ 예비: public/assets/models/castle.glb 를 넣으면 폴백 성채(위 placeholder 전부)를
+  //   자동 대체한다. 파일 없으면 조용히 폴백 유지. 크리스털 HP 틴트는 모델 교체 시
+  //   사라지지만 HP는 상단 HUD 🏰 게이지가 계속 표시한다. 애니(깃발 흔들림 등)가 있으면 재생.
+  attachModel(g, modelFile.castle(), CASTLE_MODEL_HEIGHT, undefined, [/idle/i, /wave/i, /flag/i]);
   return g;
 }
