@@ -66,7 +66,7 @@ export class Battle {
 
   constructor(private scene: Scene, private state: GameState, public stage: StageDef, private hpScale: number) {
     setStageLayout(stage.id - 1); // 스테이지별 경로/슬롯 적용 (FIELD.path·UNIT_SLOTS 인플레이스 교체)
-    scene.setTheme(stage.theme);
+    scene.setStage(stage.id, stage.theme); // 스테이지 고유 팔레트/장식 밀도
     scene.rebuildMap();
     this.deck = new DeckSystem(state.manaMax, state.manaRegen);
     this.autoPlace();

@@ -22,6 +22,24 @@ const THEME_BG: Record<Theme, number> = {
   temple: 0x2b241a,
 };
 
+/**
+ * 스테이지별 고유 팔레트 — 같은 테마의 두 스테이지도 확실히 달라 보이게 10개 각각 다른 정체성.
+ * ground=잔디/바닥 윗면, path=경로(흙) 색, bg=배경 하늘, density=장식 프롭 밀도.
+ */
+export interface StageVisual { ground: number; path: number; bg: number; density: number }
+const STAGE_VISUAL: Record<number, StageVisual> = {
+  1:  { ground: 0x78a84e, path: 0xc6a468, bg: 0x33421f, density: 8 },   // 초원 아침 — 밝고 상쾌
+  2:  { ground: 0x9aad4c, path: 0xccaa5c, bg: 0x3e3c1c, density: 15 },  // 초원 들판 — 누런 풀·꽃 만발
+  3:  { ground: 0x3f6b3a, path: 0x8a6b3e, bg: 0x1b2a1a, density: 12 },  // 숲 진입 — 짙은 초록
+  4:  { ground: 0x336b54, path: 0x6d5836, bg: 0x132a20, density: 17 },  // 숲 심부 — 청록·빽빽한 나무
+  5:  { ground: 0x514a5e, path: 0x5f5468, bg: 0x161320, density: 11 },  // 동굴 입구 — 보라 회암·크리스털
+  6:  { ground: 0x6f8093, path: 0x9aabbb, bg: 0x131c26, density: 13 },  // 동굴 심부 설산 — 얼음 청회색
+  7:  { ground: 0x7a3e2c, path: 0x9a4e30, bg: 0x2c140d, density: 9 },   // 화산 — 붉은 흙
+  8:  { ground: 0x4c271f, path: 0x86311f, bg: 0x1f0c07, density: 14 },  // 화산 심부 — 숯빛·용암 균열
+  9:  { ground: 0x8f8467, path: 0xbdac7a, bg: 0x2c251b, density: 10 },  // 신전 — 사암빛
+  10: { ground: 0x554b3d, path: 0x7d6b49, bg: 0x171309, density: 15 },  // 신전 심층 — 어두운 흑요석
+};
+
 /** 색을 어둡게 (unlit 타일의 옆면 — 격자 구분용) */
 function darken(hex: number, f: number): number {
   return new THREE.Color(hex).multiplyScalar(f).getHex();
@@ -77,6 +95,9 @@ export class Scene {
   base: THREE.Group;
   private grassTopMat!: THREE.MeshBasicMaterial;
   private grassSideMat!: THREE.MeshBasicMaterial;
+  private pathTopMat!: THREE.MeshBasicMaterial;
+  private pathSideMat!: THREE.MeshBasicMaterial;
+  private decorDensity = 12;
   private raycaster = new THREE.Raycaster();
   private slotMeshes: THREE.Mesh[] = [];
   private capRing!: THREE.Mesh;
@@ -113,6 +134,9 @@ export class Scene {
     // 격자 큐브 맵 (unlit + 옆면 음영으로 격자 구분)
     this.grassTopMat = new THREE.MeshBasicMaterial({ color: THEME_GROUND.grassland });
     this.grassSideMat = new THREE.MeshBasicMaterial({ color: darken(THEME_GROUND.grassland, SIDE_SHADE) });
+    // 경로(흙) 머티리얼 — 스테이지별 재색칠 대상 (인스턴스 공유, 재빌드 시 지오메트리만 교체).
+    this.pathTopMat = new THREE.MeshBasicMaterial({ color: 0xb79662 });
+    this.pathSideMat = new THREE.MeshBasicMaterial({ color: darken(0xb79662, SIDE_SHADE) });
     this.scene.add(this.mapGroup);
     this.buildGrid();
     this.buildSlots();
@@ -140,10 +164,8 @@ export class Scene {
     const cubeH = 0.9;
     const grassGeo = new THREE.BoxGeometry(size, cubeH, size);
     const pathGeo = new THREE.BoxGeometry(size, cubeH, size);
-    const dirtTopMat = new THREE.MeshBasicMaterial({ color: 0xb79662 });
-    const dirtSideMat = new THREE.MeshBasicMaterial({ color: darken(0xb79662, SIDE_SHADE) });
     const grassMats = faceMats(this.grassTopMat, this.grassSideMat);
-    const dirtMats = faceMats(dirtTopMat, dirtSideMat);
+    const dirtMats = faceMats(this.pathTopMat, this.pathSideMat);
 
     for (let col = 0; col < FIELD.cols; col++) {
       for (let row = 0; row < FIELD.rows; row++) {
@@ -182,7 +204,7 @@ export class Scene {
     const base = this.base.position;
     const usable = cands.filter((c) => Math.hypot(c.x - base.x, c.z - base.z) > 3.6);
     for (let i = usable.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [usable[i], usable[j]] = [usable[j], usable[i]]; }
-    const count = Math.min(14, usable.length);
+    const count = Math.min(this.decorDensity, usable.length);
     for (let i = 0; i < count; i++) {
       const c = usable[i];
       const prop = makeProp(this.theme);
@@ -275,11 +297,19 @@ export class Scene {
     (this.rangeRing.material as THREE.MeshBasicMaterial).opacity = 0;
   }
 
-  setTheme(theme: Theme): void {
+  /**
+   * 스테이지별 시각 적용 — 테마(장식 종류) + 스테이지 고유 팔레트(잔디/경로/배경/밀도).
+   * 같은 테마여도 스테이지마다 색과 장식 밀도가 달라 10개 각기 다른 정체성.
+   */
+  setStage(stageId: number, theme: Theme): void {
     this.theme = theme;
-    this.grassTopMat.color.setHex(THEME_GROUND[theme]);
-    this.grassSideMat.color.setHex(darken(THEME_GROUND[theme], SIDE_SHADE));
-    (this.scene.background as THREE.Color).setHex(THEME_BG[theme]);
+    const v = STAGE_VISUAL[stageId] ?? { ground: THEME_GROUND[theme], path: 0xb79662, bg: THEME_BG[theme], density: 12 };
+    this.grassTopMat.color.setHex(v.ground);
+    this.grassSideMat.color.setHex(darken(v.ground, SIDE_SHADE));
+    this.pathTopMat.color.setHex(v.path);
+    this.pathSideMat.color.setHex(darken(v.path, SIDE_SHADE));
+    (this.scene.background as THREE.Color).setHex(v.bg);
+    this.decorDensity = v.density;
   }
 
   /** 성 HP를 수호 코어(crystal) 색으로 표현 (0~1). 낮을수록 청록→붉게. */

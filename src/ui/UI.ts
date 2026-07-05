@@ -51,6 +51,11 @@ const el = (tag: string, cls?: string, html?: string): HTMLElement => {
   return e;
 };
 
+/** 스테이지 맵/테마 아이콘 (노드식 모험 지도). */
+const THEME_ICON: Record<string, string> = {
+  grassland: '🌿', forest: '🌲', cave: '🕳️', volcano: '🌋', temple: '🏛️',
+};
+
 function cardElemIcon(e: string): string {
   if (e === 'normal') return '⚪';
   if (e === 'neutral') return '🏰';
@@ -133,6 +138,8 @@ export class UI {
   onShop = () => {};
   onShopBuy = (_id: string) => {};
   onShopClose = () => {};
+  onStageEnter = () => {};
+  onStageMapBack = () => {};
 
   private hudTop!: HTMLElement;
   private actions!: HTMLElement;
@@ -145,6 +152,7 @@ export class UI {
   private dropZone!: HTMLElement;
   private placementBar!: HTMLElement;
   private lobbyUI!: HTMLElement;
+  private stageMapUI!: HTMLElement;
   private manageUI!: HTMLElement;
   private manaBar!: HTMLElement;
   private refs: Record<string, HTMLElement> = {};
@@ -166,6 +174,7 @@ export class UI {
     root.appendChild(this.modalHost);
     this.buildViewer();
     this.buildLobby();
+    this.buildStageMap();
     this.probeLobbyBg();
     this.buildManage();
     this.buildDexView();
@@ -712,6 +721,65 @@ export class UI {
     if (info.roster.length === 0) r.appendChild(el('div', 'lobby-empty', '아직 동료가 없습니다.<br/>출정해서 첫 동료를 선택하세요.'));
   }
   hideLobby(): void { this.lobbyUI.style.display = 'none'; }
+
+  // ── 노드식 모험 지도 (스테이지 선택) ──────────────────────────
+  private buildStageMap(): void {
+    this.stageMapUI = el('div');
+    this.stageMapUI.id = 'stagemap';
+    this.stageMapUI.style.display = 'none';
+    this.root.appendChild(this.stageMapUI);
+  }
+
+  /**
+   * 마리오식 노드 지도. 클리어=체크·현재=반짝(진입 가능)·미래=자물쇠.
+   * 현재 노드만 클릭해 진입. 굽이치는 경로로 10개 스테이지를 한눈에.
+   */
+  showStageMap(data: { stages: { no: number; label: string; theme: string; boss?: 'mini' | 'final'; state: 'cleared' | 'current' | 'locked' }[] }): void {
+    this.setGameplayVisible(false);
+    this.hideLobby();
+    this.clearModal();
+    const W = 1000, H = 460, padX = 70, padY = 84;
+    const N = data.stages.length;
+    const pts = data.stages.map((s, i) => {
+      const x = padX + (N > 1 ? i * ((W - 2 * padX) / (N - 1)) : 0);
+      const y = H / 2 - Math.sin(i * 0.8) * (H / 2 - padY); // 굽이치는 경로
+      return { x, y, s };
+    });
+    let segs = '';
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const on = data.stages[i + 1].state !== 'locked'; // 도달한 구간 = 금색 실선
+      segs += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="smap-seg ${on ? 'on' : 'off'}"/>`;
+    }
+    const nodes = pts.map(({ x, y, s }) => {
+      const icon = THEME_ICON[s.theme] ?? '❔';
+      const badge = s.state === 'cleared' ? '✓' : s.state === 'locked' ? '🔒' : icon;
+      const boss = s.boss === 'final' ? '<span class="smap-boss">👑</span>' : s.boss === 'mini' ? '<span class="smap-boss">💀</span>' : '';
+      const dis = s.state === 'current' ? '' : 'disabled';
+      return `<button class="smap-node ${s.state}${s.boss ? ' boss' : ''}" data-no="${s.no}" title="${s.label}" ${dis}
+        style="left:${(x / W) * 100}%;top:${(y / H) * 100}%">
+        <span class="smap-badge">${badge}</span><span class="smap-num">${s.no}</span>${boss}
+      </button>`;
+    }).join('');
+    const cur = data.stages.find((s) => s.state === 'current');
+    const subText = cur ? `${cur.no}. ${cur.label} — 진입하려면 반짝이는 노드를 누르세요` : '모든 스테이지를 정복했습니다!';
+    this.stageMapUI.innerHTML = `
+      <div class="smap-head">
+        <button class="btn smap-back" id="smap-back">← 원정대</button>
+        <h1>모험 지도</h1>
+        <div class="smap-sub">${subText}</div>
+      </div>
+      <div class="smap-canvas">
+        <svg class="smap-lines" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${segs}</svg>
+        ${nodes}
+      </div>`;
+    this.stageMapUI.style.display = 'flex';
+    (this.stageMapUI.querySelector('#smap-back') as HTMLButtonElement).onclick = () => { playSfx('click'); this.onStageMapBack(); };
+    this.stageMapUI.querySelectorAll('.smap-node.current').forEach((n) => {
+      (n as HTMLButtonElement).onclick = () => { playSfx('select'); this.onStageEnter(); };
+    });
+  }
+  hideStageMap(): void { this.stageMapUI.style.display = 'none'; }
 
   /**
    * 로비 배경 이미지 적용: public/assets/ui/lobby_bg.{jpg,png,webp} 중 존재하는 것을 자동 사용.

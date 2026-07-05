@@ -13,7 +13,7 @@ import { bus } from './events';
 import { settings } from './Settings';
 import { playSfx } from '../audio/Sfx';
 
-type Mode = 'title' | 'lobby' | 'battle' | 'viewer' | 'manage';
+type Mode = 'title' | 'lobby' | 'battle' | 'viewer' | 'manage' | 'stagemap';
 
 /** 최상위 앱 컨트롤러: 씬/UI/상태/전투를 조율하고 메타 루프(스테이지 진행/보상/갈림길)를 돌린다. */
 export class Game {
@@ -76,7 +76,9 @@ export class Game {
     this.ui.onCardReplacePick = (discardId) => this.pickCardReplace(discardId);
     this.ui.onRestart = () => { clearRun(); this.startRun(); };
     this.ui.onPlacementToggle = (_id) => {};
-    this.ui.onEnterBattle = () => this.enterBattle();
+    this.ui.onEnterBattle = () => this.openStageMap();
+    this.ui.onStageEnter = () => { this.ui.hideStageMap(); this.enterBattle(); };
+    this.ui.onStageMapBack = () => { this.ui.hideStageMap(); this.showLobby(); };
     this.ui.onManage = () => this.openManage();
     this.ui.onManageClose = () => this.showLobby();
     this.ui.onSettings = () => this.ui.showSettings();
@@ -390,6 +392,7 @@ export class Game {
     this.paused = true;
     this.battle = null;
     this.ui.hideManage();
+    this.ui.hideStageMap();
     this.ui.showLobby({
       stageNo: Math.min(state.stageIndex + 1, STAGES.length),
       stageLabel: STAGES[Math.min(state.stageIndex, STAGES.length - 1)].label,
@@ -397,6 +400,18 @@ export class Game {
       roster: state.roster,
       capturedCount: state.capturedCount,
     });
+  }
+
+  /** 로비 '출정' → 노드식 모험 지도를 열어 현재 스테이지를 선택하게 한다. */
+  private openStageMap(): void {
+    this.mode = 'stagemap';
+    this.ui.hideLobby();
+    const cur = state.stageIndex;
+    const stages = STAGES.map((s, i) => ({
+      no: s.id, label: s.label, theme: s.theme, boss: s.boss,
+      state: (i < cur ? 'cleared' : i === cur ? 'current' : 'locked') as 'cleared' | 'current' | 'locked',
+    }));
+    this.ui.showStageMap({ stages });
   }
 
   private enterBattle(): void {
