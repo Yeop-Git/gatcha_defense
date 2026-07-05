@@ -17,7 +17,7 @@
     "directories": { "output": "release" },
     "files": ["dist/**/*", "electron/**/*"],
     "asar": false,
-    "win": { "target": "dir" }
+    "win": { "target": "dir", "icon": "public/assets/ui/logo.png" }
   },
   "dependencies": {
     "three": "^0.169.0"

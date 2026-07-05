@@ -12,6 +12,9 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#17100a',
+    title: '캐치 수호핑',
+    // 창/작업표시줄 아이콘 (빌드 후 dist에 복사된 앱 로고). 파일 없으면 Electron 기본 아이콘.
+    icon: path.join(__dirname, '..', 'dist', 'assets', 'ui', 'logo.png'),
     autoHideMenuBar: true,
     webPreferences: {
       webSecurity: false,
