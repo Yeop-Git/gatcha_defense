@@ -6,6 +6,7 @@ import { unitName, displayName, deriveStats } from '../core/GameState';
 import { MONSTERS } from '../data/monsters';
 import { ENEMIES } from '../data/enemies';
 import { CARD_BY_ID, cardIcon, cardMeta, cardRole } from '../data/cards';
+import { ITEM_BY_ID } from '../data/items';
 import { getPortrait } from '../render/Portraits';
 import { getEnemyPortrait } from '../render/EnemyPortraits';
 import { settings, saveSettings } from '../core/Settings';
@@ -138,6 +139,7 @@ export class UI {
   onShop = () => {};
   onShopBuy = (_id: string) => {};
   onShopClose = () => {};
+  onItemAssign = (_uid: string) => {};
   onStageEnter = () => {};
   onStageMapBack = () => {};
 
@@ -625,23 +627,53 @@ export class UI {
     (scroll.querySelector('#ev-ok') as HTMLButtonElement).onclick = () => { this.clearModal(); this.onEventPick(node.id); };
   }
 
-  /** 상점 모달 — 골드로 성 회복/영구 강화 구매. 구매마다 Game이 다시 열어 잔액/상태 갱신. */
-  showShop(data: { gold: number; items: { id: string; icon: string; label: string; desc: string; cost: number; disabled?: boolean; note?: string }[] }): void {
-    const rows = data.items.map((it) => {
+  /** 상점 모달 — 골드로 성 회복/영구 강화 + 캐릭터 도구 구매. 구매마다 Game이 다시 열어 잔액/상태 갱신. */
+  showShop(data: {
+    gold: number;
+    items: { id: string; icon: string; label: string; desc: string; cost: number; disabled?: boolean; note?: string }[];
+    tools?: { id: string; icon: string; label: string; desc: string; cost: number }[];
+  }): void {
+    const rowHtml = (it: { id: string; icon: string; label: string; desc: string; cost: number; disabled?: boolean; note?: string }): string => {
       const affordable = !it.disabled && data.gold >= it.cost;
       return `<div class="shop-item${affordable ? '' : ' disabled'}" data-id="${it.id}">
         <div class="si-ico">${it.icon}</div>
         <div class="si-text"><div class="si-label">${it.label}</div><div class="si-desc">${it.note ?? it.desc}</div></div>
         <div class="si-cost">🪙 ${it.cost}</div>
       </div>`;
-    }).join('');
+    };
+    const upgradeRows = data.items.map(rowHtml).join('');
+    const toolRows = (data.tools ?? []).map((t) => rowHtml({ ...t, disabled: data.gold < t.cost })).join('');
+    const toolSection = toolRows
+      ? `<h2 class="shop-section">🎒 도구 <span class="shop-note">동료에게 장착</span></h2><div class="shop-list">${toolRows}</div>`
+      : '';
     const scroll = this.modal(`<h1>🛒 상점</h1><p class="shop-gold">보유 골드 <b>${data.gold}</b></p>
-      <div class="shop-list">${rows}</div>
+      <h2 class="shop-section">✦ 강화</h2>
+      <div class="shop-list">${upgradeRows}</div>
+      ${toolSection}
       <div class="choice-row"><button class="btn primary" id="shop-ok">닫기</button></div>`);
     scroll.querySelectorAll('.shop-item:not(.disabled)').forEach((row) => {
       (row as HTMLElement).onclick = () => { playSfx('coin'); this.onShopBuy((row as HTMLElement).dataset.id!); };
     });
     (scroll.querySelector('#shop-ok') as HTMLButtonElement).onclick = () => { playSfx('click'); this.clearModal(); this.onShopClose(); };
+  }
+
+  /** 도구 구매 시 어느 동료에게 장착할지 선택. 취소=빈 uid. */
+  showItemAssign(item: { name: string; icon: string; desc: string; cost: number }, units: { uid: string; name: string; element: string; kind: 'creature' | 'enemy'; species?: string; stage: 1 | 2 | 3; currentItem?: string }[]): void {
+    const rows = units.map((u) => `<div class="assign-item" data-uid="${u.uid}">
+      <div class="ai-ico">${cardElemIcon(u.element)}</div>
+      <div class="ai-text"><div class="ai-name">${u.name}</div><div class="ai-cur">${u.currentItem ? `현재: ${u.currentItem}` : '도구 없음'}</div></div>
+    </div>`).join('');
+    const scroll = this.modal(`<h1>${item.icon} ${item.name}</h1>
+      <p>${item.desc} · 🪙 ${item.cost}</p>
+      <p class="shop-gold">누구에게 장착할까요? (기존 도구는 교체됩니다)</p>
+      <div class="assign-list">${rows}</div>
+      <div class="choice-row"><button class="btn" id="assign-cancel">취소</button></div>`);
+    scroll.querySelectorAll('.assign-item').forEach((row) => {
+      const uid = (row as HTMLElement).dataset.uid!;
+      applyUnitPortrait((row.querySelector('.ai-ico') as HTMLElement), { name: units.find((x) => x.uid === uid)!.name, element: units.find((x) => x.uid === uid)!.element, kind: units.find((x) => x.uid === uid)!.kind, species: units.find((x) => x.uid === uid)!.species, stage: units.find((x) => x.uid === uid)!.stage });
+      (row as HTMLElement).onclick = () => { playSfx('select'); this.onItemAssign(uid); };
+    });
+    (scroll.querySelector('#assign-cancel') as HTMLButtonElement).onclick = () => { playSfx('click'); this.onItemAssign(''); };
   }
 
   showWin(finalBossName: string): void {
@@ -694,11 +726,10 @@ export class UI {
     this.lobbyUI = el('div');
     this.lobbyUI.id = 'lobby';
     this.lobbyUI.style.display = 'none';
-    this.lobbyUI.innerHTML = `<div class="lobby-head"><button class="btn lobby-title-btn" id="lobby-title">☰ 타이틀</button><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-shop"><div class="mc-ico">🛒</div><div class="mc-title">상점</div><div class="mc-sub">골드로 강화 구매</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div><div class="menu-card" id="lobby-dex"><div class="mc-ico">📖</div><div class="mc-title">도감</div><div class="mc-sub">수집 컬렉션</div></div></div></div><button class="btn primary lobby-cta" id="lobby-battle"><span class="lc-ico">⚔️</span><span class="lc-title">출정</span><span class="lc-sub" id="lobby-next-stage"></span></button>`;
+    this.lobbyUI.innerHTML = `<div class="lobby-head"><button class="btn lobby-title-btn" id="lobby-title">☰ 타이틀</button><h1>몬스터 원정대</h1><div id="lobby-stage" class="lobby-stage"></div></div><div class="lobby-body"><div class="lobby-left panel"><h2>원정대</h2><div id="lobby-roster" class="lobby-roster"></div></div><div class="lobby-menu"><div class="menu-card" id="lobby-manage"><div class="mc-ico">🎴</div><div class="mc-title">카드 관리</div><div class="mc-sub">스킬 카드 장착</div></div><div class="menu-card" id="lobby-viewer"><div class="mc-ico">🔍</div><div class="mc-title">몬스터 보기</div><div class="mc-sub">3D 뷰어 · 이름 짓기</div></div><div class="menu-card" id="lobby-dex"><div class="mc-ico">📖</div><div class="mc-title">도감</div><div class="mc-sub">수집 컬렉션</div></div></div></div><button class="btn primary lobby-cta" id="lobby-battle"><span class="lc-ico">⚔️</span><span class="lc-title">출정</span><span class="lc-sub" id="lobby-next-stage"></span></button>`;
     this.root.appendChild(this.lobbyUI);
     (this.lobbyUI.querySelector('#lobby-battle') as HTMLElement).onclick = () => this.onEnterBattle();
     (this.lobbyUI.querySelector('#lobby-manage') as HTMLElement).onclick = () => this.onManage();
-    (this.lobbyUI.querySelector('#lobby-shop') as HTMLElement).onclick = () => { playSfx('click'); this.onShop(); };
     (this.lobbyUI.querySelector('#lobby-viewer') as HTMLElement).onclick = () => this.onOpenViewer();
     (this.lobbyUI.querySelector('#lobby-dex') as HTMLElement).onclick = () => { playSfx('click'); this.onDex(); };
     (this.lobbyUI.querySelector('#lobby-title') as HTMLElement).onclick = () => { playSfx('click'); this.onToTitle(); };
@@ -852,7 +883,7 @@ export class UI {
     const traitDesc = isEnemy ? capturedTraitDesc(edef?.tier) : '';
     const stageRow = isEnemy ? `<div class="row"><span>구분</span><span>포획 개체 · ${u.stage}단</span></div>` : `<div class="row"><span>진화 단계</span><span>${u.stage}단 / 3</span></div><div class="row"><span>진화 레벨</span><span>${MONSTERS[u.element].evolveLevels.join(' / ')}</span></div>`;
     const body = this.viewerUI.querySelector('#info-body')!;
-    body.innerHTML = `<div class="info-pic">${ELEMENT_ICON[u.element]}</div><h2>${displayName(u)} <button class="rename-btn" id="rename-btn" title="이름 짓기">수정</button></h2><div class="row"><span>종족</span><span>${unitName(u)}</span></div><div class="row"><span>속성</span><span>${ELEMENT_NAME_KO[u.element]}</span></div><div class="row"><span>레벨</span><span>Lv ${u.level}</span></div>${stageRow}${traitLabel ? `<div class="row"><span>포획 특성</span><span>${traitLabel}</span></div>` : ''}<div class="row"><span>❤️ 체력</span><span>${s.hp}</span></div><div class="row"><span>⚔️ 공격력</span><span>${s.attack}</span></div><div class="row"><span>🎯 사거리</span><span>${s.range.toFixed(1)}</span></div><div class="row"><span>⚡ 공격속도</span><span>${s.attackSpeed.toFixed(2)}</span></div><div class="row"><span>💥 치명타 확률</span><span>${Math.round(s.critChance * 100)}%</span></div><div class="row"><span>🔥 치명타 피해</span><span>+${Math.round((s.critDmg - 1) * 100)}%</span></div><div class="row"><span>🤝 유대 보너스</span><span>+${Math.round(s.bond * 100)}%</span></div><p style="margin-top:10px;font-size:12.5px;opacity:0.9">${traitDesc || roleText}</p>`;
+    body.innerHTML = `<div class="info-pic">${ELEMENT_ICON[u.element]}</div><h2>${displayName(u)} <button class="rename-btn" id="rename-btn" title="이름 짓기">수정</button></h2><div class="row"><span>종족</span><span>${unitName(u)}</span></div><div class="row"><span>속성</span><span>${ELEMENT_NAME_KO[u.element]}</span></div><div class="row"><span>레벨</span><span>Lv ${u.level}</span></div>${stageRow}${traitLabel ? `<div class="row"><span>포획 특성</span><span>${traitLabel}</span></div>` : ''}${u.item && ITEM_BY_ID[u.item] ? `<div class="row"><span>🎒 도구</span><span>${ITEM_BY_ID[u.item].icon} ${ITEM_BY_ID[u.item].name}</span></div>` : ''}<div class="row"><span>❤️ 체력</span><span>${s.hp}</span></div><div class="row"><span>⚔️ 공격력</span><span>${s.attack}</span></div><div class="row"><span>🎯 사거리</span><span>${s.range.toFixed(1)}</span></div><div class="row"><span>⚡ 공격속도</span><span>${s.attackSpeed.toFixed(2)}</span></div><div class="row"><span>💥 치명타 확률</span><span>${Math.round(s.critChance * 100)}%</span></div><div class="row"><span>🔥 치명타 피해</span><span>+${Math.round((s.critDmg - 1) * 100)}%</span></div><div class="row"><span>🤝 유대 보너스</span><span>+${Math.round(s.bond * 100)}%</span></div><p style="margin-top:10px;font-size:12.5px;opacity:0.9">${traitDesc || roleText}</p>`;
     applyOwnedPortrait(body.querySelector('.info-pic') as HTMLElement, u);
     (body.querySelector('#rename-btn') as HTMLButtonElement).onclick = () => this.showRenameDialog(u);
   }

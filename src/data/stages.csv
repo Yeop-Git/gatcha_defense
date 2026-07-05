@@ -1,0 +1,11 @@
+id,theme,name,difficultyJump,boss
+1,grassland,초원의 시작,0,
+2,grassland,들짐승의 초원,0,
+3,forest,골렘의 숲,1,mini
+4,forest,정령의 숲,0,
+5,cave,박쥐 동굴,0,
+6,cave,설산의 빙동,1,mini
+7,volcano,용암 지대,0,
+8,volcano,화염의 심장,0,
+9,temple,망자의 신전,1,mini
+10,temple,폭룡의 둥지,0,final

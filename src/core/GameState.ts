@@ -2,6 +2,7 @@ import type { Element, ElementOrNeutral } from './types';
 import { MONSTERS } from '../data/monsters';
 import { ENEMIES, type EnemyTier } from '../data/enemies';
 import { CARD_BY_ID, cardsOfCharacter, type CardDef, type DeckCharacter } from '../data/cards';
+import { ITEM_BY_ID, type ItemEffect } from '../data/items';
 import { unlockCreature } from './Dex';
 import {
   BASE_HP, BOND_CAP, BOND_PER_STAGE, CAPTURE, ELEMENTS, ENEMY_EVOLVE_LEVEL, EVOLVE_MULT, LATE_BLOOM_MULT, LATE_BLOOM_STAGE3_JUMP,
@@ -47,6 +48,8 @@ export interface OwnedUnit {
   discarded: string[];
   /** 유대(Bond) 누적 보너스 비율 0~BOND_CAP. 함께 스테이지를 클리어할수록 누적(§14). */
   bond: number;
+  /** 지닌 도구(held item) id — 상점에서 구매·장착. 스탯 보너스(items.ts). 없으면 undefined. */
+  item?: string;
 }
 
 /** 카드 획득 이벤트 — 연출/교체 선택 큐용 (레벨업·분기 시그니처) */
@@ -74,6 +77,11 @@ function critFor(level: number, stage: number): { critChance: number; critDmg: n
     critChance: Math.min(CRIT.chanceMax, CRIT.chanceBase + (level - 1) * CRIT.chancePerLevel + (stage - 1) * CRIT.chancePerStage),
     critDmg: CRIT.dmgBase + (level - 1) * CRIT.dmgPerLevel + (stage - 1) * CRIT.dmgPerStage,
   };
+}
+
+/** 유닛이 지닌 도구(held item)의 스탯 효과 (없으면 빈 효과). */
+function itemEffectOf(unit: OwnedUnit): ItemEffect {
+  return (unit.item ? ITEM_BY_ID[unit.item]?.effect : undefined) ?? {};
 }
 
 /** XP 곡선: 레벨 n → n+1 필요량. 만렙 30 확장 + 레벨업 완화(기존 20+12n에서 상향). */
@@ -104,14 +112,15 @@ function deriveEnemyStats(unit: OwnedUnit): DerivedStats {
   const bond = Math.min(BOND_CAP, unit.bond ?? 0);
   const growth = lv * (1 + bond);
   const c = critFor(unit.level, unit.stage);
+  const ie = itemEffectOf(unit);
   return {
     hp: Math.round(PLAY_BASE_HP[def.tier] * growth),
-    attack: Math.round(PLAY_BASE_ATK[def.tier] * growth * state.unitAtkMult),
-    range: UNIT_BASE.range + (def.flying ? 0.6 : 0) + (unit.stage - 1) * 0.4 + (unit.level - 1) * 0.015 + state.rangeBonus,
+    attack: Math.round(PLAY_BASE_ATK[def.tier] * growth * state.unitAtkMult * (1 + (ie.atkMult ?? 0))),
+    range: UNIT_BASE.range + (def.flying ? 0.6 : 0) + (unit.stage - 1) * 0.4 + (unit.level - 1) * 0.015 + state.rangeBonus + (ie.range ?? 0),
     // 크리처와 동일하게 진화 단계(stage) 공속 보너스를 부여 — 누락 시 포획체가 상시 열세.
-    attackSpeed: UNIT_BASE.attackSpeed + (unit.stage - 1) * 0.15 + (unit.level - 1) * 0.008 + state.aspdBonus,
-    critChance: Math.min(0.6, c.critChance + state.critChanceBonus),
-    critDmg: c.critDmg + state.critDmgBonus,
+    attackSpeed: UNIT_BASE.attackSpeed + (unit.stage - 1) * 0.15 + (unit.level - 1) * 0.008 + state.aspdBonus + (ie.aspd ?? 0),
+    critChance: Math.min(0.6, c.critChance + state.critChanceBonus + (ie.critChance ?? 0)),
+    critDmg: c.critDmg + state.critDmgBonus + (ie.critDmg ?? 0),
     bond,
   };
 }
@@ -137,13 +146,14 @@ export function deriveStats(unit: OwnedUnit): DerivedStats {
   const bond = Math.min(BOND_CAP, unit.bond ?? 0);
   const growth = lv * (1 + bond);
   const c = critFor(unit.level, unit.stage);
+  const ie = itemEffectOf(unit);
   return {
     hp: Math.round(hp * growth),
-    attack: Math.round(attack * growth * state.unitAtkMult),
-    range: UNIT_BASE.range + (unit.stage - 1) * 0.6 + (unit.level - 1) * 0.015 + state.rangeBonus,
-    attackSpeed: UNIT_BASE.attackSpeed + (unit.stage - 1) * 0.15 + (unit.level - 1) * 0.008 + state.aspdBonus,
-    critChance: Math.min(0.6, c.critChance + state.critChanceBonus),
-    critDmg: c.critDmg + state.critDmgBonus,
+    attack: Math.round(attack * growth * state.unitAtkMult * (1 + (ie.atkMult ?? 0))),
+    range: UNIT_BASE.range + (unit.stage - 1) * 0.6 + (unit.level - 1) * 0.015 + state.rangeBonus + (ie.range ?? 0),
+    attackSpeed: UNIT_BASE.attackSpeed + (unit.stage - 1) * 0.15 + (unit.level - 1) * 0.008 + state.aspdBonus + (ie.aspd ?? 0),
+    critChance: Math.min(0.6, c.critChance + state.critChanceBonus + (ie.critChance ?? 0)),
+    critDmg: c.critDmg + state.critDmgBonus + (ie.critDmg ?? 0),
     bond,
   };
 }
@@ -513,6 +523,15 @@ export class GameState {
     if (this.gold < cost) return false;
     this.gold -= cost;
     return true;
+  }
+
+  /** 도구 장착(상점). 기존 도구는 교체. 반환: 교체된 이전 도구 이름(없으면 null). */
+  giveItem(uid: string, itemId: string): string | null {
+    const u = this.roster.find((x) => x.uid === uid);
+    if (!u) return null;
+    const prev = u.item ? (ITEM_BY_ID[u.item]?.name ?? null) : null;
+    u.item = itemId;
+    return prev;
   }
 
   get manaRegen(): number {

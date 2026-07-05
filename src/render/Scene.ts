@@ -202,7 +202,11 @@ export class Scene {
       cands.push(FIELD.cellCenter(col, row));
     }
     const base = this.base.position;
-    const usable = cands.filter((c) => Math.hypot(c.x - base.x, c.z - base.z) > 3.6);
+    // 기지 주변 + 유닛 배치 슬롯 위에는 장식을 두지 않는다 (배치 자리를 장식이 가리지 않게).
+    const usable = cands.filter((c) =>
+      Math.hypot(c.x - base.x, c.z - base.z) > 3.6 &&
+      !UNIT_SLOTS.some((s) => Math.hypot(c.x - s.x, c.z - s.z) < FIELD.tile * 0.8),
+    );
     for (let i = usable.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [usable[i], usable[j]] = [usable[j], usable[i]]; }
     const count = Math.min(this.decorDensity, usable.length);
     for (let i = 0; i < count; i++) {

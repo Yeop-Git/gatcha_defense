@@ -20,7 +20,12 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: #17100a; }
-body { font-family: 'Gothic A1', 'Jua', sans-serif; font-weight: 500; color: var(--ink); -webkit-user-select: none; user-select: none; }
+body {
+  font-family: 'Gothic A1', 'Jua', sans-serif; font-weight: 500; color: var(--ink);
+  -webkit-user-select: none; user-select: none;
+  /* 한글 줄바꿈: 단어(어절) 단위로만 끊고, 불가피할 때만 어절 내부 분리. 무의미한 글자 단위 줄바꿈 방지. */
+  word-break: keep-all; overflow-wrap: break-word;
+}
 
 #app { position: fixed; inset: 0; }
 #game-canvas { position: absolute; inset: 0; display: block; }
@@ -901,6 +906,21 @@ body { font-family: 'Gothic A1', 'Jua', sans-serif; font-weight: 500; color: var
 .shop-item .si-desc { font-size: 12.5px; color: #5a4632; margin-top: 2px; }
 .shop-item .si-cost { font-family: 'Jua', sans-serif; font-size: 16px; color: #8a6a12; flex: 0 0 auto; white-space: nowrap; }
 .shop-item.disabled .si-cost { color: var(--hp-ruby); }
+.shop-section { font-family: 'Jua', sans-serif; color: var(--wood-dark); font-size: 17px; margin: 16px auto 8px; max-width: 460px; text-align: left; }
+.shop-section .shop-note { font-size: 12px; color: var(--leather); font-weight: normal; }
+/* 도구 장착 대상 선택 */
+.assign-list { display: flex; flex-direction: column; gap: 8px; margin: 12px auto 4px; max-width: 420px; }
+.assign-item {
+  display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 10px; cursor: pointer;
+  background: linear-gradient(180deg, #fff8e6, var(--parchment-dark)); border: 2px solid var(--leather); color: var(--ink);
+  transition: transform 0.1s, border-color 0.1s, box-shadow 0.1s;
+}
+.assign-item:hover { border-color: var(--gold-bright); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.assign-item .ai-ico { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 22px; background: rgba(0,0,0,0.12) center/cover no-repeat; border: 1px solid var(--gold); }
+.assign-item .ai-ico.has-img, .assign-item .ai-ico.enemy-portrait { font-size: 13px; }
+.assign-item .ai-text { flex: 1; text-align: left; }
+.assign-item .ai-name { font-family: 'Jua', sans-serif; font-size: 15px; color: var(--wood-dark); }
+.assign-item .ai-cur { font-size: 12px; color: var(--leather); }
 
 /* ══ 가독성: 진화 모달 — 금색 텍스트가 양피지 위에서 안 보이던 문제.
    어두운 내부 패널로 감싸 금색 제목/이름 대비 확보 + 하위 텍스트도 밝게. ══ */

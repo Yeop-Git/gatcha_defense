@@ -7,6 +7,7 @@ import { Battle } from '../systems/Battle';
 import { STAGES, BUFF_NODES, EVENT_NODES } from '../data/stages';
 import { ENEMIES } from '../data/enemies';
 import { cardsOfCharacter, CARDS, CARD_BY_ID, cardIcon, cardRole } from '../data/cards';
+import { ITEMS, ITEM_BY_ID } from '../data/items';
 import type { Element } from './types';
 import { CAPTURE_CARD_ID, DIFFICULTY_JUMP_MULT, FIXED_DT } from '../data/constants';
 import { bus } from './events';
@@ -91,9 +92,9 @@ export class Game {
     this.ui.onManageSelectHolder = (id) => { this.manageHolder = id; this.renderManage(); };
     this.ui.onManageToggle = (holderId, cardId) => this.toggleEquip(holderId, cardId);
     this.ui.onCaptureDiscardPick = (id) => this.onCaptureDiscardPick(id);
-    this.ui.onShop = () => this.openShop();
     this.ui.onShopBuy = (id) => this.buyShopItem(id);
-    this.ui.onShopClose = () => this.showLobby(); // 상점 닫을 때 로비 골드/상태 갱신(구매 반영)
+    this.ui.onShopClose = () => this.backToLobby(); // 상점(특수 노드) 닫으면 전투 정리 후 로비로
+    this.ui.onItemAssign = (uid) => this.assignItem(uid);
   }
 
   private lastPhase = '';
@@ -512,10 +513,12 @@ export class Game {
       disabled: it.id === 'heal' && full,
       note: it.id === 'heal' && full ? '성이 이미 온전합니다.' : undefined,
     }));
-    this.ui.showShop({ gold: state.gold, items });
+    const tools = ITEMS.map((t) => ({ id: `item:${t.id}`, icon: t.icon, label: t.name, desc: t.desc, cost: t.cost }));
+    this.ui.showShop({ gold: state.gold, items, tools });
   }
 
   private buyShopItem(id: string): void {
+    if (id.startsWith('item:')) { this.startBuyItem(id.slice(5)); return; }
     const item = Game.SHOP_ITEMS.find((it) => it.id === id);
     if (!item) return;
     if (id === 'heal' && state.baseHp >= state.baseHpMax) { this.openShop(); return; }
@@ -525,6 +528,35 @@ export class Game {
     else { state.applyBuff(id); this.ui.toast(`${item.label} 완료!`, 'good'); }
     saveRun();
     this.openShop(); // 잔액/상태 갱신하며 다시 열기 (연속 구매)
+  }
+
+  // ── 도구(held item) 구매 → 장착 대상 선택 ──
+  private pendingItem: string | null = null;
+  private startBuyItem(itemId: string): void {
+    const def = ITEM_BY_ID[itemId];
+    if (!def) { this.openShop(); return; }
+    if (state.roster.length === 0) { this.ui.toast('도구를 지닐 동료가 없습니다.', 'bad'); this.openShop(); return; }
+    if (state.gold < def.cost) { this.ui.toast('골드가 부족합니다.', 'bad'); this.openShop(); return; }
+    this.pendingItem = itemId;
+    this.ui.showItemAssign(def, state.roster.map((u) => ({
+      uid: u.uid, name: displayName(u), element: u.element, kind: u.kind, species: u.species, stage: u.stage,
+      currentItem: u.item ? ITEM_BY_ID[u.item]?.name : undefined,
+    })));
+  }
+
+  /** 도구 장착 대상 확정(빈 uid=취소). */
+  private assignItem(uid: string): void {
+    const itemId = this.pendingItem;
+    this.pendingItem = null;
+    if (!uid || !itemId) { this.openShop(); return; } // 취소
+    const def = ITEM_BY_ID[itemId];
+    if (!def || !state.spendGold(def.cost)) { this.ui.toast('골드가 부족합니다.', 'bad'); this.openShop(); return; }
+    const prev = state.giveItem(uid, itemId);
+    const u = state.roster.find((x) => x.uid === uid);
+    this.battle?.refreshUnitStats(); // 장착 즉시 스탯 반영(전투 대기 중일 수 있음)
+    this.ui.toast(`${u ? displayName(u) : '동료'}에게 ${def.name} 장착${prev ? ` (${prev} 교체)` : ''}`, 'good');
+    saveRun();
+    this.openShop();
   }
 
   private startStage(index: number): void {
@@ -635,7 +667,7 @@ export class Game {
 
   /** '다음으로' 버튼 → 성장 플로우(카드 획득) → 로비 (갈림길은 스테이지 중간 보너스로 이동) */
   private afterStageClear(): void {
-    this.growthDest = 'lobby';
+    this.growthDest = 'node'; // 성장 연출 후 특수 노드(상점/사건/야영) 갈림길로
     this.continueGrowthFlow();
   }
 
@@ -721,23 +753,28 @@ export class Game {
     this.continueGrowthFlow();
   }
 
+  /** 스테이지 사이 특수 노드 갈림길(상점/사건/야영) — 골드 소모처가 진행 중 자연스럽게 등장. */
   private showNodeChoice(): void {
     if (state.stageIndex >= STAGES.length) { this.backToLobby(); return; }
     this.ui.showNodeChoice([
-      { kind: 'battle', label: '전투', desc: '다음 전장으로 이동합니다. 기본 보상을 받을 수 있습니다.' },
-      { kind: 'buff', label: '강화', desc: '영구 강화 3개 중 하나를 선택합니다.' },
-      { kind: 'event', label: '이벤트', desc: '예상 밖의 사건을 만나 보상이나 위험을 마주합니다.' },
+      { kind: 'shop', label: '🛒 상점', desc: '골드로 강화와 도구를 구매합니다.' },
+      { kind: 'event', label: '❓ 사건', desc: '예상 밖의 사건을 만납니다. 보상이나 대가가 따릅니다.' },
+      { kind: 'rest', label: '⛺ 야영', desc: '성을 수리하고 잠시 휴식합니다. (무료)' },
     ]);
   }
 
   private chooseNode(kind: string): void {
-    if (kind === 'buff') {
-      // 3택1 (§10) — 풀에서 무작위 3개
-      const picks = BUFF_NODES.slice().sort(() => Math.random() - 0.5).slice(0, 3);
-      this.ui.showBuffChoice(picks.map((b) => ({ id: b.apply, label: b.label })));
+    if (kind === 'shop') {
+      this.openShop();
     } else if (kind === 'event') {
       const node = EVENT_NODES[Math.floor(Math.random() * EVENT_NODES.length)];
       this.ui.showEvent(node);
+    } else if (kind === 'rest') {
+      const heal = Math.round(state.baseHpMax * 0.25);
+      state.heal(heal);
+      this.ui.toast(`야영으로 성을 정비했습니다. 성 HP +${heal}`, 'good');
+      saveRun();
+      this.backToLobby();
     } else {
       this.backToLobby();
     }
