@@ -7,7 +7,7 @@ import { Battle } from '../systems/Battle';
 import { STAGES, EVENT_NODES, BUFF_NODES } from '../data/stages';
 import { ENEMIES } from '../data/enemies';
 import { MONSTERS } from '../data/monsters';
-import { cardsOfCharacter, CARDS, CARD_BY_ID, cardIcon, cardRole } from '../data/cards';
+import { cardsOfCharacter, CARD_BY_ID, cardIcon, cardRole } from '../data/cards';
 import { ITEMS, ITEM_BY_ID } from '../data/items';
 import type { Element } from './types';
 import { CAPTURE_CARD_ID, DIFFICULTY_JUMP_MULT, FIXED_DT, MAX_MONSTERS } from '../data/constants';
@@ -285,6 +285,7 @@ export class Game {
     const startY = ev.clientY;
     let moved = false;
     let hlSlot = -1;
+    const placed = this.battle.placedUnit(id);
     const range = this.battle.placeableRange(id);
     const move = (e: PointerEvent) => {
       if (!this.battle) return;
@@ -297,6 +298,10 @@ export class Game {
       e.preventDefault();
       const p = this.scene.groundPoint(e.clientX, e.clientY);
       if (!p) return;
+      if (placed) {
+        placed.view.position.x = p.x;
+        placed.view.position.z = p.z;
+      }
       this.battle.moveUnitGhost(p.x, p.z);
       this.scene.showRangePreview(p.x, p.z, range);
       const slot = this.battle.nearestSlot(p.x, p.z);
@@ -322,6 +327,7 @@ export class Game {
       }
       const p = this.scene.groundPoint(e.clientX, e.clientY);
       if (p && this.isOverField(e.clientY)) this.battle.placeUnitAtNearest(id, p.x, p.z);
+      else if (placed) this.battle.resnapUnit(placed);
       this.refreshPlacement();
       this.refreshHand();
     };
@@ -520,10 +526,20 @@ export class Game {
       { id: 'hero', name: '성 (공용)', element: 'neutral' as const, level: 1 },
       ...state.roster.map((u) => ({ id: u.uid, name: displayName(u), element: u.element, level: u.level, kind: u.kind, species: u.species, stage: u.stage })),
     ];
-    // 전체 카드 보기(도감성): 모든 카드를 읽기 전용으로 나열.
     if (id === '__all__') {
-      const cards = CARDS.map((c) => ({ id: c.id, name: c.name, element: c.element, cost: c.cost, text: c.text, learnLevel: c.learnLevel, learned: true, equipped: false }));
-      this.ui.showManage({ holders, selected: id, level: 0, cards, equippedCount: 0, cap: EQUIP_CAP, avgCost: 0, deckSummary: `전체 ${cards.length}종`, readOnly: true });
+      const currentIds = [...new Set(state.battleDeck())];
+      const cards = currentIds
+        .map((cardId) => CARD_BY_ID[cardId])
+        .filter(Boolean)
+        .map((c) => ({ id: c.id, name: c.name, element: c.element, cost: c.cost, text: c.text, learnLevel: c.learnLevel, learned: true, equipped: true }));
+      const avgCost = cards.length ? cards.reduce((sum, c) => sum + c.cost, 0) / cards.length : 0;
+      const roleCounts = new Map<string, number>();
+      for (const c of cards) {
+        const def = CARD_BY_ID[c.id];
+        if (def) roleCounts.set(cardRole(def), (roleCounts.get(cardRole(def)) ?? 0) + 1);
+      }
+      const deckSummary = [...roleCounts].map(([role, count]) => `${role} ${count}`).join(' 쨌 ') || '장착 카드 없음';
+      this.ui.showManage({ holders, selected: id, level: 0, cards, equippedCount: cards.length, cap: cards.length, avgCost, deckSummary, readOnly: true });
       return;
     }
     const lvl = state.holderLevel(id);

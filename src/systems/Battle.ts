@@ -243,6 +243,10 @@ export class Battle {
     return this.units.find((m) => m.slot === slot);
   }
 
+  placedUnit(uid: string): Monster | null {
+    return this.units.find((m) => m.unit.uid === uid) ?? null;
+  }
+
   unitNear(x: number, z: number, maxDist: number): Monster | null {
     let best: Monster | null = null;
     let bd = maxDist * maxDist;
@@ -257,6 +261,7 @@ export class Battle {
   /** 드래그 중인 유닛의 반투명 모델을 필드에 생성(위치는 moveUnitGhost로). */
   showUnitGhost(id: string): void {
     this.hideUnitGhost();
+    if (this.units.some((m) => m.unit.uid === id)) return;
     const u = this.state.roster.find((x) => x.uid === id);
     if (!u) return;
     let g: THREE.Group;
