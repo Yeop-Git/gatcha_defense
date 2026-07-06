@@ -29,6 +29,8 @@ import {
   CAPTURE_CARD_ID,
   CAPTURE_RADIUS,
   XP_REWARD,
+  GOLD_REWARD,
+  goldStageMult,
   HAND_SIZE,
   AUTO_DRAW_INTERVAL,
   MAX_MONSTERS,
@@ -724,15 +726,18 @@ export class Battle {
   private onKill(e: Enemy): void {
     bus.emit('enemy:killed', { element: e.element, x: e.pos.x, z: e.pos.z, isBoss: e.isBoss });
     this.scene.vfx.burst(e.pos.x, e.pos.z, ELEMENT_COLOR[e.element === 'neutral' ? 'light' : e.element] ?? 0xffffff, 10);
-    this.state.gold += e.isBoss ? 100 : e.isMini ? 30 : 3;
+    // 후반 골드 인플레이션 억제: 스테이지 진행도 배율을 처치·콤보 골드 모두에 적용(초반 1.0 → 후반 대폭 감쇠).
+    const goldMult = goldStageMult(this.stage.id);
+    const baseKill = e.isBoss ? GOLD_REWARD.kill.boss : e.isMini ? GOLD_REWARD.kill.mini : GOLD_REWARD.kill.normal;
+    this.state.gold += Math.max(1, Math.round(baseKill * goldMult));
     this.awardKillXp(e);
     if (this.hasDarkS3) this.state.darkKillStacks = Math.min(DARK_KILL_STACK_MAX, this.state.darkKillStacks + DARK_KILL_STACK);
     // 연속 처치 콤보: 5의 배수마다 골드 보너스 + 화려한 표시(간단한 손맛 요소).
     this.combo++;
     this.comboTimer = 2.2;
-    if (this.combo >= 5 && this.combo % 5 === 0) {
-      // 콤보 보상: 기존 floor(c/5)*2는 20콤보에 +8G로 반올림 오차 수준 → *5로 상향(20콤보 +20G)해 손맛을 준다.
-      const bonus = Math.floor(this.combo / 5) * 5;
+    if (this.combo >= GOLD_REWARD.comboStep && this.combo % GOLD_REWARD.comboStep === 0) {
+      // 콤보 보상: floor(combo/5)*5 (20콤보 +20G). 후반엔 콤보가 폭증하므로 동일 배율로 감쇠시킨다.
+      const bonus = Math.max(1, Math.round(Math.floor(this.combo / GOLD_REWARD.comboStep) * GOLD_REWARD.comboBonusPer * goldMult));
       this.state.gold += bonus;
       this.scene.vfx.floatText(e.pos.x, e.pos.z + 1.5, `${this.combo} 콤보! +${bonus}G`, '#f2ce6b');
       this.scene.vfx.ring(e.pos.x, e.pos.z, 0xf2ce6b, 3, 0.4);
@@ -1124,10 +1129,11 @@ export class Battle {
         this.units.forEach((m) => { m.applyHaste(fx.mult, fx.duration); this.scene.vfx.burst(m.pos.x, m.pos.z, 0xf2ce6b, 6); });
         break;
       case 'manaGain':
-        // 물: 마나 즉시 보충
+        // 물: 마나 즉시 보충 (+선택적 카드 드로우)
         this.deck.mana = Math.min(this.deck.manaMax, this.deck.mana + fx.amount);
         bus.emit('mana:change', { mana: this.deck.mana, max: this.deck.manaMax });
-        bus.emit('toast', { text: `마나 +${fx.amount}`, kind: 'good' });
+        if (fx.draw && fx.draw > 0) this.deck.drawCards(fx.draw);
+        bus.emit('toast', { text: fx.draw ? `마나 +${fx.amount}, 카드 +${fx.draw}` : `마나 +${fx.amount}`, kind: 'good' });
         this.scene.vfx.ring(this.castleXZ().x, this.castleXZ().z, ELEMENT_COLOR.water, 2.4, 0.4);
         break;
       case 'block':

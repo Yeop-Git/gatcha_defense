@@ -16,7 +16,7 @@ water_splash,water,물살,water,1,1,point,damage,amount=12;radius=1.2;mark=wet;m
 water_cannon,water,물대포,water,1,2,point,damage,amount=20;radius=1.3;mark=wet;markStacks=1;knockback=1.6,,20 피해와 젖음. 적을 밀쳐냅니다.
 water_pool,water,감속 웅덩이,water,4,2,point,zone,zone=slow;radius=3;duration=6;slow=0.45,,6초 동안 적을 45% 느리게 하는 웅덩이를 만듭니다.
 water_spring,water,샘솟음,water,6,1,self,manaGain,amount=3,,물길이 솟아 마나를 3 회복합니다.
-water_mana,water,밀물의 축복,water,8,1,self,manaGain,amount=4,,밀려드는 물결로 마나를 4 회복합니다.
+water_mana,water,밀물의 축복,water,8,2,self,manaGain,amount=4;draw=1,,밀려드는 물결로 마나를 4 회복하고 카드 1장을 뽑습니다.
 water_guard,water,수호의 물결,water,13,2,ally-all,shieldUnits,amount=34,,아군 유닛에게 34의 보호막을 두릅니다. 피격 시 HP보다 먼저 흡수됩니다.
 water_iron,water,대소용돌이,water,18,4,point,zone,zone=slow;radius=3.6;duration=7;slow=0.7;root=2.2,,넓은 범위를 크게 감속하고 오래 묶는 소용돌이를 만듭니다.
 water_tide,water,밀물,water,20,3,point,damage,amount=42;radius=3.2;mark=wet;knockback=5,,넓은 범위에 42 피해를 주고 강하게 밀쳐냅니다.

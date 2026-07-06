@@ -389,8 +389,10 @@ body {
 }
 #tut-overlay.spotlight #tut-hole { opacity: 1; }
 #tut-overlay.spotlight #tut-ring,
+#tut-overlay.spotlight #tut-path,
+#tut-overlay.spotlight #tut-dest,
 #tut-overlay.spotlight #tut-hand { display: block; }
-#tut-ring, #tut-hand { display: none; }
+#tut-ring, #tut-hand, #tut-path, #tut-dest { display: none; }
 
 /* 펄스 링: 구멍 둘레에서 밝게 맥동. */
 #tut-ring {
@@ -402,14 +404,36 @@ body {
   0%, 100% { transform: scale(1); opacity: 0.55; }
   50% { transform: scale(1.03); opacity: 1; }
 }
-/* 손가락 아이콘: 대상 위에서 톡톡 두드리는 모션. */
+/* 손가락(SVG): 위치/눌림은 JS가 매 프레임 계산(left/top/transform). 손끝이 조작 지점에 닿도록 origin 고정. */
 #tut-hand {
-  position: absolute; font-size: 30px; transform: translate(-50%, -100%);
-  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6)); animation: tutHand 1.1s ease-in-out infinite;
+  position: absolute; width: 44px; height: 62px; z-index: 3;
+  transform-origin: 19.5px 4px; will-change: left, top, transform, opacity;
+  filter: drop-shadow(0 3px 4px rgba(0,0,0,0.55));
 }
-@keyframes tutHand {
-  0%, 100% { transform: translate(-50%, -100%); }
-  50% { transform: translate(-50%, -60%); }
+#tut-hand svg { display: block; overflow: visible; }
+
+/* 드래그 궤적: 카드→목적지 아치형 점선 화살. 흐르는 대시로 방향을 암시. */
+#tut-path {
+  position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; overflow: visible;
+}
+#tut-path path {
+  fill: none; stroke: var(--gold-bright); stroke-width: 3.5; stroke-linecap: round;
+  stroke-dasharray: 2 11; opacity: 0.9;
+  filter: drop-shadow(0 0 5px rgba(242,206,107,0.7));
+  animation: tutFlow 0.7s linear infinite;
+}
+@keyframes tutFlow { to { stroke-dashoffset: -13; } }
+
+/* 목적지 링: "여기에 놓기". 손끝이 도착하는 지점에서 펄스. */
+#tut-dest {
+  position: absolute; width: 46px; height: 46px; margin: -23px 0 0 -23px; z-index: 2;
+  border-radius: 50%; border: 3px solid var(--gold-bright);
+  box-shadow: 0 0 16px var(--gold-bright), inset 0 0 10px rgba(242,206,107,0.5);
+  animation: tutDest 1.1s ease-in-out infinite;
+}
+@keyframes tutDest {
+  0%, 100% { transform: scale(0.72); opacity: 0.55; }
+  50% { transform: scale(1); opacity: 1; }
 }
 
 #tut-bubble {

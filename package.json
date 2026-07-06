@@ -4,20 +4,31 @@
   "description": "탑뷰 디펜스 × 덱빌딩 로그라이크 × 몬스터 수집 (MVP)",
   "type": "module",
   "main": "electron/main.cjs",
+  "author": "Yeop-Git",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "electron": "electron .",
-    "exe": "vite build && electron-builder --dir"
+    "exe": "vite build && electron-builder --dir",
+    "portable": "vite build && electron-builder --win portable",
+    "installer": "vite build && electron-builder --win nsis"
   },
   "build": {
     "appId": "com.catchsuhoping.game",
     "productName": "CatchSuhoping",
     "directories": { "output": "release" },
     "files": ["dist/**/*", "electron/**/*"],
-    "asar": false,
-    "win": { "target": "dir", "icon": "public/assets/ui/logo.png" }
+    "asar": true,
+    "compression": "maximum",
+    "win": { "target": "portable", "icon": "public/assets/ui/logo.png" },
+    "portable": { "artifactName": "CatchSuhoping-portable-${version}.exe" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "캐치 수호핑"
+    }
   },
   "dependencies": {
     "three": "^0.169.0"

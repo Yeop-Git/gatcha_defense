@@ -22,6 +22,15 @@ function createWindow() {
     },
   });
   win.setMenuBarVisibility(false);
+
+  // 전체화면 토글: F11(켜기/끄기). 전체화면 중 Esc는 게임 조작(모달 닫기)과 겹치지 않게 가로채지 않는다.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11') {
+      win.setFullScreen(!win.isFullScreen());
+      event.preventDefault();
+    }
+  });
+
   win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
 }
 

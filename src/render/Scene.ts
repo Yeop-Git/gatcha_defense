@@ -361,6 +361,18 @@ export class Scene {
     return null;
   }
 
+  /** 월드 좌표 → 화면(client) 픽셀. 카메라 뒤/원거리 클립이면 null. (튜토리얼 드래그 유도용) */
+  worldToScreen(x: number, y: number, z: number): { x: number; y: number } | null {
+    this._projV.set(x, y, z).project(this.camera);
+    if (this._projV.z > 1) return null;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    return {
+      x: rect.left + (this._projV.x * 0.5 + 0.5) * rect.width,
+      y: rect.top + (-this._projV.y * 0.5 + 0.5) * rect.height,
+    };
+  }
+  private _projV = new THREE.Vector3();
+
   private resize(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;

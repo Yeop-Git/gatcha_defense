@@ -24,7 +24,7 @@ export type CardEffect =
   | { kind: 'coinflip' }
   | { kind: 'bind'; radius: number; duration: number }
   | { kind: 'haste'; mult: number; duration: number }
-  | { kind: 'manaGain'; amount: number }
+  | { kind: 'manaGain'; amount: number; draw?: number }
   | { kind: 'block'; radius: number; duration: number; element: Element; slow?: number; dps?: number }
   | { kind: 'capture'; radius: number };
 
@@ -80,7 +80,7 @@ function buildEffect(kind: string, p: Params, cardEl: CardElement): CardEffect {
     case 'coinflip': return { kind };
     case 'bind': return { kind, radius: num(p, 'radius', 2.6), duration: num(p, 'duration', 2.5) };
     case 'haste': return { kind, mult: num(p, 'mult', 1.3), duration: num(p, 'duration', 6) };
-    case 'manaGain': return { kind, amount: num(p, 'amount', 4) };
+    case 'manaGain': return { kind, amount: num(p, 'amount', 4), draw: opt(p, 'draw') };
     case 'block': return { kind, radius: num(p, 'radius', 2.4), duration: num(p, 'duration', 5), element: realEl, slow: opt(p, 'slow'), dps: opt(p, 'dps') };
     case 'capture': return { kind, radius: num(p, 'radius', 1.4) };
     default: return { kind: 'damage', amount: 10, radius: 1, element: el };

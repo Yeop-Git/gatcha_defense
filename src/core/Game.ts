@@ -11,7 +11,7 @@ import { MONSTERS } from '../data/monsters';
 import { cardsOfCharacter, CARD_BY_ID, cardIcon, cardRole } from '../data/cards';
 import { ITEMS, ITEM_BY_ID } from '../data/items';
 import type { Element } from './types';
-import { CAPTURE_CARD_ID, DIFFICULTY_JUMP_MULT, FIXED_DT, MAX_MONSTERS } from '../data/constants';
+import { CAPTURE_CARD_ID, DIFFICULTY_JUMP_MULT, FIELD, FIXED_DT, MAX_MONSTERS } from '../data/constants';
 import { bus } from './events';
 import { settings, saveSettings } from './Settings';
 import { playSfx } from '../audio/Sfx';
@@ -36,6 +36,8 @@ export class Game {
     this.viewer = new MonsterViewer(this.scene.renderer);
     this.ui = new UI(uiRoot);
     this.tutorial = new Tutorial(uiRoot);
+    // 포획 튜토리얼: 손가락 드래그를 '실제 포획 대상(가장 성에 가까운 포획 가능 적)'의 화면 좌표로 유도.
+    this.tutorial.setEnemyLocator(() => this.captureTargetScreenPos());
     this.wireUI();
     this.wireInput();
     this.wireFieldDrag();
@@ -179,6 +181,21 @@ export class Game {
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+  }
+
+  /** 포획 튜토리얼용: 가장 성에 가까운 '포획 가능(보스/미니 제외)' 적을 화면 좌표로 투영. 없으면 null. */
+  private captureTargetScreenPos(): { x: number; y: number } | null {
+    if (!this.battle) return null;
+    const castle = FIELD.path[FIELD.path.length - 1];
+    let best: Battle['enemies'][number] | null = null;
+    let bestD = Infinity;
+    for (const e of this.battle.enemies) {
+      if (!e.alive || e.isBoss || e.isMini) continue;
+      const d = castle ? (e.pos.x - castle.x) ** 2 + (e.pos.z - castle.z) ** 2 : 0;
+      if (d < bestD) { bestD = d; best = e; }
+    }
+    if (!best) return null;
+    return this.scene.worldToScreen(best.pos.x, best.pos.y + 0.9, best.pos.z);
   }
 
   // ── 카드 사용 (더블탭=스마트, 드래그=정밀) ──
@@ -1059,19 +1076,25 @@ export class Game {
         steps++;
       }
       this.updateHUD();
-      this.checkBattlePhase();
-      if (this.battle && this.battle.phase !== this.lastPhase) {
-        const prev = this.lastPhase;
-        this.lastPhase = this.battle.phase;
-        this.refreshHand();
-        this.refreshPlacement();
-        if (prev === 'wave' && this.battle.phase === 'placement') {
-          this.flushBattleGrowth('battle');
-        }
-        // 첫 전투 시작 시 1회 포획 안내 (핵심 루프 온보딩)
-        if (prev === 'placement' && this.battle.phase !== 'placement' && !this.captureHintShown && !this.tutorial.isActive) {
-          this.captureHintShown = true;
-          this.ui.toast('빛나는 포획구 카드를 적에게 드래그하면 포획! 원정대에 합류시켜 키울 수 있어요', 'info');
+      // update 도중 포획 만석 편입(capture:full)·흡수 성장(unit:grown) 모달이 열려 paused가 걸린 프레임에서는
+      // 클리어/성장 전환을 실행하지 않는다. 그렇지 않으면 같은 프레임에 겹친 onWaveClear의 stageClear 전환이
+      // 방금 띄운 포획 모달을 덮어써 "카드 연출은 나오는데 편입은 씹히는" 레이스가 발생한다.
+      // 모달을 해소해 paused가 풀린 다음 프레임에서 밀린 phase(stageClear 등)를 정상 처리한다.
+      if (!this.paused) {
+        this.checkBattlePhase();
+        if (this.battle && this.battle.phase !== this.lastPhase) {
+          const prev = this.lastPhase;
+          this.lastPhase = this.battle.phase;
+          this.refreshHand();
+          this.refreshPlacement();
+          if (prev === 'wave' && this.battle.phase === 'placement') {
+            this.flushBattleGrowth('battle');
+          }
+          // 첫 전투 시작 시 1회 포획 안내 (핵심 루프 온보딩)
+          if (prev === 'placement' && this.battle.phase !== 'placement' && !this.captureHintShown && !this.tutorial.isActive) {
+            this.captureHintShown = true;
+            this.ui.toast('빛나는 포획구 카드를 적에게 드래그하면 포획! 원정대에 합류시켜 키울 수 있어요', 'info');
+          }
         }
       }
     }

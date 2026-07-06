@@ -16,6 +16,20 @@ import { CAPTURE_CARD_ID } from '../data/constants';
 
 const KEY = 'catch-suhoping-tutorial-v2';
 
+/**
+ * 코치용 카툰 손 SVG. viewBox 1:1(44×62)로 렌더해 좌표=픽셀 — 손끝(fingertip)이 (19.5, 4).
+ * CSS에서 transform-origin을 손끝에 두고 translate(-19.5,-4)로 앵커링하므로,
+ * #tut-hand 의 left/top = "손끝이 닿을 화면 지점"이 된다(눌림 scale도 손끝 기준으로 커진다/작아진다).
+ */
+const HAND_SVG = `<svg viewBox="0 0 44 62" width="44" height="62" aria-hidden="true">
+  <g stroke="#6E4327" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" fill="#F6D6A6">
+    <rect x="15" y="4" width="9" height="30" rx="4.5"/>
+    <rect x="12" y="24" width="26" height="28" rx="12"/>
+    <path d="M13 34 q-8 0 -8.5 7 q0 6 8 5.5" fill="#F6D6A6"/>
+    <path d="M12 48 h26 v6 a5 5 0 0 1 -5 5 h-16 a5 5 0 0 1 -5 -5 z" fill="#D8A93B"/>
+  </g>
+</svg>`;
+
 type Step = 'idle' | 'place' | 'startwave' | 'skill' | 'capture' | 'done';
 /** 진행 순서 보장용 랭크 — 뒤 단계 이벤트만 전진시킨다(중복/역행 무시). */
 const RANK: Record<Step, number> = { idle: 0, place: 1, startwave: 2, skill: 3, capture: 4, done: 5 };
@@ -28,6 +42,10 @@ interface StepDef {
   target: string | null;
   /** 말풍선을 대상 기준 어디에 둘지. */
   place: 'above' | 'below' | 'center';
+  /** 손가락 제스처: 'tap'=대상을 톡톡(버튼), 'drag'=대상을 잡아 목적지로 끌기. */
+  motion: 'tap' | 'drag';
+  /** drag일 때 끌고 갈 목적지. 'field'=전장 중앙, 'enemy'=실제 포획 대상 적. */
+  dest?: 'field' | 'enemy';
 }
 
 /**
@@ -44,6 +62,8 @@ const STEPS: Record<Exclude<Step, 'idle'>, StepDef> = {
     title: '① 원정대 배치',
     target: '#card-shelf .unit-card',
     place: 'above',
+    motion: 'drag',
+    dest: 'field',
     body: '아래 몬스터 카드를 <b>전장으로 드래그</b>해 배치하세요.',
   },
   startwave: {
@@ -51,6 +71,7 @@ const STEPS: Record<Exclude<Step, 'idle'>, StepDef> = {
     title: '② 웨이브 시작',
     target: '#begin-cta',
     place: 'above',
+    motion: 'tap',
     body: '배치를 마쳤으면 <b>[웨이브 시작]</b>을 눌러 적을 맞이하세요.',
   },
   skill: {
@@ -58,6 +79,8 @@ const STEPS: Record<Exclude<Step, 'idle'>, StepDef> = {
     title: '③ 스킬 사용',
     target: '#card-shelf .card:not(.pinned)',
     place: 'above',
+    motion: 'drag',
+    dest: 'field',
     body: '스킬 카드를 <b>전장으로 드래그</b>해 사용하세요 (마나 💧 소모).',
   },
   capture: {
@@ -65,6 +88,8 @@ const STEPS: Record<Exclude<Step, 'idle'>, StepDef> = {
     title: '④ 적을 포획',
     target: '#card-shelf .card.pinned',
     place: 'above',
+    motion: 'drag',
+    dest: 'enemy',
     body: '빛나는 포획구를 <b>적에게 드래그</b>하면 원정대로 포획!',
   },
   done: {
@@ -72,6 +97,7 @@ const STEPS: Record<Exclude<Step, 'idle'>, StepDef> = {
     title: '🎉 준비 완료!',
     target: null,
     place: 'center',
+    motion: 'tap',
     body: '이제 성을 지켜 <b>스테이지 10</b>까지 나아가세요. 행운을 빕니다!',
   },
 };
@@ -81,15 +107,27 @@ export class Tutorial {
   private hole: HTMLElement | null = null;
   private ring: HTMLElement | null = null;
   private hand: HTMLElement | null = null;
+  private pathEl: SVGElement | null = null;
+  private destEl: HTMLElement | null = null;
   private bubble: HTMLElement | null = null;
   private step: Step = 'idle';
   private active = false;
   private curTarget: string | null = null;
   private curPlace: StepDef['place'] = 'center';
+  private motion: StepDef['motion'] = 'tap';
+  private dest: StepDef['dest'] = undefined;
+  private dragStart = 0;
   private raf = 0;
   private offs: Array<() => void> = [];
+  /** 포획 단계에서 '실제 포획 대상' 적의 화면 좌표를 돌려주는 콜백(Game이 주입). 없으면 전장 중앙으로 폴백. */
+  private enemyAt: (() => { x: number; y: number } | null) | null = null;
 
   constructor(private root: HTMLElement) {}
+
+  /** 실제 드래그 대상(적) 화면 좌표 공급기 등록 — 손가락 유도를 살아있는 적에게 정확히 겨눈다. */
+  setEnemyLocator(fn: () => { x: number; y: number } | null): void {
+    this.enemyAt = fn;
+  }
 
   /** 전투 힌트 토스트 중복 방지용 — Game이 조회한다. */
   get isActive(): boolean {
@@ -137,14 +175,20 @@ export class Tutorial {
     if (this.overlay) return;
     this.overlay = document.createElement('div');
     this.overlay.id = 'tut-overlay';
+    // 손가락은 이모지 대신 인라인 SVG(카툰 손) — 손끝(fingertip)이 정확히 조작 지점에 닿도록 앵커링.
+    // #tut-path: 카드→목적지 점선 화살 궤적, #tut-dest: 목적지 펄스 링(어디에 놓을지 명시).
     this.overlay.innerHTML = `
       <div id="tut-hole"></div>
       <div id="tut-ring"></div>
-      <div id="tut-hand">👆</div>
+      <svg id="tut-path" aria-hidden="true"><path d=""/></svg>
+      <div id="tut-dest"></div>
+      <div id="tut-hand">${HAND_SVG}</div>
       <div id="tut-bubble"></div>`;
     this.root.appendChild(this.overlay);
     this.hole = this.overlay.querySelector('#tut-hole');
     this.ring = this.overlay.querySelector('#tut-ring');
+    this.pathEl = this.overlay.querySelector('#tut-path');
+    this.destEl = this.overlay.querySelector('#tut-dest');
     this.hand = this.overlay.querySelector('#tut-hand');
     this.bubble = this.overlay.querySelector('#tut-bubble');
   }
@@ -153,6 +197,9 @@ export class Tutorial {
     this.ensureDom();
     this.curTarget = def.target;
     this.curPlace = def.place;
+    this.motion = def.motion;
+    this.dest = def.dest;
+    this.dragStart = performance.now(); // 제스처 사이클 시작점(손끝이 카드를 잡는 순간)
     this.overlay!.classList.add('on');
     this.overlay!.classList.toggle('spotlight', !!def.target);
 
@@ -209,6 +256,8 @@ export class Tutorial {
     // 여전히 대상이 없거나(중앙 안내) 크기가 0이면 → 구멍 없이 화면 중앙 안내로 폴백.
     if (!target || !r || this.curPlace === 'center' || r.width < 8 || r.height < 8) {
       this.overlay.classList.remove('spotlight');
+      if (this.pathEl) this.pathEl.style.display = 'none';
+      if (this.destEl) this.destEl.style.display = 'none';
       if (this.bubble) { this.bubble.style.left = '50%'; this.bubble.style.top = '50%'; this.bubble.style.transform = 'translate(-50%, -50%)'; }
       return;
     }
@@ -223,11 +272,8 @@ export class Tutorial {
       this.ring.style.left = `${x}px`; this.ring.style.top = `${y}px`;
       this.ring.style.width = `${w}px`; this.ring.style.height = `${h}px`;
     }
-    // 손가락: 대상 위쪽 가운데에서 톡톡.
-    if (this.hand) {
-      this.hand.style.left = `${r.left + r.width / 2}px`;
-      this.hand.style.top = `${y - 6}px`;
-    }
+    // 손가락 제스처: tap(버튼 톡톡) 또는 drag(카드→목적지 끌기). 목적지 링/궤적도 함께 그린다.
+    this.updateGesture(r);
     // 말풍선: 대상 위/아래 중 공간이 있는 쪽. 손패는 화면 하단이라 기본 above.
     if (this.bubble) {
       const bw = this.bubble.offsetWidth || 320;
@@ -242,6 +288,98 @@ export class Tutorial {
     }
   }
 
+  /** 손끝을 (x, y)에 앵커링하고 눌림 세기(scale)로 배치. transform-origin(손끝)은 CSS가 고정. */
+  private placeHand(x: number, y: number, scale: number): void {
+    if (!this.hand) return;
+    this.hand.style.left = `${x}px`;
+    this.hand.style.top = `${y}px`;
+    this.hand.style.transform = `translate(-19.5px, -4px) rotate(-8deg) scale(${scale.toFixed(3)})`;
+  }
+
+  /** drag 목적지 화면 좌표. enemy면 실제 적, 없으면 전장 중앙으로 폴백. 항상 손패보다 위로 클램프. */
+  private resolveDest(src: DOMRect): { x: number; y: number } {
+    let d: { x: number; y: number } | null = null;
+    if (this.dest === 'enemy' && this.enemyAt) d = this.enemyAt();
+    if (!d) {
+      const cv = document.querySelector('canvas');
+      const cr = cv?.getBoundingClientRect();
+      d = cr && cr.width > 8
+        ? { x: cr.left + cr.width * 0.5, y: cr.top + cr.height * 0.44 }
+        : { x: window.innerWidth * 0.5, y: window.innerHeight * 0.42 };
+    }
+    const m = 44;
+    return {
+      x: Math.max(m, Math.min(window.innerWidth - m, d.x)),
+      y: Math.max(m, Math.min(src.top - 28, d.y)), // 목적지는 늘 카드(손패) 위쪽
+    };
+  }
+
+  private easeOut(t: number): number { return 1 - (1 - t) * (1 - t); }
+  private easeInOut(t: number): number { return t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2; }
+
+  /**
+   * 손끝 제스처를 매 프레임 갱신.
+   *  - tap : 대상(버튼) 위에서 위아래로 흔들다 살짝 눌러 톡톡.
+   *  - drag: [잡기(눌림)] → [목적지로 미끄러짐] → [놓기(들림)] → [사라졌다 카드로 복귀] 를 반복.
+   *          동시에 카드→목적지 점선 궤적과 목적지 펄스 링을 그려 "여기서 저기로" 를 각인한다.
+   */
+  private updateGesture(r: DOMRect): void {
+    if (!this.hand) return;
+    const now = performance.now();
+
+    if (this.motion === 'tap') {
+      if (this.pathEl) this.pathEl.style.display = 'none';
+      if (this.destEl) this.destEl.style.display = 'none';
+      const p = ((now - this.dragStart) % 1100) / 1100;
+      const bob = Math.sin(p * Math.PI * 2) * 6;
+      const press = p > 0.44 && p < 0.6 ? 0.86 : 1; // 짧은 탭 눌림
+      this.placeHand(r.left + r.width / 2, r.top - 8 + bob, press);
+      this.hand.style.opacity = '1';
+      return;
+    }
+
+    // ── drag ──
+    const src = { x: r.left + r.width / 2, y: r.top + r.height * 0.36 };
+    const dst = this.resolveDest(r);
+    const CYCLE = 2200;
+    const p = ((now - this.dragStart) % CYCLE) / CYCLE;
+
+    let hx: number, hy: number, scale: number, op: number;
+    if (p < 0.14) {                 // 카드를 잡으며 눌러 내림
+      const q = p / 0.14;
+      hx = src.x; hy = src.y; scale = 1 - 0.18 * this.easeOut(q); op = Math.min(1, 0.3 + q);
+    } else if (p < 0.66) {          // 목적지로 미끄러짐(끌기)
+      const e = this.easeInOut((p - 0.14) / 0.52);
+      hx = src.x + (dst.x - src.x) * e;
+      hy = src.y + (dst.y - src.y) * e;
+      scale = 0.82; op = 1;
+    } else if (p < 0.82) {          // 목적지에서 놓으며 들어올림
+      const q = (p - 0.66) / 0.16;
+      hx = dst.x; hy = dst.y; scale = 0.82 + 0.18 * this.easeOut(q); op = 1;
+    } else {                        // 사라졌다가 다음 사이클에 카드로 복귀
+      hx = dst.x; hy = dst.y; scale = 1; op = 1 - (p - 0.82) / 0.18;
+    }
+    this.placeHand(hx, hy, scale);
+    this.hand.style.opacity = op.toFixed(3);
+
+    // 카드→목적지 아치형 점선 궤적
+    if (this.pathEl) {
+      this.pathEl.style.display = 'block';
+      const midx = (src.x + dst.x) / 2;
+      const lift = Math.min(90, Math.hypot(dst.x - src.x, dst.y - src.y) * 0.28);
+      const midy = (src.y + dst.y) / 2 - lift;
+      (this.pathEl.firstElementChild as SVGPathElement).setAttribute(
+        'd', `M ${src.x.toFixed(1)} ${src.y.toFixed(1)} Q ${midx.toFixed(1)} ${midy.toFixed(1)} ${dst.x.toFixed(1)} ${dst.y.toFixed(1)}`,
+      );
+    }
+    // 목적지 펄스 링(어디에 놓을지)
+    if (this.destEl) {
+      this.destEl.style.display = 'block';
+      this.destEl.style.left = `${dst.x}px`;
+      this.destEl.style.top = `${dst.y}px`;
+    }
+  }
+
   /** 튜토리얼 종료. persist=true면 완료로 기록(재무장 안 함). */
   finish(persist: boolean): void {
     if (!this.active) return;
@@ -252,6 +390,7 @@ export class Tutorial {
     this.offs = [];
     if (this.overlay) { this.overlay.remove(); this.overlay = null; }
     this.hole = this.ring = this.hand = this.bubble = null;
+    this.pathEl = this.destEl = null;
     if (persist) Tutorial.persistDone();
   }
 

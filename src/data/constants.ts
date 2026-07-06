@@ -269,6 +269,24 @@ export const XP_REWARD = {
   finalWaveBonus: 10,
 } as const;
 
+// 골드 획득(처치·콤보 보상). "후반에 돈이 너무 많이 벌린다" 이슈 대응 —
+// 초반(스테이지 1~3)은 100% 유지하고, 이후 스테이지마다 수급 배율을 깎아 후반 인플레이션을 억제한다.
+// 후반 웨이브는 적 수·콤보가 폭증해 처치/콤보 골드가 복리로 불어나므로, 이 배율을 모든 처치 골드에 곱한다.
+export const GOLD_REWARD = {
+  kill: { normal: 3, mini: 30, boss: 100 },
+  comboStep: 5, // 콤보 5마다 보너스
+  comboBonusPer: 5, // 보너스 = floor(combo/comboStep) * comboBonusPer
+  lateFromStage: 3, // 이 스테이지까지는 100% 유지
+  latePerStage: 0.11, // 이후 스테이지마다 배율 -11%p
+  lateFloor: 0.3, // 최저 배율(스테이지 10 ≈ 0.3)
+} as const;
+
+/** 스테이지 진행도에 따른 골드 수급 배율(초반 1.0 → 후반 대폭 감쇠). */
+export function goldStageMult(stageId: number): number {
+  const over = Math.max(0, stageId - GOLD_REWARD.lateFromStage);
+  return Math.max(GOLD_REWARD.lateFloor, 1 - over * GOLD_REWARD.latePerStage);
+}
+
 /** 遺??floating) ?곗텧 ?뚮씪誘명꽣 ??鍮??대몺 ?뺣졊瑜섏뿉留??곸슜. ?섎㉧吏???묒?(?좊땲硫붿씠??異뷀썑). */
 export const FLOAT = { height: 0.5, amp: 0.24, speed: 1.9 } as const;
 /** 遺???띿꽦?멸? (鍮??대몺 = ?좊졊쨌?뺣졊瑜?. */
