@@ -154,9 +154,19 @@ body {
   border: 2px solid var(--gold-bright); color: #06263a; font-family: 'Jua'; font-size: 16px;
   display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
 }
-.card .art { height: 70px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 42px; border: 2px solid; margin-bottom: 6px; }
-.card .name { font-family: 'Jua'; font-size: 16px; color: var(--ink); text-align: center; }
-.card .desc { font-size: 12px; color: #4a3423; text-align: center; line-height: 1.25; margin-top: 4px; flex: 1; }
+.card .art { height: 68px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 42px; border: 2px solid; margin-bottom: 6px; flex: none; }
+/* 이름/설명은 폰트 렌더링이 다른 기기(예: 맥북)에서도 카드 밖으로 절대 넘치지 않게
+   -webkit-line-clamp + overflow:hidden으로 프레임 안에 가둔다. word-break는 body 규칙(keep-all) 상속. */
+.card .name {
+  font-family: 'Jua'; font-size: 15px; line-height: 1.15; color: var(--ink); text-align: center;
+  overflow-wrap: anywhere; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
+}
+.card .desc {
+  font-size: 11px; color: #4a3423; text-align: center; line-height: 1.28; margin-top: 4px; flex: 1; min-height: 0;
+  overflow-wrap: anywhere; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 6; line-clamp: 6; -webkit-box-orient: vertical;
+}
 
 /* 카드 설명 속 키워드(화상/젖음/덩굴 표식/저주/축복/보호막) — 볼드 + 호버 툴팁 트리거 */
 .kw { font-weight: 800; color: var(--leather); border-bottom: 1px dotted var(--leather); cursor: help; }
@@ -349,7 +359,8 @@ body {
 }
 
 /* ── 토스트 ── */
-#toast-layer { position: absolute; bottom: 320px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 90; pointer-events: none; }
+/* 항상 상단(HUD 아래)에 — 하단 손패/버튼/튜토리얼 말풍선을 가리지 않는다. */
+#toast-layer { position: absolute; top: 66px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 90; pointer-events: none; }
 .toast {
   padding: 8px 18px; border-radius: 20px; font-family: 'Jua'; font-size: 15px;
   background: var(--wood-dark); color: var(--parchment); border: 2px solid var(--gold);
@@ -984,6 +995,24 @@ body {
   width: max-content; max-width: min(96vw, 1040px); flex-wrap: wrap;
 }
 #card-shelf.placement::before { display: none; }
+/* 배치 페이즈 유닛 카드는 "드래그 토큰"일 뿐이라 컴팩트하게 줄인다 —
+   전투용 손패(132×176)를 그대로 쓰면 하단 선반이 필드의 앞줄 배치 슬롯을 가린다.
+   낮게·짧게 만들어 슬롯 영역(화면 하단에서 ~360px 위)과 겹치지 않게 한다. */
+#card-shelf.placement .unit-card {
+  width: 104px; height: 116px; padding: 8px 8px 9px; gap: 5px;
+}
+#card-shelf.placement .unit-art { width: 52px; height: 52px; font: 22px 'Jua', sans-serif; }
+#card-shelf.placement .unit-name { font-size: 13px; line-height: 1.1; }
+#card-shelf.placement .unit-hp { height: 12px; }
+#card-shelf.placement .unit-hp-txt { font-size: 9px; }
+#card-shelf.placement .unit-state { top: 5px; right: 5px; padding: 1px 5px; font-size: 10px; }
+#card-shelf.placement .unit-lv { font-size: 10px !important; top: 4px; left: 5px; }
+/* 낮은 세로 해상도에선 한 뼘 더 줄여 슬롯 가림을 확실히 방지 */
+@media (max-height: 800px) {
+  #card-shelf.placement { bottom: 70px; gap: 10px; }
+  #card-shelf.placement .unit-card { width: 94px; height: 104px; }
+  #card-shelf.placement .unit-art { width: 46px; height: 46px; font-size: 20px; }
+}
 .shelf-hint { flex-basis: 100%; text-align: center; order: -1; font-size: 14px; opacity: 0.96; }
 .shelf-hint b { color: var(--parchment); }
 
@@ -1153,7 +1182,9 @@ body {
 @media (max-height: 880px) {
   #card-shelf { height: 190px; }
   .card { width: 116px; height: 160px; }
-  .card .art { height: 62px; font-size: 36px; }
+  .card .art { height: 60px; font-size: 36px; }
+  .card .name { font-size: 14px; }
+  .card .desc { font-size: 10.5px; -webkit-line-clamp: 5; line-clamp: 5; }
   .draft-card { min-height: 340px; flex-basis: 158px; max-width: 158px; }
   .scroll h1 { font-size: 26px; }
   .scroll { padding: 22px 26px; }
@@ -1163,9 +1194,10 @@ body {
 @media (max-height: 760px) {
   #card-shelf { height: 168px; }
   .card { width: 104px; height: 146px; }
-  .card .art { height: 56px; font-size: 32px; }
+  .card .art { height: 52px; font-size: 32px; }
+  .card .name { font-size: 13px; }
+  .card .desc { font-size: 10px; line-height: 1.25; -webkit-line-clamp: 5; line-clamp: 5; }
   #placement-bar { bottom: 234px; }
-  #toast-layer { bottom: 246px; }
   #drop-zone.on.shelf { padding-bottom: 140px; }
   .draft-card { min-height: 300px; flex-basis: 146px; max-width: 146px; padding: 12px 10px 16px; }
 }
